@@ -1,68 +1,187 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* src/index.css */
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+/* ---------- CSS Variables (จาก Figma) ---------- */
+:root{
+  --black: #000000;        /* พื้นหลังบน */
+  --red:   #FA3A2B;        /* พื้นหลังล่าง + H1 LOGIN */
+  --near-black-1: #100F0F; /* เฉดดำ */
+  --near-black-2: #1A1919;
+  --near-black-3: #1D1D1D;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --gray-1: #C3C3C3;       /* เส้น/placeholder อ่อน */
+  --gray-2: #DBDBDBE6;     /* #DBDBDB @ 90% */
+  --white:  #FFFFFF;
+
+  --navbar-bg: #D9D9D9;    /* เทาแถบบนตามภาพตัวอย่าง */
+  --card-radius: 8px;
+  --shadow-1: 0 8px 24px rgba(0,0,0,.15);
+
+  --field-target: 392px;   /* กำหนดความกว้างสูงสุดของ input/ปุ่ม/ลิงก์ */
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+/* ---------- Reset & Base ---------- */
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--near-black-1);
+  background: var(--white);
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
+/* ลิงก์ */
+a{color:inherit}
+a:hover{text-decoration: underline}
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+/* ปุ่มมาตรฐาน */
+button{
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* อินพุตมาตรฐาน */
+.input{
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-2);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--near-black-1);
+  outline: none;
+}
+.input::placeholder{ color: var(--gray-1) }
+.input:focus{
+  border-color: var(--near-black-3);
+}
+
+/* ข้อความเล็ก */
+.text-sm{ font-size: .9rem }
+
+/* ---------- Layout เฉพาะหน้า Login ---------- */
+/* แถบหัวบน (Navbar) */
+.navbar{
+  width: 100%;
+  height: 56px;
+  background: var(--navbar-bg);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* ซ้าย | ตรงกลางโลโก้ | ขวาเมนู */
+  align-items: center;
+  padding: 0 24px;
+}
+/* BUTCON (Navbar Brand) */
+.brand {
+  grid-column: 2/3;
+  text-align: center;
+  font-family: "Roboto Flex", sans-serif;
+  font-size: 32px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: normal;
+  color: #1D1D1D;
+}
+.nav-right{
+  grid-column: 3/4;
+  justify-self: end;
+  display: flex;
+  gap: 12px;
+}
+.nav-divider{ opacity: .6 }
+
+/* Hero สองสี (ดำ/แดง) */
+.hero{
+  position: relative;
+  min-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-top{
+  flex: 1;               /* ครึ่งบน */
+  background: var(--black); /* #000000 */
+}
+
+.hero-bottom{
+  flex: 1;               /* ครึ่งล่าง */
+  background: var(--red);   /* #FA3A2B */
+}
+
+/* กล่องฟอร์ม Login */
+.login-card{
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+  width: 380px;          
+  height: 472px;         
+  background: var(--white);
+  border-radius: var(--card-radius);
+  padding: 48px 56px;    /* เว้นขอบซ้าย/ขวาให้เหมือนภาพ */
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  justify-content: center; 
+  align-items: flex-start;   
+}
+
+.login-title {
+  margin: 0 0 24px;
+  text-align: center;
+  width: 100%;
+  font-family: "Roboto Flex", sans-serif;
+  font-size: 50px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: normal;
+  color: #FA3A2B;
+}
+
+/* กลุ่มฟอร์ม + ปุ่ม + ลิงก์ */
+.form-group,
+.actions,
+.forgot{
+  width: min(var(--field-target), 100%);
+  margin-left: 0;     /* ชิดซ้ายของกล่อง */
+  margin-right: auto;
+}
+
+.form-group{ margin: 14px 0 }
+
+.label{
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* ปุ่มตาม Figma */
+.btn-primary{
+  background: #2A2A2A;      /* ปุ่ม Log in ดำเทา */
+  color: var(--white);
+}
+.btn-primary:hover{ filter: brightness(0.95) }
+
+.btn-secondary{
+  background: #BDBDBD;       /* ปุ่ม Sign in เทาอ่อน */
+  color: var(--near-black-1);
+  border: 1px solid var(--near-black-3);
+}
+.btn-secondary:hover{ filter: brightness(0.98) }
+
+/* เว้นระยะปุ่ม */
+.actions{
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.actions button{
+  width: 100%;
+}
+
+/* ลิงก์ลืมรหัสผ่าน */
+.forgot{
+  margin-top: 12px;
+  text-align: left;
 }
