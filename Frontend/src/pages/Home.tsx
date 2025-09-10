@@ -1,8 +1,8 @@
-import { useAuth } from "@/features/auth/AuthContext";
+// import { useAuth } from "@/features/auth/AuthContext";
 import PrimaryButton from "@/components/PrimaryButton";
 
 export default function Home() {
-  const { state, loginAs, logout } = useAuth();
+  // const { state, loginAs, logout } = useAuth();
 
   return (
     <main className="space-y-6 p-6">
