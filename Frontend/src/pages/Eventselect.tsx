@@ -9,7 +9,7 @@ export default function Eventselect() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedSeats, setSelectedSeats] = useState<{ row: string; seat: number; zone: string; price: number }[]>([])
 
-  const seatRows = ["A", "B", "C", "D", "E", "F", "G", "H"]
+  const seatRows = ["1", "B", "C", "D", "E", "F", "G", "H"]
   const seatsPerRow = 20
   const seatZones = {
     vip: { rows: ["A", "B"], price: 5000 },
