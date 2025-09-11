@@ -5,6 +5,8 @@ import Login from "@/pages/Login";
 import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
+
+import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
 import Organizationmnge  from "@/pages/Organizationmnge";
 
@@ -28,8 +30,12 @@ export const router = createBrowserRouter([
 
       // ✅ ใช้ Component หน้านี้ และใช้ path เป็นตัวพิมพ์เล็ก
       { path: "component", element: <Component /> },
+
+      { path: "profile", element: <Profile /> },
+
       { path: "eventselect", element: <Eventselect /> },
       { path: "organization", element: <Organizationmnge /> },
+
 
       // ✅ catch-all ต้องเป็น "*"
       { path: "*", element: <NotFound /> },
