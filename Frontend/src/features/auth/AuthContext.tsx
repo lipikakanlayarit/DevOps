@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { AuthState, AuthUser, Role } from './types';
 
+import * as AuthAPI from './auth.api';
+
 type AuthContextValue = {
   state: AuthState;
   loginAs: (role: Role, username?: string) => void;
+  loginViaBackend: (username: string, password: string) => Promise<void>;
   logout: () => void;
 };
 
@@ -22,7 +25,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => setState({ status: 'unauthenticated', user: null });
 
-  const value = useMemo(() => ({ state, loginAs, logout }), [state]);
+  const loginViaBackend = async (username: string, password: string) => {
+    const res = await AuthAPI.login({ username, password });
+    setState({ status: 'authenticated', user: res.user });
+  };
+
+  const value = useMemo(() => ({ state, loginAs, loginViaBackend, logout }), [state]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
