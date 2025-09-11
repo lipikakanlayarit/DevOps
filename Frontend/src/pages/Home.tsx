@@ -11,6 +11,7 @@ export default function Home() {
         <PrimaryButton to="/component">Component</PrimaryButton>
         <PrimaryButton to="/">??</PrimaryButton>
         <PrimaryButton to="/">??</PrimaryButton>
+        <PrimaryButton to="/Profile">Profile</PrimaryButton>
       </div>
     </main>
   );
