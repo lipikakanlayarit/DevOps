@@ -1,12 +1,13 @@
-export type Role = 'GUEST' | 'USER' | 'ADMIN' | 'ORGANIZER';
+// src/features/auth/types.ts
+export type Role = "USER" | "ADMIN" | "ORGANIZER";
 
-export interface AuthUser {
+export type User = {
   id: string;
   username: string;
   role: Role;
-}
+};
 
-export interface AuthState {
-  status: 'unauthenticated' | 'authenticated';
-  user: AuthUser | null;
-}
+export type AuthState =
+  | { status: "loading"; user: null }
+  | { status: "unauthenticated"; user: null }
+  | { status: "authenticated"; user: User };
