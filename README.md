@@ -45,3 +45,10 @@ cd Backend
 mvn spring-boot:run
 cd ../Frontend 
 npm run dev
+
+
+# จากโฟลเดอร์ Backend/Backend
+.\mvnw -v
+.\mvnw clean package -DskipTests
+.\mvnw spring-boot:run
+
