@@ -13,11 +13,18 @@ import Landding from "@/pages/Landding";
 // protected pages
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
+
+
+import Eventdetail from "@/pages/Eventdetail";
+import Ticketdetail from "@/pages/Ticketdetail";
+import Eventdashbaord from "@/pages/Eventdashboard";
+
 import Organizationmnge from "@/pages/Organizationmnge";
 
 // guards
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
+
 
 export const router = createBrowserRouter([
   {
@@ -45,6 +52,16 @@ export const router = createBrowserRouter([
           { path: "organization", element: <Organizationmnge /> },
         ],
       },
+
+
+      // ✅ ใช้ Component หน้านี้ และใช้ path เป็นตัวพิมพ์เล็ก
+      { path: "component", element: <Component /> },
+      { path: "eventselect", element: <Eventselect /> },
+      { path: "organization", element: <Organizationmnge /> },
+      { path: "eventdetail", element: <Eventdetail /> },
+      { path: "ticketdetail", element: <Ticketdetail /> },
+      { path: "eventdashboard", element: <Eventdashbaord /> },
+      // เส้นทางสำคัญ: หน้าจัดการ 404
 
       // ---------- admin group (/admin/*) ----------
       {
@@ -74,6 +91,7 @@ export const router = createBrowserRouter([
           { path: "manage", element: <div>Organizer Manage</div> },
         ],
       },
+
 
       // ---------- catch-all ----------
       { path: "*", element: <NotFound /> },

@@ -9,7 +9,7 @@ export default function Eventselect() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedSeats, setSelectedSeats] = useState<{ row: string; seat: number; zone: string; price: number }[]>([])
 
-  const seatRows = ["1", "B", "C", "D", "E", "F", "G", "H"]
+  const seatRows = ["A", "B", "C", "D", "E", "F", "G", "H"]
   const seatsPerRow = 20
   const seatZones = {
     vip: { rows: ["A", "B"], price: 5000 },
@@ -29,11 +29,11 @@ export default function Eventselect() {
     "A-9",
     "A-10",
     "A-11",
-    "A-12",
-    "A-13",
-    "A-14",
-    "A-15",
-    "A-16",
+    // "A-12",
+    // "A-13",
+    // "A-14",
+    // "A-15",
+    // "A-16",
     "A-17",
     "A-18",
     "A-19",
@@ -186,7 +186,7 @@ export default function Eventselect() {
   return (
     <div className="min-h-screen text-white" style={{ background: "var(--black, #000000)" }}>
       {/* Hero Section */}
-      <section className="relative px-6 py-16" style={{ background: "var(--black, #000000)" }}>
+      <section className="relative px-6 py-16" style={{ background: "var(--black, #1D1D1D)" }}>
         <div className="max-w-6xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Event Poster */}
@@ -543,8 +543,8 @@ export default function Eventselect() {
                                     : isOccupied
                                       ? "#2D2D2D" // Dark for occupied seats
                                       : zone === "VIP"
-                                        ? "#f4f13fff" // Gold for VIP
-                                        : "#f4f13fff", // Gold for Standard (like reference)
+                                        ? "#f9f654ff" // For VIP
+                                        : "rgba(201, 255, 184, 1)", // For Standard seats
                                   color: isSelected ? "white" : isOccupied ? "#4CAF50" : "#2D2D2D",
                                   border: `2px solid ${isOccupied ? "#2D2D2D" : "#E0E0E0"}`,
                                   cursor: isOccupied ? "not-allowed" : "pointer",

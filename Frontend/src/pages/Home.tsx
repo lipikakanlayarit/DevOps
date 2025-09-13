@@ -16,6 +16,7 @@ export default function Home() {
         <PrimaryButton to="/">??</PrimaryButton>
         <PrimaryButton to="/Profile">Profile</PrimaryButton>
         <PrimaryButton to="/organization">organization</PrimaryButton>
+        <PrimaryButton to="/Eventdetail">eventdetail</PrimaryButton>
       </div>
     </main>
   );
