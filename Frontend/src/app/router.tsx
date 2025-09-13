@@ -30,14 +30,14 @@ export const router = createBrowserRouter([
     element: <RootLayout />,
     children: [
       // ---------- public ----------
-      { index: true, element: <Landding /> }, // หน้าแรกเป็น Landding
+      { index: true, element: <Landding /> },
       { path: "home", element: <Home /> },
       { path: "login", element: <Login /> },
       { path: "signin", element: <SignIn /> },
       { path: "component", element: <Component /> },
       { path: "forbidden", element: <Forbidden /> },
 
-      // ---------- auth-only ----------
+      // ---------- auth-only (ต้องล็อกอิน) ----------
       {
         element: (
           <RequireAuth>
@@ -47,22 +47,18 @@ export const router = createBrowserRouter([
         children: [
           { path: "profile", element: <Profile /> },
           { path: "eventselect", element: <Eventselect /> },
+          // บังคับให้ /organization ต้องเป็น ORGANIZER เท่านั้น
+          {
+            path: "organization",
+            element: (
+              <RequireRole roles={["ORGANIZER"]}>
+                <Organizationmnge />
+              </RequireRole>
+            ),
+          },
           { path: "eventdetail", element: <Eventdetail /> },
           { path: "ticketdetail", element: <Ticketdetail /> },
-          { path: "eventdashboard", element: <EventDashboard /> },
-        ],
-      },
-
-      // ---------- organizer/admin only: Organization Management ----------
-      {
-        // ให้ /organizationmnge ใช้ได้เฉพาะ ORGANIZER หรือ ADMIN
-        element: (
-          <RequireRole roles={["ORGANIZER", "ADMIN"]}>
-            <Outlet />
-          </RequireRole>
-        ),
-        children: [
-          { path: "organizationmnge", element: <Organizationmnge /> },
+          { path: "eventdashboard", element: <Eventdashbaord /> },
         ],
       },
 
@@ -81,7 +77,8 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // ---------- organizer group (/organize/*) ----------
+      // ---------- organizer group (ถ้าจะใช้ prefix แบบกลุ่ม) ----------
+      // ถ้าต้องการเส้นทางแบบ /organize/* ก็เพิ่มไว้ได้เช่นกัน
       {
         path: "organize",
         element: (
