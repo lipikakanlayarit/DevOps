@@ -10,14 +10,15 @@ import SearchBar from "@/components/SearchBar"
 import Footer from "@/components/Footer"
 import CountdownTimer from "@/components/CountdownTimer"
 // ตัวอย่างในไฟล์ที่ประกาศ data
-import poster1 from "../assets/poster.png";
-import poster2 from "../assets/poster2.png";
-import poster3 from "../assets/poster3.png";
-import poster4 from "../assets/poster4.png";
-import poster5 from "../assets/poster5.png";
-import poster6 from "../assets/poster6.png";
-import poster7 from "../assets/poster7.png";
-import poster8 from "../assets/poster8.png";
+import poster1 from "@/assets/poster.png";
+import poster2 from "@/assets/poster2.png";
+import poster3 from "@/assets/poster3.png";
+import poster4 from "@/assets/poster4.png";
+import poster5 from "@/assets/poster5.png";
+import poster6 from "@/assets/poster6.png";
+import poster7 from "@/assets/poster7.png";
+import poster8 from "@/assets/poster8.png";
+
 
 // ถ้าต้องการพิมพ์ชนิด
 type Poster = { dateLabel: string; title: string; imageUrl: string };
@@ -186,7 +187,8 @@ export default function HomePage() {
                   scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap
                   into electronic typesetting, remaining essentially unchanged.
                 </p>
-                <PrimaryButton className="px-8 py-3">VIEW</PrimaryButton>
+                <PrimaryButton to="/eventselect" className="px-8 py-3">VIEW
+                </PrimaryButton>
               </div>
             </div>
           </div>
