@@ -6,6 +6,7 @@ import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
 import Eventselect from "@/pages/Eventselect";
+import Landding from "@/pages/Landding";
 import Organizationmnge  from "@/pages/Organizationmnge";
 
 export const router = createBrowserRouter([
@@ -13,7 +14,7 @@ export const router = createBrowserRouter([
     path: "/",
     element: <RootLayout />,
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <Landding /> },
 
       { path: "login", element: <Login /> },
       { path: "signin", element: <SignIn /> },
@@ -30,6 +31,8 @@ export const router = createBrowserRouter([
       { path: "component", element: <Component /> },
       { path: "eventselect", element: <Eventselect /> },
       { path: "organization", element: <Organizationmnge /> },
+      { path: "Landding", element: <Landding /> },
+      { path: "Home", element: <Home /> },
 
       // ✅ catch-all ต้องเป็น "*"
       { path: "*", element: <NotFound /> },

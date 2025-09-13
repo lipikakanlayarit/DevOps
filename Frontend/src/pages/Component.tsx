@@ -68,6 +68,22 @@ export default function Home() {
         </div>
 
         <div className="p-6">
+          <CategoryRadio
+            options={[
+              { label: "All", value: "all" },
+              { label: "Concert", value: "concert" },
+              { label: "Seminar", value: "seminar" },
+              { label: "Exhibition", value: "exhibition" },
+            ]}
+            value={category}
+            onChange={setCategory}
+          />
+          <div className="mt-4 text-white">
+            Selected: <span className="font-bold">{category}</span>
+          </div>
+        </div>
+
+        <div className="p-6">
           <OrderToggle value={order} onChange={setOrder} />
   
         </div>
