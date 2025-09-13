@@ -9,6 +9,7 @@ import EventCard from "@/components/EventCard"
 import SearchBar from "@/components/SearchBar"
 import Footer from "@/components/Footer"
 import CountdownTimer from "@/components/CountdownTimer"
+
 // ตัวอย่างในไฟล์ที่ประกาศ data
 import poster1 from "@/assets/poster.png";
 import poster2 from "@/assets/poster2.png";

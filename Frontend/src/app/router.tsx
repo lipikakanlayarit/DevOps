@@ -8,16 +8,15 @@ import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
 import Forbidden from "@/pages/Forbidden";
-import Landding from "@/pages/Landding";
+import Landding from "@/pages/Landding"; // ถ้าไฟล์ชื่อ Landding.tsx จริงก็โอเค
 
 // protected pages
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
-
-
 import Eventdetail from "@/pages/Eventdetail";
 import Ticketdetail from "@/pages/Ticketdetail";
-import Eventdashbaord from "@/pages/Eventdashboard";
+// สะกดตัวแปรให้ตรง: EventDashboard
+import EventDashboard from "@/pages/Eventdashboard";
 
 import Organizationmnge from "@/pages/Organizationmnge";
 
@@ -25,15 +24,14 @@ import Organizationmnge from "@/pages/Organizationmnge";
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
-
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
     children: [
       // ---------- public ----------
-      { index: true, element: <Landding /> },   // หน้าแรกเป็น Landding
-      { path: "home", element: <Home /> },      // เผื่ออยากเข้าหน้า Home โดยตรง
+      { index: true, element: <Landding /> }, // หน้าแรกเป็น Landding
+      { path: "home", element: <Home /> },
       { path: "login", element: <Login /> },
       { path: "signin", element: <SignIn /> },
       { path: "component", element: <Component /> },
@@ -49,19 +47,24 @@ export const router = createBrowserRouter([
         children: [
           { path: "profile", element: <Profile /> },
           { path: "eventselect", element: <Eventselect /> },
-          { path: "organization", element: <Organizationmnge /> },
+          { path: "eventdetail", element: <Eventdetail /> },
+          { path: "ticketdetail", element: <Ticketdetail /> },
+          { path: "eventdashboard", element: <EventDashboard /> },
         ],
       },
 
-
-      // ✅ ใช้ Component หน้านี้ และใช้ path เป็นตัวพิมพ์เล็ก
-      { path: "component", element: <Component /> },
-      { path: "eventselect", element: <Eventselect /> },
-      { path: "organization", element: <Organizationmnge /> },
-      { path: "eventdetail", element: <Eventdetail /> },
-      { path: "ticketdetail", element: <Ticketdetail /> },
-      { path: "eventdashboard", element: <Eventdashbaord /> },
-      // เส้นทางสำคัญ: หน้าจัดการ 404
+      // ---------- organizer/admin only: Organization Management ----------
+      {
+        // ให้ /organizationmnge ใช้ได้เฉพาะ ORGANIZER หรือ ADMIN
+        element: (
+          <RequireRole roles={["ORGANIZER", "ADMIN"]}>
+            <Outlet />
+          </RequireRole>
+        ),
+        children: [
+          { path: "organizationmnge", element: <Organizationmnge /> },
+        ],
+      },
 
       // ---------- admin group (/admin/*) ----------
       {
@@ -91,7 +94,6 @@ export const router = createBrowserRouter([
           { path: "manage", element: <div>Organizer Manage</div> },
         ],
       },
-
 
       // ---------- catch-all ----------
       { path: "*", element: <NotFound /> },
