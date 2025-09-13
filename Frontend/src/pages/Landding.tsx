@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useNavigate } from "react-router-dom";
 import PosterCard from "@/components/PosterCard"
 import CategoryRadio from "@/components/CategoryRadio"
 import PrimaryButton from "@/components/PrimaryButton"
@@ -26,6 +27,7 @@ type Poster = { dateLabel: string; title: string; imageUrl: string };
 type EventItem = { cover: string; dateRange: string; title: string; venue: string };
 
 const posters = [poster1, poster2, poster3, poster4, poster5, poster6, poster7, poster8];
+
 
 export const posterData: Poster[] = [
   { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[0] },
@@ -54,6 +56,8 @@ export default function HomePage() {
   const [heroFilter, setHeroFilter] = useState("ALL EVENT")
   const [searchQuery, setSearchQuery] = useState("")
   const [eventFilter, setEventFilter] = useState("All")
+
+   const navigate = useNavigate();
 
   // Target date for countdown (10 days from now)
   const targetDate = new Date()
@@ -137,7 +141,7 @@ export default function HomePage() {
                       dateLabel={poster.dateLabel}
                       title={poster.title}
                       imageUrl={poster.imageUrl}
-                      onClick={() => console.log(`Clicked poster: ${poster.title}`)}
+                      onClick={() => navigate("/eventselect")}
                     />
                   </div>
                 </div>
@@ -221,7 +225,7 @@ export default function HomePage() {
                   dateRange={event.dateRange}
                   title={event.title}
                   venue={event.venue}
-                  onClick={() => console.log(`Clicked event: ${event.title}`)}
+                  onClick={() => navigate("/eventselect")}
                 />
               ))}
             </div>
