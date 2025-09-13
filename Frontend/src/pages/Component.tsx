@@ -32,7 +32,7 @@ export default function Home() {
         <h1 className="text-2xl font-bold">Home</h1>
 
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => loginAs("USER", "Admin123")} className="px-3 py-1.5 rounded bg-blue-600 text-white">
+          <button onClick={() => loginAs("USER", "USER")} className="px-3 py-1.5 rounded bg-blue-600 text-white">
             Login as USER
           </button>
           <button onClick={() => loginAs("ADMIN", "Admin123")} className="px-3 py-1.5 rounded bg-emerald-600 text-white">
@@ -65,6 +65,22 @@ export default function Home() {
         <div className="flex gap-4">
           <SecondaryButton>View Detail</SecondaryButton>
           <SecondaryButton to="/more-info">More Info</SecondaryButton>
+        </div>
+
+        <div className="p-6">
+          <CategoryRadio
+            options={[
+              { label: "All", value: "all" },
+              { label: "Concert", value: "concert" },
+              { label: "Seminar", value: "seminar" },
+              { label: "Exhibition", value: "exhibition" },
+            ]}
+            value={category}
+            onChange={setCategory}
+          />
+          <div className="mt-4 text-white">
+            Selected: <span className="font-bold">{category}</span>
+          </div>
         </div>
 
         <div className="p-6">

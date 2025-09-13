@@ -1,17 +1,59 @@
-import { useState } from "react";
+import { useEffect, useState, FormEventHandler, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "@/features/auth/AuthContext";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  const returnTo = sp.get("returnTo") || "/";
+
+  const { state, loginViaBackend } = useAuth();
+
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
+  const userRef = useRef<HTMLInputElement>(null);
+
+  // ถ้า login อยู่แล้ว ให้เด้งกลับหน้าที่ตั้งใจไป
+  useEffect(() => {
+    if (state.status === "authenticated") {
+      navigate(returnTo, { replace: true });
+    }
+  }, [state.status, navigate, returnTo]);
+
+  // โฟกัสช่องแรกเมื่อเปิดหน้า
+  useEffect(() => {
+    userRef.current?.focus();
+  }, []);
+
+  const handleSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
+    const u = username.trim();
+    const p = password; // เผื่ออนาคตรองรับช่องว่างในรหัสผ่าน
+
+    if (!u || !p) {
+      setError("กรุณากรอกข้อมูลให้ครบ");
+      return;
+    }
+
+    if (isLoading) return; // กันกดซ้ำ
+
+    setError(null);
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      await loginViaBackend(u, p);
+      navigate(returnTo, { replace: true });
+    } catch (err: unknown) {
+      let msg = "Login failed";
+      if (err && typeof err === "object" && "message" in err && typeof (err as any).message === "string") {
+        msg = (err as any).message;
+      }
+      setError(msg);
+    } finally {
       setIsLoading(false);
-      console.log("Login attempt:", { email, password });
-    }, 1200);
+    }
   };
 
   return (
@@ -50,7 +92,14 @@ export default function Login() {
         {/* Main Content */}
         <div className="px-6 py-6">
           <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-            {/* Email Field */}
+            {/* Error */}
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            {/* Username */}
             <div className="group">
               <label className="block text-sm font-bold text-[#1D1D1D] mb-2 transition-colors duration-300 group-focus-within:text-[#FA3A2B] flex items-center">
                 <svg
@@ -63,24 +112,25 @@ export default function Login() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    d="M5.121 17.804A7 7 0 1119 10v1a4 4 0 01-4 4H9a4 4 0 01-3.879 2.804z"
                   />
                 </svg>
-                Email Address
+                Username
               </label>
               <div className="relative">
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  ref={userRef}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="USER / ADMIN / ORGANIZER"
                   className="w-full px-4 py-3 border-2 border-[#1D1D1D]/20 rounded-lg focus:outline-none focus:border-[#FA3A2B] focus:ring-2 focus:ring-[#FA3A2B]/20 bg-white/90 text-[#1D1D1D] placeholder-gray-400 transition-all duration-300 shadow-sm hover:shadow-md"
                   required
+                  autoComplete="username"
                 />
               </div>
             </div>
 
-            {/* Password Field */}
+            {/* Password */}
             <div className="group">
               <label className="block text-sm font-bold text-[#1D1D1D] mb-2 transition-colors duration-300 group-focus-within:text-[#FA3A2B] flex items-center">
                 <svg
@@ -106,14 +156,15 @@ export default function Login() {
                   placeholder="••••••••"
                   className="w-full px-4 py-3 border-2 border-[#1D1D1D]/20 rounded-lg focus:outline-none focus:border-[#FA3A2B] focus:ring-2 focus:ring-[#FA3A2B]/20 bg-white/90 text-[#1D1D1D] placeholder-gray-400 transition-all duration-300 shadow-sm hover:shadow-md"
                   required
+                  autoComplete="current-password"
                 />
               </div>
             </div>
 
-            {/* Submit Button */}
+            {/* Submit */}
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !username.trim() || !password}
               className="relative w-full bg-gradient-to-r from-[#FA3A2B] to-[#e13427] text-white font-bold py-3 rounded-lg hover:from-[#e13427] hover:to-[#FA3A2B] transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed hover:shadow-lg overflow-hidden group"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/30 to-white/0 transform -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out"></div>
@@ -133,12 +184,12 @@ export default function Login() {
                         r="10"
                         stroke="currentColor"
                         strokeWidth="4"
-                      ></circle>
+                      />
                       <path
                         className="opacity-75"
                         fill="currentColor"
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
+                      />
                     </svg>
                     <span className="animate-pulse">Signing in...</span>
                   </>
@@ -162,6 +213,11 @@ export default function Login() {
                 )}
               </div>
             </button>
+
+            {/* Hint */}
+            <p className="text-xs text-[#1D1D1D]/70">
+              Tip: ใช้ชื่อผู้ใช้ <b>USER</b> / <b>ADMIN</b> / <b>ORGANIZER</b> (รหัสผ่านใส่อะไรก็ได้ – backend mock)
+            </p>
           </form>
         </div>
 
