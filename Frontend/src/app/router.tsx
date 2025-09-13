@@ -1,40 +1,81 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
+
+// public pages
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
-import Eventselect from "@/pages/Eventselect";
+import Forbidden from "@/pages/Forbidden";
 import Landding from "@/pages/Landding";
-import Organizationmnge  from "@/pages/Organizationmnge";
+
+// protected pages
+import Profile from "@/pages/Profile";
+import Eventselect from "@/pages/Eventselect";
+import Organizationmnge from "@/pages/Organizationmnge";
+
+// guards
+import RequireAuth from "@/features/auth/RequireAuth";
+import RequireRole from "@/features/auth/RequireRole";
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
     children: [
-      { index: true, element: <Landding /> },
-
+      // ---------- public ----------
+      { index: true, element: <Landding /> },   // หน้าแรกเป็น Landding
+      { path: "home", element: <Home /> },      // เผื่ออยากเข้าหน้า Home โดยตรง
       { path: "login", element: <Login /> },
       { path: "signin", element: <SignIn /> },
-
-      // ตัวอย่าง route อื่นๆ
-      { path: "dashboard", element: <div>Admin Dashboard</div> },
-      { path: "users", element: <div>Admin Users</div> },
-      { path: "settings", element: <div>Admin Settings</div> },
-      { path: "organize/events", element: <div>Organizer Events</div> },
-      { path: "organize/manage", element: <div>Organizer Manage</div> },
-      
-
-      // ✅ ใช้ Component หน้านี้ และใช้ path เป็นตัวพิมพ์เล็ก
       { path: "component", element: <Component /> },
-      { path: "eventselect", element: <Eventselect /> },
-      { path: "organization", element: <Organizationmnge /> },
-      { path: "Landding", element: <Landding /> },
-      { path: "Home", element: <Home /> },
+      { path: "forbidden", element: <Forbidden /> },
 
-      // ✅ catch-all ต้องเป็น "*"
+      // ---------- auth-only ----------
+      {
+        element: (
+          <RequireAuth>
+            <Outlet />
+          </RequireAuth>
+        ),
+        children: [
+          { path: "profile", element: <Profile /> },
+          { path: "eventselect", element: <Eventselect /> },
+          { path: "organization", element: <Organizationmnge /> },
+        ],
+      },
+
+      // ---------- admin group (/admin/*) ----------
+      {
+        path: "admin",
+        element: (
+          <RequireRole roles={["ADMIN"]}>
+            <Outlet />
+          </RequireRole>
+        ),
+        children: [
+          { index: true, element: <div>Admin Dashboard</div> },
+          { path: "users", element: <div>Admin Users</div> },
+          { path: "settings", element: <div>Admin Settings</div> },
+        ],
+      },
+
+      // ---------- organizer group (/organize/*) ----------
+      {
+        path: "organize",
+        element: (
+          <RequireRole roles={["ORGANIZER"]}>
+            <Outlet />
+          </RequireRole>
+        ),
+        children: [
+          { path: "events", element: <div>Organizer Events</div> },
+          { path: "manage", element: <div>Organizer Manage</div> },
+        ],
+      },
+
+      // ---------- catch-all ----------
       { path: "*", element: <NotFound /> },
     ],
   },

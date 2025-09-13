@@ -32,7 +32,7 @@ export default function Home() {
         <h1 className="text-2xl font-bold">Home</h1>
 
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => loginAs("USER", "Admin123")} className="px-3 py-1.5 rounded bg-blue-600 text-white">
+          <button onClick={() => loginAs("USER", "USER")} className="px-3 py-1.5 rounded bg-blue-600 text-white">
             Login as USER
           </button>
           <button onClick={() => loginAs("ADMIN", "Admin123")} className="px-3 py-1.5 rounded bg-emerald-600 text-white">
