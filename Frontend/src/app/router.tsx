@@ -7,6 +7,9 @@ import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
 import Eventselect from "@/pages/Eventselect";
 import Organizationmnge  from "@/pages/Organizationmnge";
+import Eventdetail from "@/pages/Eventdetail";
+import Ticketdetail from "@/pages/Ticketdetail";
+import Eventdashbaord from "@/pages/Eventdashboard";
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +33,10 @@ export const router = createBrowserRouter([
       { path: "component", element: <Component /> },
       { path: "eventselect", element: <Eventselect /> },
       { path: "organization", element: <Organizationmnge /> },
+      { path: "eventdetail", element: <Eventdetail /> },
+      { path: "ticketdetail", element: <Ticketdetail /> },
+      { path: "eventdashboard", element: <Eventdashbaord /> },
+      // เส้นทางสำคัญ: หน้าจัดการ 404
 
       // ✅ catch-all ต้องเป็น "*"
       { path: "*", element: <NotFound /> },

@@ -13,6 +13,7 @@ export default function Home() {
         <PrimaryButton to="/eventselect">eventselect</PrimaryButton>
         <PrimaryButton to="/">??</PrimaryButton>
         <PrimaryButton to="/organization">organization</PrimaryButton>
+        <PrimaryButton to="/Eventdetail">eventdetail</PrimaryButton>
       </div>
     </main>
   );
