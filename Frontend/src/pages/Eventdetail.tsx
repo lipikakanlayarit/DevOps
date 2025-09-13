@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Sidebar } from "@/components/sidebarorg"
 import { Input } from "@/components/inputtxt"
-import { Plus, Calendar, Clock as ClockIcon, X, MapPin, Clock } from "lucide-react"
+import { Plus, Calendar, Clock as ClockIcon, X, MapPin, Clock, Image as ImageIcon, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
 
 type DateTimeEntry = {
@@ -18,7 +18,7 @@ export default function EventDetails() {
   const [eventData, setEventData] = useState({
     eventName: "",
     category: "",
-    locationType: "venue", // "venue" | "announced"
+    locationType: "venue" as "venue" | "announced",
     locationName: "",
     description: "",
   })
@@ -27,16 +27,44 @@ export default function EventDetails() {
     { id: 1, startDate: "2025-10-21", startTime: "19:00", endDate: "2025-10-21", endTime: "22:00" },
   ])
 
-  const handleFileUpload = () => {
-    const input = document.createElement("input")
-    input.type = "file"
-    input.accept = "image/*"
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (file) console.log("File selected:", file.name)
+  // ---------- image (preview only; no backend) ----------
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
+  const [imgError, setImgError] = useState<string | null>(null)
+
+  const pickFile = () => fileInputRef.current?.click()
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImgError(null)
+
+    // validate type & size (<=10MB)
+    const isImage = /^image\//.test(file.type)
+    if (!isImage) {
+      setImgError("กรุณาเลือกรูปภาพเท่านั้น (PNG/JPG/JPEG/GIF)")
+      e.target.value = ""
+      return
     }
-    input.click()
+    if (file.size > 10 * 1024 * 1024) {
+      setImgError("ไฟล์ใหญ่เกิน 10MB")
+      e.target.value = ""
+      return
+    }
+
+    setCoverFile(file)
+    setCoverPreview(URL.createObjectURL(file)) // for preview only
   }
+
+  const clearImage = () => {
+    setCoverFile(null)
+    if (coverPreview) URL.revokeObjectURL(coverPreview)
+    setCoverPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  // ------------------------------------------------------
 
   const addDateTimeEntry = () => {
     setDateTimeEntries((prev) => [
@@ -110,29 +138,50 @@ export default function EventDetails() {
                   </div>
                 </div>
 
-                {/* Upload Picture */}
+                {/* Upload Picture (Preview only) */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">
                     Upload Picture <span className="text-red-500 ml-1">*</span>
                   </label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
-                    <div className="space-y-2">
-                      <svg className="w-8 h-8 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                        />
-                      </svg>
+
+                  {/* preview */}
+                  {coverPreview && (
+                    <div className="relative w-full max-w-2xl">
+                      <img
+                        src={coverPreview}
+                        alt="Preview"
+                        className="w-full aspect-[16/9] object-cover rounded-lg border"
+                      />
                       <button
-                        onClick={handleFileUpload}
-                        className="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                        type="button"
+                        onClick={clearImage}
+                        className="absolute top-2 right-2 bg-white/90 hover:bg-white text-red-600 border rounded-full p-1 shadow-sm"
+                        title="Remove image"
+                        aria-label="Remove image"
                       >
-                        Upload file
+                        <Trash2 className="w-4 h-4" />
                       </button>
-                      <p className="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</p>
                     </div>
+                  )}
+
+                  <div className={`border-2 border-dashed ${coverPreview ? "border-gray-200" : "border-gray-300"} rounded-lg p-6 text-center hover:border-gray-400 transition-colors`}>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={pickFile}
+                      className="inline-flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                      {coverPreview ? "Change image" : "Choose image"}
+                    </button>
+                    <p className="text-xs text-gray-500 mt-2">PNG, JPG, JPEG, GIF up to 10MB</p>
+                    {imgError && <p className="text-xs text-red-600 mt-1">{imgError}</p>}
                   </div>
                 </div>
               </div>
@@ -208,7 +257,7 @@ export default function EventDetails() {
                               updated[index].startTime = e.target.value
                               setDateTimeEntries(updated)
                             }}
-                            step={300} // ทุก 5 นาที
+                            step={300}
                             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
                         </div>
@@ -300,7 +349,7 @@ export default function EventDetails() {
                       name="locationType"
                       value="venue"
                       checked={eventData.locationType === "venue"}
-                      onChange={(e) => setEventData({ ...eventData, locationType: e.target.value })}
+                      onChange={(e) => setEventData({ ...eventData, locationType: e.target.value as "venue" | "announced" })}
                       className="hidden"
                     />
                     <span
@@ -322,7 +371,7 @@ export default function EventDetails() {
                       name="locationType"
                       value="announced"
                       checked={eventData.locationType === "announced"}
-                      onChange={(e) => setEventData({ ...eventData, locationType: e.target.value })}
+                      onChange={(e) => setEventData({ ...eventData, locationType: e.target.value as "venue" | "announced" })}
                       className="hidden"
                     />
                     <span
@@ -379,12 +428,18 @@ export default function EventDetails() {
                 Cancel
               </Link>
 
-              <Link
-                to="/ticketdetail"
-                className="rounded-full border border-gray-300 px-6 py-3 text-gray-900 font-medium hover:bg-gray-50 transition-colors"
+              {/* เดโม: ยังไม่ส่ง backend แค่ validate ว่ามีรูปและชื่ออีเวนต์ */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!eventData.eventName) return alert("กรุณากรอก Event Name")
+                  if (!coverFile) return alert("กรุณาอัปโหลดรูปภาพ")
+                  alert(`บันทึกชั่วคราวสำเร็จ\nไฟล์: ${coverFile.name}`)
+                }}
+                className="rounded-full border border-gray-300 px-6 py-3 text-gray-900 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Save &amp; Continue
-              </Link>
+              </button>
             </div>
           </div>
         </div>
