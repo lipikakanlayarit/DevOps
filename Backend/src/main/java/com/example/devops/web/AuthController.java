@@ -1,56 +1,78 @@
+
 package com.example.devops.web;
 
+import com.example.devops.model.User;
+import com.example.devops.repo.UserRepository;
+import com.example.devops.security.JwtTokenUtil;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 record LoginReq(@NotBlank String username, @NotBlank String password) {}
-record LoginRes(Map<String, String> user, String token) {}
+record LoginRes(Map<String, Object> user, String token) {}
+record RegisterReq(@NotBlank String username, @NotBlank String password) {}
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private static String roleFromUsername(String username) {
-        if ("ADMIN".equalsIgnoreCase(username)) return "ADMIN";
-        if ("ORGANIZER".equalsIgnoreCase(username)) return "ORGANIZER";
-        return "USER";
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtTokenUtil jwtTokenUtil;
+
+    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtTokenUtil jwtTokenUtil) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtTokenUtil = jwtTokenUtil;
     }
 
-    private static Map<String, String> user(String username, String role) {
-        return Map.of("id", "1", "username", username, "role", role);
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@RequestBody RegisterReq req) {
+        if (userRepository.existsByUsername(req.username())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Username already exists");
+        }
+        User u = new User();
+        u.setUsername(req.username());
+        u.setPassword(passwordEncoder.encode(req.password()));
+        u.setRole("USER");
+        userRepository.save(u);
+        return ResponseEntity.ok("Registered");
     }
 
     @PostMapping("/login")
-    public LoginRes login(@RequestBody LoginReq req){
-        String role = roleFromUsername(req.username());
-        // token ใส่ username + role ลงไป (mock)
-        String token = "fake-jwt-" + req.username() + "-" + role;
-        return new LoginRes(user(req.username(), role), token);
+    public ResponseEntity<?> login(@RequestBody LoginReq req) {
+        var user = userRepository.findByUsername(req.username()).orElse(null);
+        if (user == null || !passwordEncoder.matches(req.password(), user.getPassword())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+        }
+        String token = jwtTokenUtil.generateToken(user);
+        return ResponseEntity.ok(new LoginRes(
+                Map.of("id", user.getId(), "username", user.getUsername(), "role", user.getRole()),
+                token
+        ));
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> me(@RequestHeader(value = "Authorization", required = false) String authHeader){
+    public ResponseEntity<?> me(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        String token = authHeader.substring("Bearer ".length()).trim();
-        // รูปแบบ token: fake-jwt-<username>-<role>
-        if (!token.startsWith("fake-jwt-")) {
+        String token = authHeader.substring(7);
+        if (!jwtTokenUtil.validate(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        String[] parts = token.split("-", 4); // ["fake","jwt","<username>","<role>"]
-        if (parts.length < 4) {
+        String username = jwtTokenUtil.getUsername(token);
+        var user = userRepository.findByUsername(username).orElse(null);
+        if (user == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        String username = parts[2];
-        String role = parts[3];
-        return ResponseEntity.ok(user(username, role));
+        return ResponseEntity.ok(Map.of("id", user.getId(), "username", user.getUsername(), "role", user.getRole()));
     }
 
     @PostMapping("/logout")
-    public void logout() {}
+    public void logout() { /* stateless */ }
 }
