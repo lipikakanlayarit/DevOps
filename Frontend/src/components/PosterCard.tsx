@@ -18,7 +18,7 @@ export default function PosterCard({
       onClick={onClick}
       className={[
         "relative shrink-0 w-[220px] overflow-hidden",
-        "bg-white cursor-pointer group",
+        "bg-[#D9D9D9] cursor-pointer group",
         className,
       ].join(" ")}
       aria-label={title}
@@ -27,7 +27,7 @@ export default function PosterCard({
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
     >
       {/* date label - positioned above poster */}
-      <div className="px0 py-1 text-[13px] font-bold text-black text-left">
+      <div className="px0 py-1 text-[16px] font-bold text-black text-left">
         {dateLabel}
       </div>
 
@@ -45,7 +45,7 @@ export default function PosterCard({
 
         {/* title caption at bottom with black border */}
         <div className="bg-white px-3 py-2 border-t-2 border-black">
-          <p className="text-[13px] font-medium text-black truncate leading-tight">
+          <p className="text-[14px] font-medium text-black truncate leading-tight">
             {title}
           </p>
         </div>

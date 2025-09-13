@@ -9,97 +9,44 @@ import EventCard from "@/components/EventCard"
 import SearchBar from "@/components/SearchBar"
 import Footer from "@/components/Footer"
 import CountdownTimer from "@/components/CountdownTimer"
+// ตัวอย่างในไฟล์ที่ประกาศ data
+import poster1 from "../assets/poster.png";
+import poster2 from "../assets/poster2.png";
+import poster3 from "../assets/poster3.png";
+import poster4 from "../assets/poster4.png";
+import poster5 from "../assets/poster5.png";
+import poster6 from "../assets/poster6.png";
+import poster7 from "../assets/poster7.png";
+import poster8 from "../assets/poster8.png";
 
-// Sample data for posters
-const posterData = [
-  {
-    dateLabel: "[2025.07.27]",
-    title: "VICTIM by INTROVE...",
-    imageUrl: "/dark-artistic-poster-with-geometric-shapes.jpg",
-  },
-  {
-    dateLabel: "[2025.07.27]",
-    title: "VICTIM by INTROVE...",
-    imageUrl: "/black-and-white-portrait-poster.jpg",
-  },
-  {
-    dateLabel: "[2025.07.27]",
-    title: "THE RIVER BROS",
-    imageUrl: "/yellow-and-black-concert-poster.jpg",
-  },
-  {
-    dateLabel: "[2025.07.27]",
-    title: "CREATIVE POSTER EXHIBITION",
-    imageUrl: "/creative-exhibition-poster-with-typography.jpg",
-  },
-  {
-    dateLabel: "[2025.07.27]",
-    title: "ROBERT BALTAZAR TRIO",
-    imageUrl: "/jazz-concert-poster-with-instruments.jpg",
-  },
-  {
-    dateLabel: "[2025.07.27]",
-    title: "VICTIM by INTROVE...",
-    imageUrl: "/blue-geometric-abstract-poster.jpg",
-  },
-  {
-    dateLabel: "[2025.07.27]",
-    title: "VICTIM by INTROVE...",
-    imageUrl: "/dark-minimalist-poster-design.jpg",
-  },
-]
+// ถ้าต้องการพิมพ์ชนิด
+type Poster = { dateLabel: string; title: string; imageUrl: string };
+type EventItem = { cover: string; dateRange: string; title: string; venue: string };
 
-// Sample data for events
-const eventData = [
-  {
-    cover: "/blue-geometric-concert-poster.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "ROBERT BALTAZAR TRIO THE CONCERT",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/dark-artistic-portrait-poster.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "ROBERT BALTAZAR TRIO THE CONCERT",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/yellow-and-black-music-poster.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "THE RIVER BROS",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/jazz-concert-poster-with-golden-theme.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "ROBERT BALTAZAR TRIO THE CONCERT",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/red-and-black-rave-party-poster.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "MIDNIGHT RAVE PARTY",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/green-minimalist-design-poster.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "THE SHAPE OF THINGS",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/dark-concert-poster-with-date.jpg",
-    dateRange: "26.10.24",
-    title: "THE ART HOUSE 4",
-    venue: "Paragon hall",
-  },
-  {
-    cover: "/pink-and-red-gradient-poster.jpg",
-    dateRange: "22 Mar - 30 Mar",
-    title: "IN RIVER DANCE",
-    venue: "Paragon hall",
-  },
-]
+const posters = [poster1, poster2, poster3, poster4, poster5, poster6, poster7, poster8];
+
+export const posterData: Poster[] = [
+  { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[0] },
+  { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[1] },
+  { dateLabel: "[2025.07.27]", title: "THE RIVER BROS", imageUrl: posters[2] },
+  { dateLabel: "[2025.07.27]", title: "CREATIVE POSTER EXHIBITION", imageUrl: posters[3] },
+  { dateLabel: "[2025.07.27]", title: "ROBERT BALTAZAR TRIO", imageUrl: posters[4] },
+  { dateLabel: "[2025.07.27]", title: "VICTIM by ...", imageUrl: posters[5] }, // แทน path C:\
+  { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[6] },
+  { dateLabel: "[2025.07.27]", title: "IN RIVER DANCE", imageUrl: posters[7] },
+];
+
+export const eventData: EventItem[] = [
+  { cover: posters[1], dateRange: "22 Mar - 30 Mar", title: "ROBERT BALTAZAR TRIO THE CONCERT", venue: "Paragon hall" },
+  { cover: posters[0], dateRange: "22 Mar - 30 Mar", title: "ROBERT BALTAZAR TRIO THE CONCERT", venue: "Paragon hall" },
+  { cover: posters[2], dateRange: "22 Mar - 30 Mar", title: "THE RIVER BROS", venue: "Paragon hall" },
+  { cover: posters[4], dateRange: "22 Mar - 30 Mar", title: "ROBERT BALTAZAR TRIO THE CONCERT", venue: "Paragon hall" },
+  { cover: posters[5], dateRange: "22 Mar - 30 Mar", title: "MIDNIGHT RAVE PARTY", venue: "Paragon hall" },
+  { cover: posters[6], dateRange: "22 Mar - 30 Mar", title: "THE SHAPE OF THINGS", venue: "Paragon hall" },
+  { cover: posters[3], dateRange: "26.10.24", title: "THE ART HOUSE 4", venue: "Paragon hall" },
+  { cover: posters[7], dateRange: "22 Mar - 30 Mar", title: "IN RIVER DANCE", venue: "Paragon hall" },
+];
+
 
 export default function HomePage() {
   const [heroFilter, setHeroFilter] = useState("ALL EVENT")
@@ -174,12 +121,12 @@ export default function HomePage() {
               </PrimaryButton>
               <OutlineButton onClick={navigateToLogin} className="px-8 py-3">
                 ORGANIZER
-              </OutlineButton> 
+              </OutlineButton>
             </div>
           </div>
 
           <div className="relative overflow-hidden py-5">
-            <div className="flex gap-4 animate-scroll-infinite" style={{margin: '20px 0'}}>
+            <div className="flex gap-4 animate-scroll-infinite" style={{ margin: '20px 0' }}>
               {/* First set of posters */}
               {posterData.map((poster, index) => (
                 <div key={`first-${index}`} className="flex-shrink-0 poster-container">
@@ -219,13 +166,15 @@ export default function HomePage() {
             <div className="grid md:grid-cols-2 gap-8 items-center">
               <div>
                 <img
-                  src="https://picsum.photos/400/500?random=20"
+                  src={poster1}
                   alt="Robert Baltazar Trio"
                   className="w-full max-w-md mx-auto rounded-lg"
                 />
               </div>
               <div>
-                <div className="text-sm text-gray-400 mb-2">2024.03.22</div>
+                <div className="text-[clamp(16px,3vw,20px)] font-bold text-white mb-2">
+                  2024.03.22
+                </div>
                 <h2 className="text-[clamp(28px,6vw,48px)] font-extrabold text-[#FA3A2B] mb-4">
                   ROBERT
                   <br />
@@ -246,11 +195,11 @@ export default function HomePage() {
         {/* Events Grid Section */}
         <section id="events-section" className="py-12 px-6">
           <div className="max-w-7xl mx-auto">
-            <h2 className="text-center text-[clamp(28px,6vw,54px)] font-extrabold text-black mb-8 leading-tight">
+            <h2 className="text-center text-[clamp(28px,6vw,80px)] font-extrabold text-black pb-8 pt-20 leading-tight">
               <span className="text-[#FA3A2B]">ALL</span> VIBE LONG <span className="text-[#FA3A2B]">STAGE</span> ON FIRE
             </h2>
 
-            <div className="flex flex-col md:flex-row gap-4 items-center justify-center mb-8">
+            <div className="flex flex-col md:flex-row gap-4 items-center justify-center mb-30">
               <SearchBar
                 value={searchQuery}
                 onChange={setSearchQuery}

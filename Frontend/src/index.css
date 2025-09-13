@@ -4,5 +4,58 @@
 @tailwind utilities;
 
 /* Optional: global tweaks */
-html, body, #root { height: 100%; }
-body { @apply bg-zinc-50 text-zinc-900; }
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    @apply bg-zinc-50 text-zinc-900;
+    --sb-track-color: #1d1d1d;
+    --sb-thumb-color: #fa3a2b;
+    --sb-size: 8px;
+    /* 4px บางมาก; 8px ใช้งานง่ายกว่า */
+}
+
+
+body::-webkit-scrollbar {
+    width: var(--sb-size);
+    height: var(--sb-size);
+}
+
+body::-webkit-scrollbar-track {
+    background: var(--sb-track-color);
+}
+
+body::-webkit-scrollbar-thumb {
+    background: var(--sb-thumb-color);
+    border-radius: 9999px;
+    /* ทำให้ดูบางลงและจับถนัด */
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+body::-webkit-scrollbar-thumb:hover {
+    background: #e13427;
+    /* โทนเข้มขึ้นเวลาโฮเวอร์ */
+}
+
+body::-webkit-scrollbar-thumb:active {
+    background: #c42d22;
+    /* กดค้าง */
+}
+
+/* กันเลย์เอาต์กระตุกเวลาแสดงสกอลบาร์ */
+html {
+    scrollbar-gutter: stable;
+}
+
+/* Firefox (ไม่รองรับ ::-webkit-scrollbar) */
+@supports not selector(::-webkit-scrollbar) {
+    body {
+        scrollbar-width: thin;
+        /* auto | thin | none */
+        scrollbar-color: var(--sb-thumb-color) var(--sb-track-color);
+    }
+}

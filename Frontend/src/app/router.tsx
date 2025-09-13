@@ -1,18 +1,21 @@
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
+// public pages
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
+import Forbidden from "@/pages/Forbidden";
+import Landding from "@/pages/Landding";
 
+// protected pages
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
 import Organizationmnge from "@/pages/Organizationmnge";
-import Forbidden from "@/pages/Forbidden";
 
-// Guards
+// guards
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
@@ -21,16 +24,15 @@ export const router = createBrowserRouter([
     path: "/",
     element: <RootLayout />,
     children: [
-      // public
-      { index: true, element: <Home /> },
+      // ---------- public ----------
+      { index: true, element: <Landding /> },   // หน้าแรกเป็น Landding
+      { path: "home", element: <Home /> },      // เผื่ออยากเข้าหน้า Home โดยตรง
       { path: "login", element: <Login /> },
       { path: "signin", element: <SignIn /> },
       { path: "component", element: <Component /> },
       { path: "forbidden", element: <Forbidden /> },
 
-      // ---------------------------
-      // 🔒 Auth-only group
-      // ---------------------------
+      // ---------- auth-only ----------
       {
         element: (
           <RequireAuth>
@@ -44,9 +46,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // ---------------------------
-      // 🛡️ Admin group (/admin/*)
-      // ---------------------------
+      // ---------- admin group (/admin/*) ----------
       {
         path: "admin",
         element: (
@@ -61,9 +61,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // ---------------------------
-      // 🛡️ Organizer group (/organize/*)
-      // ---------------------------
+      // ---------- organizer group (/organize/*) ----------
       {
         path: "organize",
         element: (
@@ -77,7 +75,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // catch-all
+      // ---------- catch-all ----------
       { path: "*", element: <NotFound /> },
     ],
   },

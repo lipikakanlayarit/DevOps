@@ -32,9 +32,9 @@ export default function Navbar() {
   // สีพื้นหลังตามบทบาท
   const getNavbarStyles = () => {
     if (role === "ADMIN" || role === "ORGANIZER") {
-      return "bg-zinc-800 text-white"; // Admin/Organizer → พื้นเข้ม
+      return "bg-zinc-800 backdrop-blur-sm  text-white"; // Admin/Organizer → พื้นเข้ม
     }
-    return "bg-[#DBDBDB] backdrop-blur-sm text-gray-900";
+    return "bg-[#DBDBDB]/95 backdrop-blur-md border-b border-black/5 text-gray-900";
   };
 
   const brandSub =
