@@ -13,25 +13,21 @@ import Landding from "@/pages/Landding";
 // protected pages
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
-
-
 import Eventdetail from "@/pages/Eventdetail";
 import Ticketdetail from "@/pages/Ticketdetail";
-import Eventdashboard from "@/pages/Eventdashboard";
-
+import EventDashboard from "@/pages/Eventdashboard";
 import Organizationmnge from "@/pages/Organizationmnge";
 
 // guards
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
-
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
     children: [
-      // ---------- public ----------
+      // public
       { index: true, element: <Landding /> },
       { path: "home", element: <Home /> },
       { path: "login", element: <Login /> },
@@ -39,7 +35,7 @@ export const router = createBrowserRouter([
       { path: "component", element: <Component /> },
       { path: "forbidden", element: <Forbidden /> },
 
-      // ---------- auth-only (ต้องล็อกอิน) ----------
+      // auth-only
       {
         element: (
           <RequireAuth>
@@ -49,22 +45,23 @@ export const router = createBrowserRouter([
         children: [
           { path: "profile", element: <Profile /> },
           { path: "eventselect", element: <Eventselect /> },
-          // บังคับให้ /organization ต้องเป็น ORGANIZER เท่านั้น
-          {
-            path: "organization",
-            element: (
-              <RequireRole roles={["ORGANIZER"]}>
-                <Organizationmnge />
-              </RequireRole>
-            ),
-          },
           { path: "eventdetail", element: <Eventdetail /> },
           { path: "ticketdetail", element: <Ticketdetail /> },
-          { path: "eventdashboard", element: <Eventdashboard /> },
+          { path: "eventdashboard", element: <EventDashboard /> },
         ],
       },
 
-      // ---------- admin group (/admin/*) ----------
+      // organizer/admin only: direct wrapped route
+      {
+        path: "organizationmnge",
+        element: (
+          <RequireRole roles={["ORGANIZER", "ADMIN"]}>
+            <Organizationmnge />
+          </RequireRole>
+        ),
+      },
+
+      // admin group
       {
         path: "admin",
         element: (
@@ -79,8 +76,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // ---------- organizer group (ถ้าจะใช้ prefix แบบกลุ่ม) ----------
-      // ถ้าต้องการเส้นทางแบบ /organize/* ก็เพิ่มไว้ได้เช่นกัน
+      // organizer group
       {
         path: "organize",
         element: (
@@ -94,7 +90,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // ---------- catch-all ----------
+      // catch-all
       { path: "*", element: <NotFound /> },
     ],
   },

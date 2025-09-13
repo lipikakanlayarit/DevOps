@@ -1,10 +1,8 @@
-// src/components/Navbar.tsx
 import { Link, NavLink } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/features/auth/AuthContext";
 
-// ─────────────────────────────────────────────────────────
-// Brand
+// ── Brand ────────────────────────────────────────────────
 function Brand({ sub }: { sub?: string }) {
   return (
     <div className="select-none flex items-baseline">
@@ -18,8 +16,7 @@ function Brand({ sub }: { sub?: string }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// Dropdown / AccountPill
+// ── Dropdown / AccountPill ──────────────────────────────
 type MenuItem =
   | { label: string; to: string; onClick?: undefined }
   | { label: string; to?: undefined; onClick: () => void };
@@ -38,7 +35,6 @@ function AccountPill({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  // ปิดเมื่อคลิกนอก
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -52,7 +48,6 @@ function AccountPill({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // คีย์บอร์ด
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
     if (e.key === "Escape") {
@@ -144,8 +139,7 @@ function AccountPill({
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// Navbar
+// ── Navbar ───────────────────────────────────────────────
 export default function Navbar() {
   const { state, logout } = useAuth();
   const role = state.user?.role ?? "GUEST";
@@ -161,13 +155,11 @@ export default function Navbar() {
   const brandSub =
     role === "ADMIN" ? "ADMIN" : role === "ORGANIZER" ? "ORGANIZER" : undefined;
 
-  // เมนูของแต่ละบทบาท
   const userMenu: MenuItem[] = [
     { label: "View Profile", to: "/profile" },
     { label: "Log out", onClick: logout },
   ];
 
-  // เปลี่ยนชื่อเป็น "Organization" และ route ไป /organizationmnge
   const organizerMenu: MenuItem[] = [
     { label: "Organization", to: "/organizationmnge" },
     { label: "Log out", onClick: logout },
@@ -183,15 +175,12 @@ export default function Navbar() {
           {role === "ADMIN" || role === "ORGANIZER" ? (
             <>
               <div className="pl-4">
-                <Link to="/">
-                  <Brand sub={brandSub} />
-                </Link>
+                <Link to="/"><Brand sub={brandSub} /></Link>
               </div>
               <div className="pr-4">
                 <AccountPill
-                  username={state.user!.username}
+                  username={state.user?.username ?? "guest"}
                   items={accountMenu}
-                  // บังคับให้ข้อความเมนูเป็นสี #1d1d1d สำหรับ Organizer/ADMIN
                   menuTextClass="text-[#1d1d1d]"
                 />
               </div>
@@ -200,13 +189,11 @@ export default function Navbar() {
             <>
               <div className="flex-1" />
               <div className="flex-1 flex justify-center">
-                <Link to="/">
-                  <Brand />
-                </Link>
+                <Link to="/"><Brand /></Link>
               </div>
               <div className="flex-1 flex justify-end pr-4">
                 <AccountPill
-                  username={state.user!.username}
+                  username={state.user?.username ?? "guest"}
                   items={accountMenu}
                 />
               </div>
@@ -215,24 +202,12 @@ export default function Navbar() {
             <>
               <div className="flex-1" />
               <div className="flex-1 flex justify-center">
-                <Link to="/">
-                  <Brand />
-                </Link>
+                <Link to="/"><Brand /></Link>
               </div>
               <div className="flex-1 flex justify-end items-center gap-3 pr-4">
-                <NavLink
-                  to="/login"
-                  className="text-sm hover:underline text-gray-700"
-                >
-                  Log in
-                </NavLink>
+                <NavLink to="/login" className="text-sm hover:underline text-gray-700">Log in</NavLink>
                 <span className="opacity-50 text-gray-500">|</span>
-                <NavLink
-                  to="/signin"
-                  className="text-sm hover:underline text-gray-700"
-                >
-                  Sign in
-                </NavLink>
+                <NavLink to="/signin" className="text-sm hover:underline text-gray-700">Sign in</NavLink>
               </div>
             </>
           )}

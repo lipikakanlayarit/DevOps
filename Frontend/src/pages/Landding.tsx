@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useNavigate } from "react-router-dom";
 import PosterCard from "@/components/PosterCard"
 import CategoryRadio from "@/components/CategoryRadio"
@@ -28,14 +28,13 @@ type EventItem = { cover: string; dateRange: string; title: string; venue: strin
 
 const posters = [poster1, poster2, poster3, poster4, poster5, poster6, poster7, poster8];
 
-
 export const posterData: Poster[] = [
   { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[0] },
   { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[1] },
   { dateLabel: "[2025.07.27]", title: "THE RIVER BROS", imageUrl: posters[2] },
   { dateLabel: "[2025.07.27]", title: "CREATIVE POSTER EXHIBITION", imageUrl: posters[3] },
   { dateLabel: "[2025.07.27]", title: "ROBERT BALTAZAR TRIO", imageUrl: posters[4] },
-  { dateLabel: "[2025.07.27]", title: "VICTIM by ...", imageUrl: posters[5] }, // แทน path C:\
+  { dateLabel: "[2025.07.27]", title: "VICTIM by ...", imageUrl: posters[5] },
   { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[6] },
   { dateLabel: "[2025.07.27]", title: "IN RIVER DANCE", imageUrl: posters[7] },
 ];
@@ -51,13 +50,16 @@ export const eventData: EventItem[] = [
   { cover: posters[7], dateRange: "22 Mar - 30 Mar", title: "IN RIVER DANCE", venue: "Paragon hall" },
 ];
 
-
 export default function HomePage() {
   const [heroFilter, setHeroFilter] = useState("ALL EVENT")
   const [searchQuery, setSearchQuery] = useState("")
   const [eventFilter, setEventFilter] = useState("All")
-
-   const navigate = useNavigate();
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 })
+  const [isAnimationPaused, setIsAnimationPaused] = useState(false)
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate();
 
   // Target date for countdown (10 days from now)
   const targetDate = new Date()
@@ -87,6 +89,94 @@ export default function HomePage() {
     { label: "Exhibition", value: "Exhibition" },
   ]
 
+  // Drag functionality
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollContainerRef.current) return
+    
+    setIsDragging(true)
+    setIsAnimationPaused(true)
+    setDragStart({
+      x: e.pageX,
+      scrollLeft: scrollContainerRef.current.scrollLeft
+    })
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !scrollContainerRef.current) return
+    
+    e.preventDefault()
+    const x = e.pageX
+    const walk = (x - dragStart.x) * 2 // Multiply by 2 for faster scrolling
+    scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - walk
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+    // Resume animation after a short delay
+    setTimeout(() => setIsAnimationPaused(false), 1000)
+  }
+
+  const handleMouseLeave = () => {
+    setIsDragging(false)
+    setTimeout(() => setIsAnimationPaused(false), 1000)
+  }
+
+  // Touch events for mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!scrollContainerRef.current) return
+    
+    setIsDragging(true)
+    setIsAnimationPaused(true)
+    setDragStart({
+      x: e.touches[0].clientX,
+      scrollLeft: scrollContainerRef.current.scrollLeft
+    })
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || !scrollContainerRef.current) return
+    
+    const x = e.touches[0].clientX
+    const walk = (x - dragStart.x) * 2
+    scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - walk
+  }
+
+  const handleTouchEnd = () => {
+    setIsDragging(false)
+    setTimeout(() => setIsAnimationPaused(false), 1000)
+  }
+
+  // Handle infinite scroll reset
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!scrollContainerRef.current) return
+      
+      const container = scrollContainerRef.current
+      const scrollWidth = container.scrollWidth
+      const clientWidth = container.clientWidth
+      const scrollLeft = container.scrollLeft
+      
+      // Reset to beginning if scrolled too far right
+      if (scrollLeft >= scrollWidth / 2) {
+        container.scrollLeft = 0
+      }
+      
+      // Reset to end if scrolled too far left
+      if (scrollLeft <= 0) {
+        container.scrollLeft = scrollWidth / 2
+      }
+    }
+
+    const container = scrollContainerRef.current
+    if (container) {
+      container.addEventListener('scroll', handleScroll)
+      // Set initial scroll position to middle
+      container.scrollLeft = container.scrollWidth / 4
+      
+      return () => container.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
   return (
     <>
       {/* Add the CSS styles for infinite scroll animation */}
@@ -104,12 +194,32 @@ export default function HomePage() {
           animation: scroll-infinite 30s linear infinite;
         }
 
-        .animate-scroll-infinite:hover {
+        .animate-scroll-infinite.paused {
           animation-play-state: paused;
         }
 
         .poster-container {
           padding: 15px 10px;
+          user-select: none;
+        }
+
+        .draggable-container {
+          cursor: grab;
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+
+        .draggable-container::-webkit-scrollbar {
+          display: none;
+        }
+
+        .draggable-container.dragging {
+          cursor: grabbing;
+        }
+
+        .draggable-container.dragging * {
+          pointer-events: none;
         }
       `}</style>
 
@@ -132,33 +242,59 @@ export default function HomePage() {
           </div>
 
           <div className="relative overflow-hidden py-5">
-            <div className="flex gap-4 animate-scroll-infinite" style={{ margin: '20px 0' }}>
-              {/* First set of posters */}
-              {posterData.map((poster, index) => (
-                <div key={`first-${index}`} className="flex-shrink-0 poster-container">
-                  <div className="transition-transform duration-300 hover:scale-115">
-                    <PosterCard
-                      dateLabel={poster.dateLabel}
-                      title={poster.title}
-                      imageUrl={poster.imageUrl}
-                      onClick={() => navigate("/eventselect")}
-                    />
+            <div 
+              ref={scrollContainerRef}
+              className={`draggable-container ${isDragging ? 'dragging' : ''}`}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseLeave}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ margin: '20px 0' }}
+            >
+              <div className={`flex gap-4 ${isAnimationPaused ? 'animate-scroll-infinite paused' : 'animate-scroll-infinite'}`}>
+                {/* First set of posters */}
+                {posterData.map((poster, index) => (
+                  <div key={`first-${index}`} className="flex-shrink-0 poster-container">
+                    <div className="transition-transform duration-300 hover:scale-115">
+                      <PosterCard
+                        dateLabel={poster.dateLabel}
+                        title={poster.title}
+                        imageUrl={poster.imageUrl}
+                        onClick={() => !isDragging && navigate("/eventselect")}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
-              {/* Duplicate set for infinite scroll */}
-              {posterData.map((poster, index) => (
-                <div key={`second-${index}`} className="flex-shrink-0 poster-container">
-                  <div className="transition-transform duration-300 hover:scale-115">
-                    <PosterCard
-                      dateLabel={poster.dateLabel}
-                      title={poster.title}
-                      imageUrl={poster.imageUrl}
-                      onClick={() => console.log(`Clicked poster: ${poster.title}`)}
-                    />
+                ))}
+                {/* Duplicate set for infinite scroll */}
+                {posterData.map((poster, index) => (
+                  <div key={`second-${index}`} className="flex-shrink-0 poster-container">
+                    <div className="transition-transform duration-300 hover:scale-115">
+                      <PosterCard
+                        dateLabel={poster.dateLabel}
+                        title={poster.title}
+                        imageUrl={poster.imageUrl}
+                        onClick={() => !isDragging && console.log(`Clicked poster: ${poster.title}`)}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+                {/* Third set for smoother infinite scroll */}
+                {posterData.map((poster, index) => (
+                  <div key={`third-${index}`} className="flex-shrink-0 poster-container">
+                    <div className="transition-transform duration-300 hover:scale-115">
+                      <PosterCard
+                        dateLabel={poster.dateLabel}
+                        title={poster.title}
+                        imageUrl={poster.imageUrl}
+                        onClick={() => !isDragging && console.log(`Clicked poster: ${poster.title}`)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
