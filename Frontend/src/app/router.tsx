@@ -32,14 +32,14 @@ export const router = createBrowserRouter([
     element: <RootLayout />,
     children: [
       // ---------- public ----------
-      { index: true, element: <Landding /> },   // หน้าแรกเป็น Landding
-      { path: "home", element: <Home /> },      // เผื่ออยากเข้าหน้า Home โดยตรง
+      { index: true, element: <Landding /> },
+      { path: "home", element: <Home /> },
       { path: "login", element: <Login /> },
       { path: "signin", element: <SignIn /> },
       { path: "component", element: <Component /> },
       { path: "forbidden", element: <Forbidden /> },
 
-      // ---------- auth-only ----------
+      // ---------- auth-only (ต้องล็อกอิน) ----------
       {
         element: (
           <RequireAuth>
@@ -49,19 +49,20 @@ export const router = createBrowserRouter([
         children: [
           { path: "profile", element: <Profile /> },
           { path: "eventselect", element: <Eventselect /> },
-          { path: "organization", element: <Organizationmnge /> },
+          // บังคับให้ /organization ต้องเป็น ORGANIZER เท่านั้น
+          {
+            path: "organization",
+            element: (
+              <RequireRole roles={["ORGANIZER"]}>
+                <Organizationmnge />
+              </RequireRole>
+            ),
+          },
+          { path: "eventdetail", element: <Eventdetail /> },
+          { path: "ticketdetail", element: <Ticketdetail /> },
+          { path: "eventdashboard", element: <Eventdashboard /> },
         ],
       },
-
-
-      // ✅ ใช้ Component หน้านี้ และใช้ path เป็นตัวพิมพ์เล็ก
-      { path: "component", element: <Component /> },
-      { path: "eventselect", element: <Eventselect /> },
-      { path: "organization", element: <Organizationmnge /> },
-      { path: "eventdetail", element: <Eventdetail /> },
-      { path: "ticketdetail", element: <Ticketdetail /> },
-      { path: "eventdashboard", element: <Eventdashboard /> },
-      // เส้นทางสำคัญ: หน้าจัดการ 404
 
       // ---------- admin group (/admin/*) ----------
       {
@@ -78,7 +79,8 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // ---------- organizer group (/organize/*) ----------
+      // ---------- organizer group (ถ้าจะใช้ prefix แบบกลุ่ม) ----------
+      // ถ้าต้องการเส้นทางแบบ /organize/* ก็เพิ่มไว้ได้เช่นกัน
       {
         path: "organize",
         element: (
@@ -91,7 +93,6 @@ export const router = createBrowserRouter([
           { path: "manage", element: <div>Organizer Manage</div> },
         ],
       },
-
 
       // ---------- catch-all ----------
       { path: "*", element: <NotFound /> },
