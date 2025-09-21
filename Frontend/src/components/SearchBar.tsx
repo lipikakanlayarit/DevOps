@@ -19,7 +19,7 @@ export default function SearchBar({
 }: SearchBarProps) {
   return (
     <div
-      className={`flex items-center border-2 border-black rounded-full px-4 bg-[#DBDBDB] ${width} ${height} ${className}`}
+      className={`flex items-center border-2 border-black rounded-full px-4  ${width} ${height} ${className}`}
     >
       <input
         type="text"

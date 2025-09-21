@@ -17,6 +17,9 @@ import Eventdetail from "@/pages/Eventdetail";
 import Ticketdetail from "@/pages/Ticketdetail";
 import EventDashboard from "@/pages/Eventdashboard";
 import Organizationmnge from "@/pages/Organizationmnge";
+import Admin from "@/pages/admin";
+import AdminEventdetail from "@/pages/admin-eventdetail";
+import EventPermission from "@/pages/admin-permission";
 
 // guards
 import RequireAuth from "@/features/auth/RequireAuth";
@@ -70,9 +73,12 @@ export const router = createBrowserRouter([
           </RequireRole>
         ),
         children: [
-          { index: true, element: <div>Admin Dashboard</div> },
+          { index: true, element: <Admin /> }, // ⬅️ render your admin.tsx at /admin
           { path: "users", element: <div>Admin Users</div> },
           { path: "settings", element: <div>Admin Settings</div> },
+          { path: "eventdetail", element: <AdminEventdetail /> },
+          { path: "permissions", element: <EventPermission /> },
+
         ],
       },
 

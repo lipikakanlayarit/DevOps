@@ -1,10 +1,11 @@
 // src/features/auth/types.ts
-export type Role = "USER" | "ADMIN" | "ORGANIZER";
+export type Role = "ADMIN" | "ORGANIZER" | "USER" | "GUEST";
 
 export type User = {
   id: string;
   username: string;
   role: Role;
+  avatarUrl?: string; 
 };
 
 export type AuthState =

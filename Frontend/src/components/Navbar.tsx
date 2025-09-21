@@ -1,3 +1,4 @@
+// src/components/Navbar.tsx
 import { Link, NavLink } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -16,25 +17,35 @@ function Brand({ sub }: { sub?: string }) {
   );
 }
 
-// ── Dropdown / AccountPill ──────────────────────────────
+// ── Types ────────────────────────────────────────────────
 type MenuItem =
   | { label: string; to: string; onClick?: undefined }
   | { label: string; to?: undefined; onClick: () => void };
 
+// ── Dropdown / AccountPill ──────────────────────────────
 function AccountPill({
   username,
   items,
   menuTextClass = "text-gray-900",
+  avatarUrl,
+  avatarAlt = `${username}'s avatar`,
 }: {
   username: string;
   items: MenuItem[];
   menuTextClass?: string;
+  avatarUrl?: string;
+  avatarAlt?: string;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
+  // สำหรับ fallback ถ้ารูปโหลดไม่ติด
+  const [imgError, setImgError] = useState(false);
+  const initials = (username?.trim()?.[0] ?? "?").toUpperCase();
+
+  // ปิดเมื่อคลิกนอก
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -48,6 +59,7 @@ function AccountPill({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // คีย์บอร์ด
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!open) return;
     if (e.key === "Escape") {
@@ -83,7 +95,21 @@ function AccountPill({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="inline-block w-2 h-2 rounded-full bg-gray-400" />
+        {/* Avatar / Fallback */}
+        {avatarUrl && !imgError ? (
+          <img
+            src={avatarUrl}
+            alt={avatarAlt}
+            className="w-6 h-6 rounded-full object-cover bg-gray-200"
+            onError={() => setImgError(true)}
+            draggable={false}
+          />
+        ) : (
+          <div className="w-6 h-6 rounded-full bg-gray-300 grid place-items-center text-xs font-semibold text-gray-700 select-none">
+            {initials}
+          </div>
+        )}
+
         <span className="text-sm">@{username}</span>
         <span className="text-xs">▾</span>
       </button>
@@ -96,8 +122,7 @@ function AccountPill({
         >
           <ul className="py-1">
             {items.map((item, idx) => {
-              const base =
-                `block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 outline-none ${menuTextClass}`;
+              const base = `block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 outline-none ${menuTextClass}`;
               const active = idx === activeIndex ? "bg-gray-50" : "";
               if ("to" in item && item.to) {
                 return (
@@ -121,7 +146,7 @@ function AccountPill({
                     className={`${base} ${active}`}
                     onMouseEnter={() => setActiveIndex(idx)}
                     onClick={() => {
-                      item.onClick();
+                      item.onClick?.();
                       setOpen(false);
                     }}
                     role="menuitem"
@@ -155,6 +180,7 @@ export default function Navbar() {
   const brandSub =
     role === "ADMIN" ? "ADMIN" : role === "ORGANIZER" ? "ORGANIZER" : undefined;
 
+  // เมนูของแต่ละบทบาท
   const userMenu: MenuItem[] = [
     { label: "View Profile", to: "/profile" },
     { label: "Log out", onClick: logout },
@@ -165,23 +191,33 @@ export default function Navbar() {
     { label: "Log out", onClick: logout },
   ];
 
+  // ✅ Admin sees "Event management" + "Log out"
+  const adminMenu: MenuItem[] = [
+    { label: "Event management", to: "/admin" },
+    { label: "Log out", onClick: logout },
+  ];
+
   const accountMenu =
-    role === "ADMIN" || role === "ORGANIZER" ? organizerMenu : userMenu;
+    role === "ADMIN" ? adminMenu : role === "ORGANIZER" ? organizerMenu : userMenu;
 
   return (
-    <header className={`sticky top-0 z-40 ${getNavbarStyles()}`}>
+    <header className={`fixed top-0 left-0 right-0 z-40 ${getNavbarStyles()}`}>
       <div className="w-full">
         <div className="h-[60px] flex items-center justify-between">
           {role === "ADMIN" || role === "ORGANIZER" ? (
             <>
               <div className="pl-4">
-                <Link to="/"><Brand sub={brandSub} /></Link>
+                <Link to="/">
+                  <Brand sub={brandSub} />
+                </Link>
               </div>
               <div className="pr-4">
                 <AccountPill
                   username={state.user?.username ?? "guest"}
                   items={accountMenu}
                   menuTextClass="text-[#1d1d1d]"
+                  avatarUrl={state.user?.avatarUrl}
+                  avatarAlt={state.user?.username ?? "guest"}
                 />
               </div>
             </>
@@ -189,12 +225,16 @@ export default function Navbar() {
             <>
               <div className="flex-1" />
               <div className="flex-1 flex justify-center">
-                <Link to="/"><Brand /></Link>
+                <Link to="/">
+                  <Brand />
+                </Link>
               </div>
               <div className="flex-1 flex justify-end pr-4">
                 <AccountPill
                   username={state.user?.username ?? "guest"}
                   items={accountMenu}
+                  avatarUrl={state.user?.avatarUrl}
+                  avatarAlt={state.user?.username ?? "guest"}
                 />
               </div>
             </>
@@ -202,12 +242,24 @@ export default function Navbar() {
             <>
               <div className="flex-1" />
               <div className="flex-1 flex justify-center">
-                <Link to="/"><Brand /></Link>
+                <Link to="/">
+                  <Brand />
+                </Link>
               </div>
               <div className="flex-1 flex justify-end items-center gap-3 pr-4">
-                <NavLink to="/login" className="text-sm hover:underline text-gray-700">Log in</NavLink>
+                <NavLink
+                  to="/login"
+                  className="text-sm hover:underline text-gray-700"
+                >
+                  Log in
+                </NavLink>
                 <span className="opacity-50 text-gray-500">|</span>
-                <NavLink to="/signin" className="text-sm hover:underline text-gray-700">Sign in</NavLink>
+                <NavLink
+                  to="/signin"
+                  className="text-sm hover:underline text-gray-700"
+                >
+                  Sign in
+                </NavLink>
               </div>
             </>
           )}
