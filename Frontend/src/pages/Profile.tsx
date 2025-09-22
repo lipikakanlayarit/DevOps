@@ -1,10 +1,8 @@
 // Home.tsx 
 import React, { useState } from "react";
-import CategoryRadio from "@/components/CategoryRadio";
-import OrderToggle from "@/components/OrderToggle";
-import SearchBar from "@/components/SearchBar";
-import EventCard from "@/components/EventCard";
 import TicketCard from "@/components/TicketCard";
+import EventCard from "@/components/EventCard";
+import EventToolbar from "@/components/EventToolbar"; // ✅ ใช้ Toolbar ใหม่
 
 // ---------------- ProfileCard ----------------
 function ProfileCard({ onOpenEdit }: { onOpenEdit: () => void }) {
@@ -95,7 +93,7 @@ function TicketPopup({ ticket, onClose }: { ticket: any; onClose: () => void }) 
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-      <div className="w-[780px] max-w-full border-4 border-black bg-white overflow-hidden text-black shadow-lg relative">
+      <div className="w-[780px] max-w-full  bg-white overflow-hidden text-black shadow-lg relative">
         {/* ปุ่มปิด X */}
         <button
           onClick={onClose}
@@ -247,59 +245,47 @@ export default function Home() {
   return (
     <div className="flex p-6 gap-10 bg-gray-100 min-h-screen">
       {/* Sidebar */}
-      <ProfileCard onOpenEdit={() => setShowEdit(true)} />
+      <div className="ml-6 mr-5">
+        <ProfileCard onOpenEdit={() => setShowEdit(true)} />
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Title + Filter + Order + Search */}
-        <div className="flex justify-between items-start mb-6">
+        {/* Title + Toolbar */}
+        <div className="flex justify-between items-center mb-6 w-full">
           {/* Title */}
-          <h1 className="text-4xl font-extrabold">My Ticket</h1>
+          <h1 className="text-5xl font-extrabold">My Ticket</h1>
 
-          {/* ฝั่งขวา */}
-          <div className="flex flex-col items-end gap-4">
-            {/* CategoryRadio */}
-            <CategoryRadio
-              options={[
+          {/* Toolbar */}
+          <div className="w-fit">
+            <EventToolbar
+              categories={[
                 { label: "All", value: "all" },
                 { label: "Concert", value: "concert" },
                 { label: "Seminar", value: "seminar" },
                 { label: "Exhibition", value: "exhibition" },
               ]}
-              value={category}
-              onChange={setCategory}
+              category={category}
+              onCategoryChange={setCategory}
+              order={order}
+              onOrderChange={setOrder}
+              search={query}
+              onSearchChange={setQuery}
             />
-
-            {/* Order + Search */}
-            <div className="flex items-center gap-4">
-              <OrderToggle value={order} onChange={setOrder} />
-              <SearchBar
-                value={query}
-                onChange={setQuery}
-                width="w-80"
-                height="h-10"
-                placeholder="Search events..."
-              />
-            </div>
           </div>
         </div>
 
         {/* EventCards */}
-        <div className="grid grid-cols-4 gap-5">
-          {filteredTickets.map((ticket, idx) => (
-            <div
-              key={idx}
-              className="cursor-pointer hover:scale-105 transition-transform"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+          {filteredTickets.map((ticket) => (
+            <EventCard
+              key={ticket.reserveId}
+              cover={ticket.poster}
+              dateRange={ticket.showDate}
+              title={ticket.title}
+              venue={ticket.venue}
               onClick={() => setSelectedTicket(ticket)}
-            >
-              <EventCard
-                className="w-full h-110"
-                cover={ticket.poster}
-                dateRange={ticket.showDate}
-                title={ticket.title}
-                venue={ticket.venue}
-              />
-            </div>
+            />
           ))}
         </div>
       </div>

@@ -1,8 +1,8 @@
 export type EventCardProps = {
-  cover: string;        // URL โปสเตอร์
-  dateRange: string;    // "22 Mar - 30 Mar"
-  title: string;        // "ROBERT BALTAZAR TRIO THE CONCERT"
-  venue: string;        // "Paragon hall"
+  cover: string;
+  dateRange: string;
+  title: string;
+  venue: string;
   className?: string;
   onClick?: () => void;
 };
@@ -22,13 +22,14 @@ export default function EventCard({
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
       className={[
-        // ขนาดใกล้เคียงภาพตัวอย่าง
-        "w-[300px] rounded-md overflow-hidden border-2 border-neutral-700 bg-white",
-        "shadow-sm hover:shadow-md transition-shadow cursor-pointer",
+        "w-[220px] overflow-hidden border-2 border-neutral-700 bg-white",
+        "shadow hover:shadow-md transition-shadow cursor-pointer",
+        // 👇 hover ขยายขึ้นเล็กน้อย
+        "transform-gpu transition-transform duration-200 hover:scale-[1.03] will-change-transform",
         className,
       ].join(" ")}
     >
-      {/* โปสเตอร์ */}
+      {/* Poster */}
       <img
         src={cover}
         alt={title}
@@ -36,17 +37,13 @@ export default function EventCard({
         draggable={false}
       />
 
-      {/* ส่วนข้อมูล */}
-      <div className="p-4">
-        <div className="text-[#FA3A2B] font-extrabold mb-1">
-          {dateRange}
-        </div>
-
-        <h3 className="text-[17px] leading-tight font-extrabold uppercase text-black">
+      {/* Info */}
+      <div className="p-3">
+        <div className="text-[#FA3A2B] font-bold text-xs mb-1">{dateRange}</div>
+        <h3 className="text-sm leading-snug font-bold uppercase text-black line-clamp-2">
           {title}
         </h3>
-
-        <p className="text-[15px] text-neutral-600 mt-3">{venue}</p>
+        <p className="text-xs text-neutral-600 mt-2">{venue}</p>
       </div>
     </article>
   );

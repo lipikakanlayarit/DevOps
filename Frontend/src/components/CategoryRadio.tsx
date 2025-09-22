@@ -17,7 +17,7 @@ export default function CategoryRadio({
   onChange,
 }: CategoryRadioProps) {
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2 justify-end w-fit">
       {options.map((opt) => {
         const isActive = opt.value === value;
         return (
@@ -25,7 +25,9 @@ export default function CategoryRadio({
             key={opt.value}
             onClick={() => onChange(opt.value)}
             className={[
-              "px-4 py-2 rounded-full font-bold text-sm transition-colors",
+              // ลด padding จาก px-4 py-2 → px-3 py-1.5
+              // ลด font-size จาก text-sm → text-xs
+              "px-3 py-1.5 rounded-full font-bold text-xs transition-colors",
               isActive
                 ? "bg-[#FA3A2B] text-white"
                 : "bg-[#1D1D1D] text-white hover:bg-[#333]",
