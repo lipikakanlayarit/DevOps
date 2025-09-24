@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: frontend-dev
+    ports:
+      - "5173:5173"
+    environment:
+      # บน Windows ให้เปิด polling เพื่อให้ HMR ติดเสมอ
+      CHOKIDAR_USEPOLLING: "true"
+      # Vite ต้อง --host แล้วใน command; ตัวนี้ไม่จำเป็นแต่เผื่อใช้
+      HOST: "0.0.0.0"
+    volumes:
+      - .:/app            # โค้ดบนเครื่อง -> container (hot-reload)
+      - /app/node_modules # ใช้ node_modules ใน container ไม่ทับของ host
+    command: ["npm", "run", "dev", "--", "--host"]
