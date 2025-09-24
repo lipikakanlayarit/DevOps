@@ -1,0 +1,51 @@
+# DevOps/docker-compose.yml (ตัวอย่างที่ใช้ backend+db+frontend)
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    restart: always
+    environment:
+      POSTGRES_DB: devopsdb
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d devopsdb || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: spring-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/devopsdb
+      SPRING_DATASOURCE_USERNAME: devuser
+      SPRING_DATASOURCE_PASSWORD: devpass
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["8080:8080"]
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile.dev   # ถ้าอยาก HMR ให้ใช้ .dev; โปรดักชันใช้ Dockerfile ปกติ
+    container_name: frontend-dev
+    depends_on: ["backend"]
+    ports: ["5173:5173"]
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./Frontend:/app
+      - /app/node_modules
+    command: ["npm","run","dev","--","--host"]
+
+volumes:
+  db_data:
