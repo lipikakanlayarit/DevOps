@@ -1,4 +1,5 @@
-# DevOps/docker-compose.yml (ตัวอย่างที่ใช้ backend+db+frontend)
+version: '3.8'
+
 services:
   db:
     image: postgres:16-alpine
@@ -45,7 +46,22 @@ services:
     volumes:
       - ./Frontend:/app
       - /app/node_modules
-    command: ["npm","run","dev","--","--host"]
+    command: ["npm", "run", "dev", "--", "--host"]
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "8081:80"
+    depends_on:
+      - db
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
 
 volumes:
   db_data:
+  pgadmin_data:
