@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
@@ -28,6 +26,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/devopsdb
       SPRING_DATASOURCE_USERNAME: devuser
       SPRING_DATASOURCE_PASSWORD: devpass
+       # --- JWT (ต้องยาว >= 32 bytes สำหรับ HS256; แนะนำ 64 bytes ขึ้นไป) ---
+      APP_JWT_SECRET: "uFrd1bQp5p9Hn3e3yM3jH0wH6b9Qh2b/8Qy6rH8cJz3pT2g7C1q9m3t4X6y8a1b2c3d4e5f6g7h8i9j0k1l2m3==" 
+      APP_JWT_EXPIRATION: "3600"  # วินาที
     depends_on:
       db:
         condition: service_healthy
