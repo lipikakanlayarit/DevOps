@@ -2,10 +2,19 @@
 -- Sample seed data
 
 -- USERS
-INSERT INTO users (email, password_hash, first_name, last_name, phone_number, id_card_passport, username)
+INSERT INTO users (
+  email,
+  password_hash,
+  first_name,
+  last_name,
+  phone_number,
+  id_card_passport,
+  username
+)
 VALUES
- ('alice@example.com', 'hash_alice', 'Alice', 'Wong', '0812345678', '1234567890123', 'alice123') ON CONFLICT DO NOTHING,
- ('bob@example.com',   'hash_bob',   'Bob',   'Tan',  '0823456789', '9876543210123', 'bob456') ON CONFLICT DO NOTHING;
+  ('alice@example.com', 'hash_alice', 'Alice', 'Wong', '0812345678', '1234567890123', 'alice123'),
+  ('bob@example.com',   'hash_bob',   'Bob',   'Tan',  '0823456789', '9876543210123', 'bob456')
+ON CONFLICT (email) DO NOTHING;
 
 -- ORGANIZERS
 INSERT INTO organizers (email, password_hash, first_name, last_name, phone_number, address, company_name, tax_id, verification_status)

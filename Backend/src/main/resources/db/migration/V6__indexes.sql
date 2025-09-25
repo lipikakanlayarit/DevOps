@@ -9,4 +9,4 @@ USING GIN (to_tsvector('simple', coalesce(event_name,'') || ' ' || coalesce(desc
 -- Convenience partial index for active locks
 CREATE INDEX IF NOT EXISTS idx_seat_locks_active
 ON seat_locks (seat_id)
-WHERE status = 'HELD' AND expires_at > CURRENT_TIMESTAMP;
+WHERE status = 'HELD'
