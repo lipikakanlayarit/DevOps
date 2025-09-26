@@ -41,11 +41,10 @@ function AccountPill({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  // สำหรับ fallback ถ้ารูปโหลดไม่ติด
   const [imgError, setImgError] = useState(false);
   const initials = (username?.trim()?.[0] ?? "?").toUpperCase();
 
-  // ปิดเมื่อคลิกนอก
+  // ปิด dropdown เมื่อคลิกนอก
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -95,7 +94,6 @@ function AccountPill({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        {/* Avatar / Fallback */}
         {avatarUrl && !imgError ? (
           <img
             src={avatarUrl}
@@ -167,6 +165,18 @@ function AccountPill({
 // ── Navbar ───────────────────────────────────────────────
 export default function Navbar() {
   const { state, logout } = useAuth();
+
+  // ✅ handle loading กันพัง
+  if (state.status === "loading") {
+    return (
+      <header className="fixed top-0 left-0 right-0 z-40 bg-gray-100">
+        <div className="h-[60px] flex items-center justify-center">
+          <span className="text-sm text-gray-500">Loading...</span>
+        </div>
+      </header>
+    );
+  }
+
   const role = state.user?.role ?? "GUEST";
   const isAuthenticated = state.status === "authenticated";
 
@@ -180,7 +190,6 @@ export default function Navbar() {
   const brandSub =
     role === "ADMIN" ? "ADMIN" : role === "ORGANIZER" ? "ORGANIZER" : undefined;
 
-  // เมนูของแต่ละบทบาท
   const userMenu: MenuItem[] = [
     { label: "View Profile", to: "/profile" },
     { label: "Log out", onClick: logout },
@@ -191,7 +200,6 @@ export default function Navbar() {
     { label: "Log out", onClick: logout },
   ];
 
-  // ✅ Admin sees "Event management" + "Log out"
   const adminMenu: MenuItem[] = [
     { label: "Event management", to: "/admin" },
     { label: "Log out", onClick: logout },

@@ -14,6 +14,15 @@ export default function RequireRole({
   const { state } = useAuth();
   const location = useLocation();
 
+  // ✅ กันพังตอน restore token
+  if (state.status === "loading") {
+    return (
+      <div className="h-[60vh] grid place-items-center">
+        <div className="animate-spin h-6 w-6 border-2 border-zinc-400 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
   // ยังไม่ล็อกอิน → ส่งไป login
   if (state.status !== "authenticated") {
     const returnTo = encodeURIComponent(location.pathname + location.search);

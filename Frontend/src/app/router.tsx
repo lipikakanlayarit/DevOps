@@ -1,3 +1,4 @@
+// src/app/router.tsx
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
@@ -54,7 +55,7 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // organizer/admin only: direct wrapped route
+      // organizer/admin only
       {
         path: "organizationmnge",
         element: (
@@ -73,12 +74,11 @@ export const router = createBrowserRouter([
           </RequireRole>
         ),
         children: [
-          { index: true, element: <Admin /> }, // ⬅️ render your admin.tsx at /admin
+          { index: true, element: <Admin /> },
           { path: "users", element: <div>Admin Users</div> },
           { path: "settings", element: <div>Admin Settings</div> },
           { path: "eventdetail", element: <AdminEventdetail /> },
           { path: "permissions", element: <EventPermission /> },
-
         ],
       },
 

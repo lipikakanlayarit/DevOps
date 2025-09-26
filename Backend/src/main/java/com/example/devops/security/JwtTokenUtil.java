@@ -1,4 +1,3 @@
-
 package com.example.devops.security;
 
 import com.example.devops.model.User;
