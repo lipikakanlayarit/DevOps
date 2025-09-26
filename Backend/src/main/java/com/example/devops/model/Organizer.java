@@ -16,6 +16,7 @@ public class Organizer {
     private String email;
 
     @Column(name = "password_hash", nullable = false)
+    @Column(name = "password_hash")
     private String password;
 
     @Column(name = "first_name", nullable = false)
@@ -39,7 +40,7 @@ public class Organizer {
     @Column(name = "verification_status")
     private String verificationStatus = "PENDING";
 
-    @Column(name = "role", nullable = false)
+    @Transient
     private String role = "ORGANIZER";
 
     @Column(name = "created_at")

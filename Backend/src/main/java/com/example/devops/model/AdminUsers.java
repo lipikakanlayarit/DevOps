@@ -23,7 +23,7 @@ public class AdminUsers {
   @Column(name = "last_name")
   private String last_name;
 
-  @Column(name = "role")
+  @Column(name = "role_name")
   private String role;
 
   @Column(name = "is_active")

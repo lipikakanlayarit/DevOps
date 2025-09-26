@@ -19,6 +19,7 @@ public class User {
     private String email;
 
     @Column(name = "password_hash", nullable = false)
+    @Column(name = "password_hash")
     private String password;
 
     @Column(name = "first_name", nullable = false)
@@ -33,7 +34,7 @@ public class User {
     @Column(name = "id_card_passport")
     private String idCardPassport;
 
-    @Column(name = "role", nullable = false)
+    @Column(name = "roles", nullable = false)
     private String role = "USER";
 
     @Column(name = "created_at")
