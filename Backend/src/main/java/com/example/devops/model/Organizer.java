@@ -16,8 +16,7 @@ public class Organizer {
     private String email;
 
     @Column(name = "password_hash", nullable = false)
-    @Column(name = "password_hash")
-    private String password;
+    private String passwordHash;
 
     @Column(name = "first_name", nullable = false)
     private String firstName;
@@ -49,15 +48,15 @@ public class Organizer {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
-    // --- getters & setters ---
+    // === Getters & Setters ===
     public Long getOrganizerId() { return organizerId; }
     public void setOrganizerId(Long organizerId) { this.organizerId = organizerId; }
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
 
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
