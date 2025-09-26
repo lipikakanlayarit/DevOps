@@ -1,12 +1,8 @@
 package com.example.devops.security;
 
 import com.example.devops.model.User;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -19,10 +15,10 @@ import java.util.Map;
 @Component
 public class JwtTokenUtil {
 
-    @Value("${app.jwt.secret:dev-secret-dev-secret-dev-secret-dev}") // ควรยาว >= 32 bytes
+    @Value("${app.jwt.secret:dev-secret-dev-secret-dev-secret-dev}")
     private String secret;
 
-    @Value("${app.jwt.expiration:86400000}") // 1 วัน (มิลลิวินาที)
+    @Value("${app.jwt.expiration:86400000}") // 1 วัน
     private long expirationMs;
 
     private Key getSigningKey() {
@@ -40,7 +36,6 @@ public class JwtTokenUtil {
                 .compact();
     }
 
-    // สำหรับ User
     public String generateToken(User user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("uid", user.getUserId());
@@ -49,12 +44,17 @@ public class JwtTokenUtil {
         return buildToken(claims, subject);
     }
 
-    // Overload: subject + claims (ใช้กับ Organizer/Admin)
     public String generateToken(String subject, Map<String, Object> extraClaims) {
         return buildToken(extraClaims, subject);
     }
 
-    // Parse/verify token แล้วคืน Claims
+    /** convenience: เรียกแบบ (subject, role) ตรง ๆ */
+    public String generate(String subject, String role) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", role == null ? "USER" : role);
+        return buildToken(claims, subject);
+    }
+
     public Claims parseClaims(String token) throws JwtException {
         return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
@@ -63,20 +63,15 @@ public class JwtTokenUtil {
                 .getBody();
     }
 
-    // === เพิ่มเมธอดที่ JwtFilter ต้องใช้ ===
-
-    /** ตรวจว่าโทเค็นใช้ได้ (ลายเซ็นถูกต้อง และยังไม่หมดอายุ) */
     public boolean validate(String token) {
         try {
-            Claims c = parseClaims(token);
-            Date exp = c.getExpiration();
+            Date exp = parseClaims(token).getExpiration();
             return exp == null || exp.after(new Date());
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }
 
-    /** คืน username/subject จากโทเค็น (ค่า sub) */
     public String getUsername(String token) {
         try {
             return parseClaims(token).getSubject();
@@ -85,7 +80,6 @@ public class JwtTokenUtil {
         }
     }
 
-    /** ดึง role จาก claim "role" (ถ้าไม่มีจะคืน null) */
     public String getRole(String token) {
         try {
             Object v = parseClaims(token).get("role");

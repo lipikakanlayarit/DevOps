@@ -12,28 +12,28 @@ public class User {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 100)
     private String username;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+    @Column(name = "password_hash", nullable = false, length = 100)
+    private String password;
 
-    @Column(name = "first_name", nullable = false)
+    @Column(name = "first_name", nullable = false, length = 100)
     private String firstName;
 
-    @Column(name = "last_name", nullable = false)
+    @Column(name = "last_name", nullable = false, length = 100)
     private String lastName;
 
-    @Column(name = "phone_number")
+    @Column(name = "phone_number", length = 30)
     private String phoneNumber;
 
-    @Column(name = "id_card_passport")
+    @Column(name = "id_card_passport", length = 50)
     private String idCardPassport;
 
-    @Column(name = "roles", nullable = false)
+    @Column(name = "roles", nullable = false, length = 50)
     private String role = "USER";
 
     @Column(name = "created_at")
@@ -42,37 +42,27 @@ public class User {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
-    // === Getters & Setters ===
+    // getters/setters
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
-
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
-
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
-
-    public String getPasswordHash() { return passwordHash; }
-    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
-
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
-
     public String getLastName() { return lastName; }
     public void setLastName(String lastName) { this.lastName = lastName; }
-
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
-
     public String getIdCardPassport() { return idCardPassport; }
     public void setIdCardPassport(String idCardPassport) { this.idCardPassport = idCardPassport; }
-
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
-
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }

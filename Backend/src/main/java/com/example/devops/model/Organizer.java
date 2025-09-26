@@ -12,31 +12,31 @@ public class Organizer {
     @Column(name = "organizer_id")
     private Long organizerId;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+    @Column(name = "password_hash", nullable = false, length = 100)
+    private String password;
 
-    @Column(name = "first_name", nullable = false)
+    @Column(name = "first_name", nullable = false, length = 100)
     private String firstName;
 
-    @Column(name = "last_name", nullable = false)
+    @Column(name = "last_name", nullable = false, length = 100)
     private String lastName;
 
-    @Column(name = "phone_number")
+    @Column(name = "phone_number", length = 30)
     private String phoneNumber;
 
-    @Column(name = "address")
+    @Column(name = "address", length = 255)
     private String address;
 
-    @Column(name = "company_name")
+    @Column(name = "company_name", length = 150)
     private String companyName;
 
-    @Column(name = "tax_id")
+    @Column(name = "tax_id", length = 50)
     private String taxId;
 
-    @Column(name = "verification_status")
+    @Column(name = "verification_status", length = 30)
     private String verificationStatus = "PENDING";
 
     @Transient
@@ -48,43 +48,31 @@ public class Organizer {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
-    // === Getters & Setters ===
+    // getters/setters
     public Long getOrganizerId() { return organizerId; }
     public void setOrganizerId(Long organizerId) { this.organizerId = organizerId; }
-
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
-
-    public String getPasswordHash() { return passwordHash; }
-    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
-
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
-
     public String getLastName() { return lastName; }
     public void setLastName(String lastName) { this.lastName = lastName; }
-
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
-
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
-
     public String getCompanyName() { return companyName; }
     public void setCompanyName(String companyName) { this.companyName = companyName; }
-
     public String getTaxId() { return taxId; }
     public void setTaxId(String taxId) { this.taxId = taxId; }
-
     public String getVerificationStatus() { return verificationStatus; }
     public void setVerificationStatus(String verificationStatus) { this.verificationStatus = verificationStatus; }
-
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
-
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }
