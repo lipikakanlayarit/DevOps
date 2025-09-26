@@ -349,6 +349,8 @@ $$;
 INSERT INTO users (email, username, password_hash, first_name, last_name, phone_number, id_card_passport, roles)
 VALUES
     ('alice@example.com','alice123', crypt('password123', gen_salt('bf', 10)),'Alice','Wong','0812345678','1234567890123', 'USER'),
+    ('admin@example.com','admin', crypt('password123', gen_salt('bf', 10)),'admin','user','0812345678','1234567890123', 'ADMIN'),
+    ('organizer@example.com','organizer', crypt('password123', gen_salt('bf', 10)),'organizer','user','0812345678','1234567890123', 'ORGANIZER'),
     ('bob@example.com','bob456',     crypt('password123', gen_salt('bf', 10)),'Bob','Tan','0823456789','9876543210123', 'USER')
     ON CONFLICT (email) DO NOTHING;
 
