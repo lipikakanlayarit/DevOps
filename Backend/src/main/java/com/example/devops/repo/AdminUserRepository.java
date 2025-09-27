@@ -1,9 +1,11 @@
 package com.example.devops.repo;
 
-import com.example.devops.model.AdminUser;
+import com.example.devops.model.AdminUsers;
 import org.springframework.data.jpa.repository.JpaRepository;
+
 import java.util.Optional;
 
-public interface AdminUserRepo extends JpaRepository<AdminUser, Long> {
-    Optional<AdminUser> findByEmail(String email);
+public interface AdminUserRepository extends JpaRepository<AdminUsers, Long> {
+    Optional<AdminUsers> findByEmailIgnoreCase(String email);
+    Optional<AdminUsers> findByUsernameIgnoreCase(String username);
 }

@@ -4,36 +4,30 @@ import type { ReactNode } from "react";
 
 type Role = "USER" | "ADMIN" | "ORGANIZER";
 
-export default function RequireRole({
-  roles,
-  children,
-}: {
-  roles: Role[];
-  children: ReactNode;
-}) {
-  const { state } = useAuth();
-  const location = useLocation();
+export default function RequireRole({ roles, children }: { roles: Role[]; children: ReactNode }) {
+    const { state } = useAuth();
+    const location = useLocation();
 
-  // ✅ กันพังตอน restore token
-  if (state.status === "loading") {
-    return (
-      <div className="h-[60vh] grid place-items-center">
-        <div className="animate-spin h-6 w-6 border-2 border-zinc-400 border-t-transparent rounded-full" />
-      </div>
-    );
-  }
+    if (state.status === "loading") {
+        return (
+            <div className="h-[60vh] grid place-items-center">
+                <div className="animate-spin h-6 w-6 border-2 border-zinc-400 border-t-transparent rounded-full" />
+            </div>
+        );
+    }
+    if (state.status !== "authenticated") {
+        const returnTo = encodeURIComponent(location.pathname + location.search);
+        return <Navigate to={`/login?returnTo=${returnTo}`} replace />;
+    }
 
-  // ยังไม่ล็อกอิน → ส่งไป login
-  if (state.status !== "authenticated") {
-    const returnTo = encodeURIComponent(location.pathname + location.search);
-    return <Navigate to={`/login?returnTo=${returnTo}`} replace />;
-  }
+    const rawRole = state.role ?? "";
+    const userRoles = rawRole
+        .split(",")
+        .map((r) => r.trim().toUpperCase())
+        .filter(Boolean) as Role[];
 
-  // ล็อกอินแล้ว แต่ role ไม่ตรง → ส่งไป forbidden
-  if (!roles.includes(state.user.role as Role)) {
-    return <Navigate to="/forbidden" replace />;
-  }
+    const allowed = userRoles.some((r) => roles.includes(r));
+    if (!allowed) return <Navigate to="/forbidden" replace />;
 
-  // ผ่านทุกเงื่อนไข
-  return <>{children}</>;
+    return <>{children}</>;
 }

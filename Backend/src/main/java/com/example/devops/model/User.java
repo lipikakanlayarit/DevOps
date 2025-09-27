@@ -1,51 +1,43 @@
 package com.example.devops.model;
 
 import jakarta.persistence.*;
-import java.time.Instant;
 
 @Entity
 @Table(name = "users")
 public class User {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_id")
-    private Long userId;
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id") // ถ้าคอลัมน์จริงคือ id ให้เปลี่ยนเป็น "id"
+    private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true, nullable = false, length = 100)
     private String username;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true, nullable = false, length = 150)
     private String email;
 
     @Column(name = "password_hash", nullable = false)
-    @Column(name = "password_hash")
     private String password;
 
-    @Column(name = "first_name", nullable = false)
+    // ตารางใช้ 'roles' (พหูพจน์) แต่เราจะ expose เป็น getRole()
+    @Column(name = "roles", nullable = false, length = 50)
+    private String role;
+
+    @Column(name = "first_name", length = 100)
     private String firstName;
 
-    @Column(name = "last_name", nullable = false)
+    @Column(name = "last_name", length = 100)
     private String lastName;
 
-    @Column(name = "phone_number")
+    @Column(name = "phone_number", length = 30)
     private String phoneNumber;
 
-    @Column(name = "id_card_passport")
+    @Column(name = "id_card_passport", length = 30)
     private String idCardPassport;
 
-    @Column(name = "roles", nullable = false)
-    private String role = "USER";
-
-    @Column(name = "created_at")
-    private Instant createdAt = Instant.now();
-
-    @Column(name = "updated_at")
-    private Instant updatedAt = Instant.now();
-
-    // --- getters & setters ---
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    // getters/setters
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -53,8 +45,11 @@ public class User {
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
 
-    public String getPassword() { return password; }
+    public String getPassword() { return password; } // กลับค่า password_hash
     public void setPassword(String password) { this.password = password; }
+
+    public String getRole() { return role; } // กลับค่าจากคอลัมน์ 'roles'
+    public void setRole(String role) { this.role = role; }
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }
@@ -67,13 +62,4 @@ public class User {
 
     public String getIdCardPassport() { return idCardPassport; }
     public void setIdCardPassport(String idCardPassport) { this.idCardPassport = idCardPassport; }
-
-    public String getRole() { return role; }
-    public void setRole(String role) { this.role = role; }
-
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-
-    public Instant getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }

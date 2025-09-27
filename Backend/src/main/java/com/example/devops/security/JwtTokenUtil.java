@@ -1,7 +1,7 @@
 package com.example.devops.security;
 
-import com.example.devops.model.User;
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -9,49 +9,46 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 @Component
 public class JwtTokenUtil {
 
-    private final Key key;
-    private final long ttlMs;
+    @Value("${app.jwt.secret:dev-secret-dev-secret-dev-secret-dev}")
+    private String secret;
 
-    public JwtTokenUtil(
-            @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.ttl-ms:86400000}") long ttlMs
-    ) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.ttlMs = ttlMs;
+    @Value("${app.jwt.expiration:86400000}") // 1 วัน
+    private long expirationMs;
+
+    private Key getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(User user) {
+    private String buildToken(Map<String, Object> claims, String subject) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
-                .setSubject(user.getUsername())
-                .claim("role", user.getRole())
+                .setClaims(claims == null ? new HashMap<>() : claims)
+                .setSubject(subject)
                 .setIssuedAt(new Date(now))
-                .setExpiration(new Date(now + ttlMs))
-                .signWith(key, SignatureAlgorithm.HS256)
+                .setExpiration(new Date(now + expirationMs))
+                .signWith(getSigningKey())
                 .compact();
     }
 
-    public boolean validate(String token) {
-        try {
-            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
-            return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
+    public String generateToken(String username, String role, String email) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", role);
+        claims.put("email", email);
+        return buildToken(claims, username);
     }
 
-    public String getUsername(String token) {
-        return Jwts.parserBuilder().setSigningKey(key).build()
-                .parseClaimsJws(token).getBody().getSubject();
-    }
-
-    public String getRole(String token) {
-        Object r = Jwts.parserBuilder().setSigningKey(key).build()
-                .parseClaimsJws(token).getBody().get("role");
-        return r == null ? null : r.toString();
+    // ✅ เพิ่มเมธอด parseClaims ให้ JwtFilter เรียกได้
+    public Claims parseClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 }
