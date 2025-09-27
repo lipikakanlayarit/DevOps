@@ -7,9 +7,8 @@ import com.example.devops.repo.UserRepository;
 import com.example.devops.repo.OrganizerRepo;
 import com.example.devops.repo.AdminUserRepository;
 import com.example.devops.security.JwtTokenUtil;
-import org.springframework.http.MediaType;
+
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,61 +37,80 @@ public class AuthController {
         this.jwt = jwt;
     }
 
-    @PostMapping(path = "/login", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
-        String id = firstNonNull(req.getIdentifier(), req.getUsername(), req.getEmail());
-        String raw = req.getPassword();
-        if (isBlank(id) || isBlank(raw)) throw new BadCredentialsException("Invalid credentials");
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
+        String identifier = body.getOrDefault("identifier", "").trim(); // email หรือ username
+        String password   = body.getOrDefault("password", "").trim();
 
-        // users: username OR email
-        Optional<User> u = userRepository.findByUsername(id).or(() -> userRepository.findByEmail(id));
-        if (u.isPresent()) {
-            User user = u.get();
-            requireMatches(raw, user.getPassword());
-            String role = user.getRole() == null ? "USER" : user.getRole();
-            String token = jwt.generate(user.getUsername(), role);
-            return ResponseEntity.ok(Map.of("token", token, "subject", user.getUsername(), "role", role, "type", "USER"));
+        if (identifier.isEmpty() || password.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "identifier and password are required"));
         }
 
-        // organizers: email
-        Optional<Organizer> o = organizerRepo.findByEmail(id);
-        if (o.isPresent()) {
-            Organizer org = o.get();
-            requireMatches(raw, org.getPassword());
-            String role = org.getRole() == null ? "ORGANIZER" : org.getRole();
-            String token = jwt.generate(org.getEmail(), role);
-            return ResponseEntity.ok(Map.of("token", token, "subject", org.getEmail(), "role", role, "type", "ORGANIZER"));
+        // ===== 1) ADMIN =====
+        Optional<AdminUsers> adminOpt =
+                adminUserRepository.findByEmailIgnoreCase(identifier)
+                        .or(() -> adminUserRepository.findByUsernameIgnoreCase(identifier));
+
+        if (adminOpt.isPresent()) {
+            AdminUsers admin = adminOpt.get();
+            String hash = admin.getPasswordHash(); // @Column(name="password_hash")
+            if (!passwordEncoder.matches(password, hash)) {
+                return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+            }
+            String role = "ADMIN";
+            String username = admin.getUsername();
+            String token = jwt.generateToken(username, role, admin.getEmail());
+            return ResponseEntity.ok(Map.of(
+                    "token", token,
+                    "username", username,
+                    "role", role
+            ));
         }
 
-        // admin_users: email
-        Optional<AdminUsers> a = adminUserRepository.findByEmail(id);
-        if (a.isPresent()) {
-            AdminUsers admin = a.get();
-            requireMatches(raw, admin.getPassword());
-            String role = admin.getRoleName() == null ? "ADMIN" : admin.getRoleName();
-            String token = jwt.generate(admin.getEmail(), role);
-            return ResponseEntity.ok(Map.of("token", token, "subject", admin.getEmail(), "role", role, "type", "ADMIN"));
+        // ===== 2) ORGANIZER =====
+        Optional<Organizer> orgOpt =
+                organizerRepo.findByEmailIgnoreCase(identifier)
+                        .or(() -> organizerRepo.findByUsernameIgnoreCase(identifier));
+
+        if (orgOpt.isPresent()) {
+            Organizer org = orgOpt.get();
+            String hash = org.getPasswordHash();
+            if (!passwordEncoder.matches(password, hash)) {
+                return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+            }
+            String role = "ORGANIZER";
+            String username = org.getUsername();
+            String token = jwt.generateToken(username, role, org.getEmail());
+            return ResponseEntity.ok(Map.of(
+                    "token", token,
+                    "username", username,
+                    "role", role
+            ));
         }
 
-        throw new BadCredentialsException("Invalid credentials");
-    }
+        // ===== 3) USER =====
+        Optional<User> userOpt =
+                userRepository.findByEmailIgnoreCase(identifier)
+                        .or(() -> userRepository.findByUsernameIgnoreCase(identifier));
 
-    // helpers
-    private void requireMatches(String raw, String hashed) {
-        if (hashed == null || !passwordEncoder.matches(raw, hashed)) {
-            throw new BadCredentialsException("Invalid credentials");
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            String hash = user.getPassword(); // mapped to password_hash
+            if (!passwordEncoder.matches(password, hash)) {
+                return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+            }
+            String role = (user.getRole() == null || user.getRole().isBlank())
+                    ? "USER"
+                    : user.getRole().trim().toUpperCase();
+            String username = user.getUsername();
+            String token = jwt.generateToken(username, role, user.getEmail());
+            return ResponseEntity.ok(Map.of(
+                    "token", token,
+                    "username", username,
+                    "role", role
+            ));
         }
-    }
-    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
-    private static String firstNonNull(String a, String b, String c) {
-        if (!isBlank(a)) return a; if (!isBlank(b)) return b; if (!isBlank(c)) return c; return null;
-    }
 
-    public static class LoginRequest {
-        private String identifier; private String username; private String email; private String password;
-        public String getIdentifier() { return identifier; } public void setIdentifier(String identifier) { this.identifier = identifier; }
-        public String getUsername() { return username; } public void setUsername(String username) { this.username = username; }
-        public String getEmail() { return email; } public void setEmail(String email) { this.email = email; }
-        public String getPassword() { return password; } public void setPassword(String password) { this.password = password; }
+        return ResponseEntity.status(401).body(Map.of("error", "User not found"));
     }
 }

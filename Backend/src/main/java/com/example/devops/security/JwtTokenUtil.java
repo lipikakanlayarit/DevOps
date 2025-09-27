@@ -1,7 +1,7 @@
 package com.example.devops.security;
 
-import com.example.devops.model.User;
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -32,60 +32,23 @@ public class JwtTokenUtil {
                 .setSubject(subject)
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + expirationMs))
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .signWith(getSigningKey())
                 .compact();
     }
 
-    public String generateToken(User user) {
+    public String generateToken(String username, String role, String email) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("uid", user.getUserId());
-        claims.put("role", user.getRole() == null ? "USER" : user.getRole());
-        String subject = user.getUsername() != null ? user.getUsername() : user.getEmail();
-        return buildToken(claims, subject);
+        claims.put("role", role);
+        claims.put("email", email);
+        return buildToken(claims, username);
     }
 
-    public String generateToken(String subject, Map<String, Object> extraClaims) {
-        return buildToken(extraClaims, subject);
-    }
-
-    /** convenience: เรียกแบบ (subject, role) ตรง ๆ */
-    public String generate(String subject, String role) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("role", role == null ? "USER" : role);
-        return buildToken(claims, subject);
-    }
-
-    public Claims parseClaims(String token) throws JwtException {
+    // ✅ เพิ่มเมธอด parseClaims ให้ JwtFilter เรียกได้
+    public Claims parseClaims(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
-    }
-
-    public boolean validate(String token) {
-        try {
-            Date exp = parseClaims(token).getExpiration();
-            return exp == null || exp.after(new Date());
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
-    }
-
-    public String getUsername(String token) {
-        try {
-            return parseClaims(token).getSubject();
-        } catch (JwtException | IllegalArgumentException e) {
-            return null;
-        }
-    }
-
-    public String getRole(String token) {
-        try {
-            Object v = parseClaims(token).get("role");
-            return v == null ? null : String.valueOf(v);
-        } catch (JwtException | IllegalArgumentException e) {
-            return null;
-        }
     }
 }

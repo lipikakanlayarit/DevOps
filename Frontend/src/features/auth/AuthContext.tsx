@@ -1,86 +1,97 @@
-// src/features/auth/AuthContext.tsx
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  ReactNode,
-} from "react";
-import * as AuthAPI from "./auth.api";
-import type { AuthState, Role, User } from "./types";
-import { clearToken, setToken } from "@/lib/api";
+import React, { createContext, useContext, useEffect, useReducer } from "react";
 
-type AuthContextValue = {
-  state: AuthState;
-  // สำหรับเดโมเดิม ยังเก็บไว้ใช้ได้ถ้าต้องการ
-  loginAs: (role: Role, username?: string) => void;
-  loginViaBackend: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+type AuthState =
+    | { status: "loading" }
+    | { status: "unauthenticated" }
+    | { status: "authenticated"; token: string; username: string; role: string };
+
+type Action =
+    | {
+    type: "RESTORE";
+    payload: { token?: string | null; username?: string | null; role?: string | null };
+}
+    | { type: "LOGIN_SUCCESS"; payload: { token: string; username: string; role: string } }
+    | { type: "LOGOUT" };
+
+type AuthContextType = {
+    state: AuthState;
+    // ✅ ให้มีชื่อ loginViaBackend ตามที่หน้า Login เรียกใช้
+    loginViaBackend: (identifier: string, password: string) => Promise<{
+        token: string;
+        username: string;
+        role: string;
+    }>;
+    logout: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+const AuthContext = createContext<AuthContextType>({
+    state: { status: "loading" },
+    loginViaBackend: async () => ({ token: "", username: "", role: "" }),
+    logout: () => {},
+});
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  // เริ่มต้นเป็น loading เพื่อกันจอกระพริบก่อน restore เสร็จ
-  const [state, setState] = useState<AuthState>({
-    status: "loading",
-    user: null,
-  });
-
-  // === bootstrap: ลอง restore จาก token + /auth/me ===
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        // ลองเรียก /auth/me ถ้ามี token (header ใส่อัตโนมัติจาก lib/api.ts)
-        const user = await AuthAPI.me();
-        if (!mounted) return;
-        setState({ status: "authenticated", user });
-      } catch {
-        if (!mounted) return;
-        setState({ status: "unauthenticated", user: null });
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // === ฟังก์ชันสำหรับเดโม (ยังคงไว้) ===
-  const loginAs = useCallback((role: Role, username = role) => {
-    const user: User = { id: "1", username, role };
-    setState({ status: "authenticated", user });
-  }, []);
-
-  const loginViaBackend = useCallback(async (username: string, password: string) => {
-    const res = await AuthAPI.login({ username, password });
-    // เก็บ token + user
-    setToken(res.token);
-    setState({ status: "authenticated", user: res.user });
-  }, []);
-
-  const logout = useCallback(() => {
-    try {
-      // แจ้ง backend (mock ตอนนี้ทำอะไรไม่มาก)
-      AuthAPI.logout().catch(() => {});
-    } finally {
-      clearToken();
-      setState({ status: "unauthenticated", user: null });
+function reducer(state: AuthState, action: Action): AuthState {
+    switch (action.type) {
+        case "RESTORE": {
+            const { token, username, role } = action.payload;
+            if (token && username && role) {
+                return { status: "authenticated", token, username, role };
+            }
+            return { status: "unauthenticated" };
+        }
+        case "LOGIN_SUCCESS":
+            return { status: "authenticated", ...action.payload };
+        case "LOGOUT":
+            return { status: "unauthenticated" };
+        default:
+            return state;
     }
-  }, []);
-
-  const value = useMemo(
-    () => ({ state, loginAs, loginViaBackend, logout }),
-    [state, loginAs, loginViaBackend, logout]
-  );
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
-  return ctx;
-}
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [state, dispatch] = useReducer(reducer, { status: "loading" });
+
+    useEffect(() => {
+        const token = localStorage.getItem("auth.token");
+        const username = localStorage.getItem("auth.username");
+        const role = localStorage.getItem("auth.role");
+        dispatch({ type: "RESTORE", payload: { token, username, role } });
+    }, []);
+
+    async function loginViaBackend(identifier: string, password: string) {
+        const res = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ identifier, password }),
+        });
+        if (!res.ok) {
+            const msg = (await res.json().catch(() => null))?.error || "Login failed";
+            throw new Error(msg);
+        }
+        const data = (await res.json()) as { token: string; username: string; role: string };
+
+        dispatch({ type: "LOGIN_SUCCESS", payload: data });
+
+        localStorage.setItem("auth.token", data.token);
+        localStorage.setItem("auth.username", data.username);
+        localStorage.setItem("auth.role", data.role);
+
+        return data;
+    }
+
+    function logout() {
+        localStorage.removeItem("auth.token");
+        localStorage.removeItem("auth.username");
+        localStorage.removeItem("auth.role");
+        dispatch({ type: "LOGOUT" });
+    }
+
+    return (
+        <AuthContext.Provider value={{ state, loginViaBackend, logout }}>
+            {children}
+        </AuthContext.Provider>
+    );
+};
+
+export const useAuth = () => useContext(AuthContext);
