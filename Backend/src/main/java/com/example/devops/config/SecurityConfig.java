@@ -41,7 +41,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(reg -> reg
-                        .requestMatchers("/api/auth/**").permitAll()          // ✅ เปิด login
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll() // ✅ เพิ่มบรรทัดนี้
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()     // (แนะนำ) เผื่อ CORS preflight         // ✅ เปิด login
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
