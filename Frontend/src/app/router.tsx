@@ -41,7 +41,7 @@ export const router = createBrowserRouter([
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
 
-            // auth-only
+            // auth-only (ทุก role ที่ login แล้ว)
             {
                 element: (
                     <RequireAuth>
@@ -67,7 +67,7 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // admin group
+            // admin group (ADMIN เท่านั้น)
             {
                 path: "admin",
                 element: (
@@ -77,14 +77,14 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { index: true, element: <Admin /> },
-                    { path: "users", element: <div>Admin Users</div> },
+                    { path: "users", element: <div>Admin Users Management</div> },
                     { path: "settings", element: <div>Admin Settings</div> },
                     { path: "eventdetail", element: <AdminEventdetail /> },
                     { path: "permissions", element: <EventPermission /> },
                 ],
             },
 
-            // organizer group
+            // organizer group (ORGANIZER เท่านั้น)
             {
                 path: "organize",
                 element: (

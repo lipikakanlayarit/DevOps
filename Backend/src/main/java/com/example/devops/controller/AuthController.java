@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -25,6 +26,9 @@ public class AuthController {
     private final OrganizerRepo organizerRepo;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenUtil jwtUtil;
+
+    // Password validation pattern
+    private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$");
 
     public AuthController(UserRepository userRepo,
                           OrganizerRepo organizerRepo,
@@ -82,17 +86,36 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Missing or invalid fields for user signup", "details", errors));
         }
 
+        // Validate password strength
+        if (!PASSWORD_PATTERN.matcher(req.getPassword()).matches()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Password must be at least 8 characters with uppercase, lowercase, and number"
+            ));
+        }
+
         try {
-            if (userRepo.findByUsernameIgnoreCase(trimSafe(req.getUsername())).isPresent()) {
+            String username = trimSafe(req.getUsername());
+            String email = trimSafe(req.getEmail());
+
+            // Check duplicates in User table
+            if (userRepo.findByUsernameIgnoreCase(username).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
             }
-            if (userRepo.findByEmailIgnoreCase(trimSafe(req.getEmail())).isPresent()) {
+            if (userRepo.findByEmailIgnoreCase(email).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
             }
 
+            // Check duplicates in Organizer table
+            if (organizerRepo.findByUsernameIgnoreCase(username).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Username already taken by an organizer"));
+            }
+            if (organizerRepo.findByEmailIgnoreCase(email).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email already taken by an organizer"));
+            }
+
             User user = new User();
-            user.setUsername(trimSafe(req.getUsername()));
-            user.setEmail(trimSafe(req.getEmail()));
+            user.setUsername(username);
+            user.setEmail(email);
             user.setPassword(passwordEncoder.encode(req.getPassword()));
             user.setRole("USER");
             user.setFirstName(trimSafe(req.getFirstName()));
@@ -118,17 +141,36 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Missing or invalid fields for organizer signup", "details", errors));
         }
 
+        // Validate password strength
+        if (!PASSWORD_PATTERN.matcher(req.getPassword()).matches()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Password must be at least 8 characters with uppercase, lowercase, and number"
+            ));
+        }
+
         try {
-            if (organizerRepo.findByUsernameIgnoreCase(trimSafe(req.getUsername())).isPresent()) {
+            String username = trimSafe(req.getUsername());
+            String email = trimSafe(req.getEmail());
+
+            // Check duplicates in Organizer table
+            if (organizerRepo.findByUsernameIgnoreCase(username).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
             }
-            if (organizerRepo.findByEmailIgnoreCase(trimSafe(req.getEmail())).isPresent()) {
+            if (organizerRepo.findByEmailIgnoreCase(email).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
             }
 
+            // Check duplicates in User table
+            if (userRepo.findByUsernameIgnoreCase(username).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Username already taken by a user"));
+            }
+            if (userRepo.findByEmailIgnoreCase(email).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email already taken by a user"));
+            }
+
             Organizer org = new Organizer();
-            org.setUsername(trimSafe(req.getUsername()));
-            org.setEmail(trimSafe(req.getEmail()));
+            org.setUsername(username);
+            org.setEmail(email);
             org.setPasswordHash(passwordEncoder.encode(req.getPassword()));
             org.setFirstName(trimSafe(req.getFirstName()));
             org.setLastName(trimSafe(req.getLastName()));
@@ -139,7 +181,7 @@ public class AuthController {
             org.setVerificationStatus("PENDING");
 
             organizerRepo.save(org);
-            return ResponseEntity.ok(Map.of("message", "Organizer created successfully"));
+            return ResponseEntity.ok(Map.of("message", "Organizer created successfully, pending verification"));
 
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "Registration failed: " + e.getMessage()));
@@ -194,7 +236,6 @@ public class AuthController {
         @JsonProperty("companyName") @NotBlank private String companyName;
         @JsonProperty("taxId") @NotBlank private String taxId;
 
-        // getters/setters
         public String getEmail() { return email; }
         public void setEmail(String email) { this.email = email; }
         public String getUsername() { return username; }

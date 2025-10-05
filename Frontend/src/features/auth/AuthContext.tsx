@@ -8,6 +8,7 @@ type AuthContextValue = {
     state: AuthState;
     loginViaBackend: (username: string, password: string) => Promise<{ token: string; role: string; username: string }>;
     logout: () => void;
+    refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -34,12 +35,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // เก็บ token
         localStorage.setItem("token", token);
 
-        // ตั้งค่า user state
+        // ตั้งค่า user state พร้อม role
         setState({
             status: "authenticated",
             user: {
                 id: user.id,
                 username: user.username,
+                email: user.email,
                 role: user.role,
             },
         });
@@ -52,22 +54,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState({ status: "unauthenticated", user: null });
     };
 
-    // ตรวจสอบ token เมื่อ refresh
-    useEffect(() => {
+    const refreshUser = async () => {
         const token = localStorage.getItem("token");
         if (!token) {
             setState({ status: "unauthenticated", user: null });
             return;
         }
 
-        // ถ้ามี token ให้ verify กับ backend (optional)
-        // สำหรับตอนนี้ให้ถือว่ามี token = authenticated
-        // TODO: เพิ่ม /api/auth/me endpoint เพื่อ verify token
-        setState({ status: "authenticated", user: null }); // จะต้องดึง user data จริง
+        try {
+            const response = await fetch(`${API_BASE}/api/auth/me`, {
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to fetch user");
+            }
+
+            const userData = await response.json();
+            setState({
+                status: "authenticated",
+                user: {
+                    id: userData.id,
+                    username: userData.username,
+                    email: userData.email,
+                    role: userData.role,
+                    firstName: userData.firstName,
+                    lastName: userData.lastName,
+                    phoneNumber: userData.phoneNumber,
+                    idCard: userData.idCard,
+                    companyName: userData.companyName,
+                    taxId: userData.taxId,
+                    address: userData.address,
+                    verificationStatus: userData.verificationStatus,
+                },
+            });
+        } catch (error) {
+            console.error("Failed to refresh user:", error);
+            localStorage.removeItem("token");
+            setState({ status: "unauthenticated", user: null });
+        }
+    };
+
+    // ตรวจสอบ token เมื่อ mount
+    useEffect(() => {
+        refreshUser();
     }, []);
 
     return (
-        <AuthContext.Provider value={{ state, loginViaBackend, logout }}>
+        <AuthContext.Provider value={{ state, loginViaBackend, logout, refreshUser }}>
             {children}
         </AuthContext.Provider>
     );

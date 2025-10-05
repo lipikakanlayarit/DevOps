@@ -1,14 +1,22 @@
 // src/features/auth/types.ts
-export type Role = "ADMIN" | "ORGANIZER" | "USER" | "GUEST";
+export interface User {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    firstName?: string;
+    lastName?: string;
+    phoneNumber?: string;
+    idCard?: string;
+    companyName?: string;
+    taxId?: string;
+    address?: string;
+    verificationStatus?: string;
+}
 
-export type User = {
-  id: string;
-  username: string;
-  role: Role;
-  avatarUrl?: string; 
-};
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
-export type AuthState =
-  | { status: "loading"; user: null }
-  | { status: "unauthenticated"; user: null }
-  | { status: "authenticated"; user: User };
+export interface AuthState {
+    status: AuthStatus;
+    user: User | null;
+}
