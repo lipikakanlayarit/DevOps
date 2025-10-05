@@ -1,6 +1,3 @@
-# Front and back can communicate with each other mocktest4
+# build และ run พร้อมกันแบบ no cache ด้วย
 
-* cd backend
-* .\mvnw -v
-* .\mvnw clean package -DskipTests
-* .\mvnw spring-boot:run
+docker compose up --build --no-cache
