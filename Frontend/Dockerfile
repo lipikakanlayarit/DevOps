@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 
+
 # เปิดพอร์ต dev server ของ Vite
 EXPOSE 5173
 

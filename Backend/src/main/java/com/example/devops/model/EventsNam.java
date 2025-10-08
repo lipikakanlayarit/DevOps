@@ -6,6 +6,9 @@ import java.time.Instant;
 @Entity
 @Table(name = "events_nam")
 public class EventsNam {
+
+  public EventsNam() { }
+
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   @Column(name = "event_id")
@@ -49,4 +52,20 @@ public class EventsNam {
 
   @Column(name = "updated_at")
   private Instant updated_at;
+
+  // getters
+  public Long getEvent_id() { return event_id; }
+  public Long getOrganizer_id() { return organizer_id; }
+  public String getEvent_name() { return event_name; }
+  public String getDescription() { return description; }
+  public Long getCategory_id() { return category_id; }
+  public Instant getStart_datetime() { return start_datetime; }
+  public Instant getEnd_datetime() { return end_datetime; }
+  public String getVenue_name() { return venue_name; }
+  public String getVenue_address() { return venue_address; }
+  public String getCover_image_url() { return cover_image_url; }
+  public Integer getMax_capacity() { return max_capacity; }
+  public String getStatus() { return status; }
+  public Instant getCreated_at() { return created_at; }
+  public Instant getUpdated_at() { return updated_at; }
 }

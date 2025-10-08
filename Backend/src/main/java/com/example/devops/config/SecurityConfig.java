@@ -52,7 +52,8 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // All other endpoints require authentication
-                        .anyRequest().authenticated()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/events/**").permitAll()
+                .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) -> {
                     res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
