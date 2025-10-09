@@ -1,23 +1,141 @@
-"use client"
+"use client";
 
-import { Calendar, Clock, MapPin, Ticket } from "lucide-react"
-import { useState, useEffect } from "react"
-import Footer from "@/components/Footer"
+import { Calendar, Clock, MapPin, Ticket } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { useParams } from "react-router-dom";
+import Footer from "@/components/Footer";
+import { api } from "@/lib/api";
+import type { EventDTO } from "@/types";
+
+// รูป fallback ถ้า event.imageUrl ไม่มี
+import posterFallback from "@/assets/poster.png";
+
+type SeatPick = { row: string; seat: number; zone: string; price: number };
 
 export default function Eventselect() {
-  const [showDetails, setShowDetails] = useState(false)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [selectedSeats, setSelectedSeats] = useState<{ row: string; seat: number; zone: string; price: number }[]>([])
+  // ===== 1) โหลดข้อมูลอีเวนต์ตาม :id =====
+  const { id } = useParams<{ id: string }>();
+  const [event, setEvent] = useState<EventDTO | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const seatRows = ["A", "B", "C", "D", "E", "F", "G", "H"]
-  const seatsPerRow = 20
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await api.get<EventDTO>(`/api/events/${id}`);
+        if (!alive) return;
+        setEvent(res.data);
+        setLoadError(null);
+      } catch (e: any) {
+        if (!alive) return;
+        setLoadError(e?.response?.data?.message || e?.message || "Failed to load event");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  // ===== 2) UI states เดิม =====
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [selectedSeats, setSelectedSeats] = useState<SeatPick[]>([]);
+
+  // ===== 3) Utilities =====
+  const fmtDate = (iso?: string, opts?: Intl.DateTimeFormatOptions) =>
+    iso
+      ? new Intl.DateTimeFormat(undefined, {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          ...opts,
+        }).format(new Date(iso))
+      : "";
+
+  const fmtShortBadge = (iso?: string) =>
+    iso
+      ? {
+          dowShort: new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(iso)), // Sat/Sun
+          day2: new Intl.DateTimeFormat(undefined, { day: "2-digit" }).format(new Date(iso)), // 22
+          monShort: new Intl.DateTimeFormat(undefined, { month: "short" }).format(new Date(iso)), // Mar
+          hm: new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new Date(iso)) + ".M.",
+        }
+      : null;
+
+  // เตรียม “รอบการแสดง” จาก startAt/endAt ของ event:
+  // - ถ้า endAt ต่างวัน จะได้ 2 card (วันเริ่ม/วันจบ)
+  // - ถ้าไม่มี หรือเป็นวันเดียวกัน โชว์แค่ 1 card
+  const dateCards = useMemo(() => {
+    const list: Array<{
+      key: string;
+      iso: string;
+      title: string; // ใช้ event.title
+      venueLine1: string; // แยกเป็น 2 บรรทัดเหมือนเดิม
+      venueLine2: string;
+      poster: string;
+    }> = [];
+
+    if (!event?.startAt) return list;
+
+    const venue = event.location || "";
+    const title = event.title || "Untitled Event";
+    const poster = event.imageUrl || posterFallback;
+
+    const start = new Date(event.startAt);
+    const end = event.endAt ? new Date(event.endAt) : null;
+
+    const sameDay =
+      end &&
+      start.getFullYear() === end.getFullYear() &&
+      start.getMonth() === end.getMonth() &&
+      start.getDate() === end.getDate();
+
+    // card วันที่เริ่ม
+    list.push({
+      key: "start",
+      iso: event.startAt,
+      title,
+      venueLine1: venue,
+      venueLine2: "",
+      poster,
+    });
+
+    // ถ้าต่างวัน เพิ่ม card วันที่จบ
+    if (end && !sameDay) {
+      list.push({
+        key: "end",
+        iso: event.endAt!,
+        title,
+        venueLine1: venue,
+        venueLine2: "",
+        poster,
+      });
+    }
+
+    return list;
+  }, [event]);
+
+  const scrollToDateSelection = () => {
+    const el = document.getElementById("date-selection");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // ===== 4) ส่วนผังที่นั่ง (mock เดิม) =====
+  const seatRows = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const seatsPerRow = 20;
   const seatZones = {
     vip: { rows: ["A", "B"], price: 5000 },
     standard: { rows: ["C", "D", "E", "F", "G", "H"], price: 1500 },
-  }
+  };
 
-  const occupiedSeats = new Set([
-    // Row A - all occupied (like in reference image)
+  const occupiedSeats = new Set<string>([
     "A-1",
     "A-2",
     "A-3",
@@ -29,16 +147,10 @@ export default function Eventselect() {
     "A-9",
     "A-10",
     "A-11",
-    // "A-12",
-    // "A-13",
-    // "A-14",
-    // "A-15",
-    // "A-16",
     "A-17",
     "A-18",
     "A-19",
     "A-20",
-    // Row B - some occupied
     "B-4",
     "B-5",
     "B-6",
@@ -53,7 +165,6 @@ export default function Eventselect() {
     "B-18",
     "B-19",
     "B-20",
-    // Row C - scattered occupied
     "C-1",
     "C-3",
     "C-5",
@@ -66,7 +177,6 @@ export default function Eventselect() {
     "C-18",
     "C-19",
     "C-20",
-    // Row D - some occupied
     "D-4",
     "D-6",
     "D-7",
@@ -78,7 +188,6 @@ export default function Eventselect() {
     "D-17",
     "D-19",
     "D-20",
-    // Row E - scattered occupied
     "E-2",
     "E-3",
     "E-4",
@@ -89,10 +198,8 @@ export default function Eventselect() {
     "E-17",
     "E-19",
     "E-20",
-    // Row F - some occupied (like reference)
     "F-7",
     "F-12",
-    // Row G - scattered occupied
     "G-6",
     "G-7",
     "G-9",
@@ -101,7 +208,6 @@ export default function Eventselect() {
     "G-15",
     "G-17",
     "G-18",
-    // Row H - some occupied
     "H-2",
     "H-3",
     "H-4",
@@ -114,74 +220,69 @@ export default function Eventselect() {
     "H-15",
     "H-17",
     "H-19",
-  ])
+  ]);
 
-  const getSeatZone = (row: string) => {
-    if (seatZones.vip.rows.includes(row)) return { zone: "VIP", price: seatZones.vip.price }
-    return { zone: "STANDARD", price: seatZones.standard.price }
-  }
+  const getSeatZone = (row: string) =>
+    seatZones.vip.rows.includes(row)
+      ? { zone: "VIP", price: seatZones.vip.price }
+      : { zone: "STANDARD", price: seatZones.standard.price };
 
-  const isSeatOccupied = (row: string, seat: number) => {
-    return occupiedSeats.has(`${row}-${seat}`)
-  }
-
-  const scrollToDateSelection = () => {
-    const element = document.getElementById("date-selection")
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" })
-    }
-  }
+  const isSeatOccupied = (row: string, seat: number) => occupiedSeats.has(`${row}-${seat}`);
 
   useEffect(() => {
-    if (selectedDate) {
-      const element = document.getElementById("seat-map-section")
-      if (element) {
-        setTimeout(() => {
-          element.scrollIntoView({ behavior: "smooth" })
-        }, 100)
+    if (selectedDateKey) {
+      const el = document.getElementById("seat-map-section");
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 100);
       }
     }
-  }, [selectedDate])
+  }, [selectedDateKey]);
 
-  const handleDateClick = (date: string) => {
-    if (selectedDate === date) {
-      // If clicking the same date, hide the seat map
-      setSelectedDate(null)
-    } else {
-      // If clicking a different date, show that date's seat map
-      setSelectedDate(date)
-    }
-    setSelectedSeats([]) // Reset seat selection when changing date
-  }
+  const handleDateClick = (key: string) => {
+    setSelectedSeats([]); // reset seats when change date
+    setSelectedDateKey((prev) => (prev === key ? null : key));
+  };
 
   const handleSeatClick = (row: string, seat: number) => {
-    if (isSeatOccupied(row, seat)) return
+    if (isSeatOccupied(row, seat)) return;
+    const { zone, price } = getSeatZone(row);
+    const seatInfo: SeatPick = { row, seat, zone, price };
 
-    const { zone, price } = getSeatZone(row)
-    const seatInfo = { row, seat, zone, price }
+    setSelectedSeats((prev) => {
+      const i = prev.findIndex((s) => s.row === row && s.seat === seat);
+      if (i >= 0) return prev.filter((_, idx) => idx !== i);
+      return [...prev, seatInfo];
+    });
+  };
 
-    setSelectedSeats((prevSeats) => {
-      const existingSeatIndex = prevSeats.findIndex((s) => s.row === row && s.seat === seat)
+  const isSeatSelected = (row: string, seat: number) =>
+    selectedSeats.some((s) => s.row === row && s.seat === seat);
 
-      if (existingSeatIndex >= 0) {
-        return prevSeats.filter((_, index) => index !== existingSeatIndex)
-      } else {
-        return [...prevSeats, seatInfo]
-      }
-    })
+  const getTotalPrice = () => selectedSeats.reduce((sum, s) => sum + s.price, 0);
+
+  const generateReserveId = () =>
+    Math.random().toString().slice(2, 17).padStart(15, "0");
+
+  // ===== 5) โหลดสถานะ =====
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-200 bg-black">
+        กำลังโหลดข้อมูลอีเวนต์…
+      </div>
+    );
+  }
+  if (loadError || !event) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-300 bg-black">
+        ไม่สามารถโหลดอีเวนต์ได้: {loadError || "Unknown error"}
+      </div>
+    );
   }
 
-  const generateReserveId = () => {
-    return Math.random().toString().slice(2, 17).padStart(15, "0")
-  }
+  const headerPoster = event.imageUrl || posterFallback;
 
-  const isSeatSelected = (row: string, seat: number) => {
-    return selectedSeats.some((s) => s.row === row && s.seat === seat)
-  }
-
-  const getTotalPrice = () => {
-    return selectedSeats.reduce((total, seat) => total + seat.price, 0)
-  }
+  const startBadge = fmtShortBadge(event.startAt);
+  const saleOpen = fmtDate(event.startAt, {});
 
   return (
     <div className="min-h-screen text-white" style={{ background: "var(--black, #000000)" }}>
@@ -192,34 +293,26 @@ export default function Eventselect() {
             {/* Event Poster */}
             <div className="relative">
               <img
-                src="/src/assets/poster.png"
-                alt="Robert Baltazar Trio Concert Poster"
-                className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
+                src={headerPoster}
+                alt={event.title || "Event Poster"}
+                className="w-full max-w-md mx-auto rounded-lg shadow-2xl object-cover"
                 onError={(e) => {
-                  console.log("failed to load:", e.currentTarget.src)
-                  e.currentTarget.style.display = "none"
+                  (e.currentTarget as HTMLImageElement).src = posterFallback;
                 }}
-                onLoad={() => console.log("Image loaded successfully")}
               />
             </div>
 
             {/* Event Details */}
             <div className="space-y-6">
               <div className="text-sm" style={{ color: "var(--gray-1, #C3C3C3)" }}>
-                2024.03.22
+                {event.startAt ? new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(event.startAt)) : ""}
               </div>
 
               <h1
-                className="text-4xl lg:text-6xl font-bold leading-tight"
-                style={{
-                  color: "var(--red, #FA3A2B)",
-                  fontFamily: '"Roboto Flex", sans-serif',
-                  fontWeight: "800",
-                }}
+                className="text-4xl lg:text-6xl font-bold leading-tight break-words"
+                style={{ color: "var(--red, #FA3A2B)", fontFamily: '"Roboto Flex", sans-serif', fontWeight: 800 }}
               >
-                ROBERT
-                <br />
-                BALTAZAR TRIO
+                {event.title || "Untitled Event"}
               </h1>
 
               <div className="grid gap-4">
@@ -230,19 +323,27 @@ export default function Eventselect() {
                     <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
                       Show Date
                     </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>Saturday, March 22</div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>Sunday, March 23</div>
+                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                      {event.startAt ? fmtDate(event.startAt) : "-"}
+                    </div>
+                    {event.endAt && (
+                      <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                        {fmtDate(event.endAt)}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Sale Opening Date */}
+                {/* Sale Opening Date (ใช้ startAt เป็นตัวอ้างอิงไปก่อน) */}
                 <div className="flex items-start gap-3">
                   <Clock className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
                   <div>
                     <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
                       Sale Opening Date
                     </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>Saturday, August 16, 2025, 10:00 AM</div>
+                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                      {saleOpen || "-"}
+                    </div>
                   </div>
                 </div>
 
@@ -251,13 +352,17 @@ export default function Eventselect() {
                   <MapPin className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
                   <div>
                     <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
-                      MCC HALL, 3rd Floor,
+                      {event.location || "-"}
                     </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>The Mall Lifestore Bangkapi</div>
+                    {event.description && (
+                      <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                        {event.description}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Ticket Prices */}
+                {/* Ticket Prices (ยัง mock) */}
                 <div className="flex items-start gap-3">
                   <Ticket className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
                   <div>
@@ -282,21 +387,21 @@ export default function Eventselect() {
                     color: "var(--white, #FFFFFF)",
                     border: "none",
                     borderRadius: "10px",
-                    fontWeight: "600",
+                    fontWeight: 600,
                     cursor: "pointer",
                   }}
                 >
                   Get Ticket
                 </button>
                 <button
-                  onClick={() => setShowDetails(!showDetails)}
+                  onClick={() => setShowDetails((s) => !s)}
                   className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90"
                   style={{
                     background: "var(--near-black-2, #1A1919)",
                     color: "var(--white, #FFFFFF)",
                     border: `1px solid var(--gray-1, #C3C3C3)`,
                     borderRadius: "10px",
-                    fontWeight: "600",
+                    fontWeight: 600,
                     cursor: "pointer",
                   }}
                 >
@@ -317,187 +422,100 @@ export default function Eventselect() {
               style={{
                 color: "#000000",
                 fontFamily: '"Roboto Flex", sans-serif',
-                fontSize: "16px",
+                fontSize: 16,
                 lineHeight: "1.6",
                 textAlign: "justify",
-                marginBottom: "32px",
+                marginBottom: 32,
               }}
             >
-              Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the
-              industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and
-              scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into
-              electronic typesetting, remaining essentially unchanged. Lorem Ipsum is simply dummy text of the printing
-              and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s,
-              when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has
-              survived not only five centuries, but also the leap into electronic typesetting, remaining essentially
-              unchanged.
+              {event.description ||
+                "No additional description provided for this event."}
             </p>
           </div>
         </section>
       )}
 
-      {/* Event Cards Section */}
+      {/* Event Date Cards Section (แปลงจากข้อมูลจริง) */}
       <section id="date-selection" className="px-6 py-8" style={{ background: "#DBDBDB" }}>
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* March 22 Event */}
-          {(!selectedDate || selectedDate === "march22") && (
-            <div
-              className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-              style={{
-                background: selectedDate === "march22" ? "var(--red, #FA3A2B)" : "var(--white, #FFFFFF)",
-                borderRadius: "var(--card-radius, 8px)",
-                boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
-              }}
-              onClick={() => handleDateClick("march22")}
-            >
-              <div className="flex">
-                <div
-                  className="p-6 flex flex-col items-center justify-center min-w-[120px]"
-                  style={{
-                    background: "var(--near-black-3, #1D1D1D)",
-                    color: "var(--white, #FFFFFF)",
-                  }}
-                >
-                  <div className="text-sm">Sat</div>
-                  <div className="text-3xl font-bold">22</div>
-                  <div className="text-sm">Mar</div>
+          {dateCards.map((c) => {
+            const b = fmtShortBadge(c.iso);
+            const active = selectedDateKey === c.key;
+            return (
+              <div
+                key={c.key}
+                className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
+                style={{
+                  background: active ? "var(--red, #FA3A2B)" : "var(--white, #FFFFFF)",
+                  borderRadius: "var(--card-radius, 8px)",
+                  boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
+                }}
+                onClick={() => handleDateClick(c.key)}
+              >
+                <div className="flex">
                   <div
-                    className="text-xs mt-2 px-2 py-1 rounded"
+                    className="p-6 flex flex-col items-center justify-center min-w-[120px]"
                     style={{
-                      background: "var(--black, #000000)",
+                      background: "var(--near-black-3, #1D1D1D)",
+                      color: "var(--white, #FFFFFF)",
                     }}
                   >
-                    6 P.M.
-                  </div>
-                </div>
-                <div className="flex-1 p-6 flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="text-2xl font-bold mb-2"
-                      style={{
-                        color: selectedDate === "march22" ? "var(--white, #FFFFFF)" : "var(--red, #FA3A2B)",
-                        fontFamily: '"Roboto Flex", sans-serif',
-                        fontWeight: "800",
-                      }}
-                    >
-                      ROBERT BALTAZAR TRIO
-                    </h3>
+                    <div className="text-sm">{b?.dowShort || ""}</div>
+                    <div className="text-3xl font-bold">{b?.day2 || ""}</div>
+                    <div className="text-sm">{b?.monShort || ""}</div>
                     <div
-                      className="flex items-center gap-2"
-                      style={{
-                        color: selectedDate === "march22" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
+                      className="text-xs mt-2 px-2 py-1 rounded"
+                      style={{ background: "var(--black, #000000)" }}
                     >
-                      <MapPin className="w-4 h-4" />
-                      <span>MCC HALL, 3rd Floor,</span>
-                    </div>
-                    <div
-                      style={{
-                        color: selectedDate === "march22" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      The Mall Lifestore Bangkapi
+                      {new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new Date(c.iso))}.M.
                     </div>
                   </div>
-                  <div
-                    className="w-24 h-24 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
-                    style={{ background: "var(--gray-1, #C3C3C3)" }}
-                  >
-                    <img
-                      src="/src/assets/poster.png"
-                      alt="Robert Baltazar Trio Concert Poster"
-                      className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
-                      onError={(e) => {
-                        console.log("failed to load:", e.currentTarget.src)
-                        e.currentTarget.style.display = "none"
-                      }}
-                      onLoad={() => console.log("Image loaded successfully")}
-                    />
+                  <div className="flex-1 p-6 flex items-center justify-between">
+                    <div>
+                      <h3
+                        className="text-2xl font-bold mb-2 break-words"
+                        style={{
+                          color: active ? "var(--white, #FFFFFF)" : "var(--red, #FA3A2B)",
+                          fontFamily: '"Roboto Flex", sans-serif',
+                          fontWeight: 800,
+                        }}
+                      >
+                        {c.title}
+                      </h3>
+                      <div
+                        className="flex items-center gap-2"
+                        style={{ color: active ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)" }}
+                      >
+                        <MapPin className="w-4 h-4" />
+                        <span>{c.venueLine1 || "-"}</span>
+                      </div>
+                      {c.venueLine2 && (
+                        <div style={{ color: active ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)" }}>
+                          {c.venueLine2}
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      className="w-24 h-24 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
+                      style={{ background: "var(--gray-1, #C3C3C3)" }}
+                    >
+                      <img
+                        src={c.poster}
+                        alt={c.title}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = posterFallback;
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-          {/* March 23 Event */}
-          {(!selectedDate || selectedDate === "march23") && (
-            <div
-              className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-              style={{
-                background: selectedDate === "march23" ? "var(--red, #FA3A2B)" : "var(--white, #FFFFFF)",
-                borderRadius: "var(--card-radius, 8px)",
-                boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
-              }}
-              onClick={() => handleDateClick("march23")}
-            >
-              <div className="flex">
-                <div
-                  className="p-6 flex flex-col items-center justify-center min-w-[120px]"
-                  style={{
-                    background: "var(--near-black-3, #1D1D1D)",
-                    color: "var(--white, #FFFFFF)",
-                  }}
-                >
-                  <div className="text-sm">Sun</div>
-                  <div className="text-3xl font-bold">23</div>
-                  <div className="text-sm">Mar</div>
-                  <div
-                    className="text-xs mt-2 px-2 py-1 rounded"
-                    style={{
-                      background: "var(--black, #000000)",
-                    }}
-                  >
-                    5 P.M.
-                  </div>
-                </div>
-                <div className="flex-1 p-6 flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="text-2xl font-bold mb-2"
-                      style={{
-                        color: selectedDate === "march23" ? "var(--white, #FFFFFF)" : "var(--red, #FA3A2B)",
-                        fontFamily: '"Roboto Flex", sans-serif',
-                        fontWeight: "800",
-                      }}
-                    >
-                      ROBERT BALTAZAR TRIO
-                    </h3>
-                    <div
-                      className="flex items-center gap-2"
-                      style={{
-                        color: selectedDate === "march23" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      <MapPin className="w-4 h-4" />
-                      <span>MCC HALL, 3rd Floor,</span>
-                    </div>
-                    <div
-                      style={{
-                        color: selectedDate === "march23" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      The Mall Lifestore Bangkapi
-                    </div>
-                  </div>
-                  <div
-                    className="w-24 h-24 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
-                    style={{ background: "var(--gray-1, #C3C3C3)" }}
-                  >
-                    <img
-                      src="/src/assets/poster.png"
-                      alt="Robert Baltazar Trio Concert Poster"
-                      className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
-                      onError={(e) => {
-                        console.log("failed to load:", e.currentTarget.src)
-                        e.currentTarget.style.display = "none"
-                      }}
-                      onLoad={() => console.log("Image loaded successfully")}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {selectedDate && (
+            );
+          })}
+
+          {/* Seat map + ซื้อบัตร (ยัง mock) */}
+          {selectedDateKey && (
             <div id="seat-map-section" className="mt-8 space-y-6">
               {/* Seat Map */}
               <div
@@ -521,50 +539,43 @@ export default function Eventselect() {
                   <div className="space-y-1 max-w-4xl mx-auto">
                     {seatRows.map((rowLetter) => (
                       <div key={rowLetter} className="flex items-center justify-center gap-1">
-                        {/* Left row label */}
                         <div className="w-8 text-center font-bold text-gray-700 text-sm">{rowLetter}</div>
-
-                        {/* Seats */}
                         <div className="flex gap-1">
-                          {Array.from({ length: seatsPerRow }, (_, seatIndex) => {
-                            const seatNumber = seatIndex + 1
-                            const { zone } = getSeatZone(rowLetter)
-                            const isSelected = isSeatSelected(rowLetter, seatNumber)
-                            const isOccupied = isSeatOccupied(rowLetter, seatNumber)
+                          {Array.from({ length: seatsPerRow }, (_, i) => {
+                            const seatNumber = i + 1;
+                            const { zone } = getSeatZone(rowLetter);
+                            const selected = isSeatSelected(rowLetter, seatNumber);
+                            const occupied = isSeatOccupied(rowLetter, seatNumber);
 
                             return (
                               <button
                                 key={seatNumber}
                                 onClick={() => handleSeatClick(rowLetter, seatNumber)}
-                                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all relative ${!isOccupied ? "hover:scale-110" : ""}`}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all relative ${
+                                  !occupied ? "hover:scale-110" : ""
+                                }`}
                                 style={{
-                                  background: isSelected
+                                  background: selected
                                     ? "var(--red, #FA3A2B)"
-                                    : isOccupied
-                                      ? "#2D2D2D" // Dark for occupied seats
-                                      : zone === "VIP"
-                                        ? "#f9f654ff" // For VIP
-                                        : "rgba(201, 255, 184, 1)", // For Standard seats
-                                  color: isSelected ? "white" : isOccupied ? "#4CAF50" : "#2D2D2D",
-                                  border: `2px solid ${isOccupied ? "#2D2D2D" : "#E0E0E0"}`,
-                                  cursor: isOccupied ? "not-allowed" : "pointer",
+                                    : occupied
+                                    ? "#2D2D2D"
+                                    : zone === "VIP"
+                                    ? "#f9f654ff"
+                                    : "rgba(201, 255, 184, 1)",
+                                  color: selected ? "white" : occupied ? "#4CAF50" : "#2D2D2D",
+                                  border: `2px solid ${occupied ? "#2D2D2D" : "#E0E0E0"}`,
+                                  cursor: occupied ? "not-allowed" : "pointer",
                                   fontSize: "10px",
                                   fontWeight: "bold",
                                 }}
-                                disabled={isOccupied}
-                                title={
-                                  isOccupied
-                                    ? `${rowLetter}${seatNumber} (Occupied)`
-                                    : `${rowLetter}${seatNumber} (${zone})`
-                                }
+                                disabled={occupied}
+                                title={occupied ? `${rowLetter}${seatNumber} (Occupied)` : `${rowLetter}${seatNumber} (${zone})`}
                               >
-                                {isOccupied ? "✕" : seatNumber}
+                                {occupied ? "✕" : seatNumber}
                               </button>
-                            )
+                            );
                           })}
                         </div>
-
-                        {/* Right row label */}
                         <div className="w-8 text-center font-bold text-gray-700 text-sm">{rowLetter}</div>
                       </div>
                     ))}
@@ -573,28 +584,19 @@ export default function Eventselect() {
                   {/* Legend */}
                   <div className="flex justify-center gap-4 mt-6 pt-4 border-t flex-wrap">
                     <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                        style={{ background: "#F4D03F", color: "#2D2D2D", border: "2px solid #E0E0E0" }}
-                      >
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: "#F4D03F", color: "#2D2D2D", border: "2px solid #E0E0E0" }}>
                         1
                       </div>
                       <span className="text-sm text-gray-700">Available</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                        style={{ background: "#2D2D2D", color: "#4CAF50", border: "2px solid #2D2D2D" }}
-                      >
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: "#2D2D2D", color: "#4CAF50", border: "2px solid #2D2D2D" }}>
                         ✕
                       </div>
                       <span className="text-sm text-gray-700">Occupied</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                        style={{ background: "var(--red, #FA3A2B)", color: "white" }}
-                      >
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: "var(--red, #FA3A2B)", color: "white" }}>
                         1
                       </div>
                       <span className="text-sm text-gray-700">Selected</span>
@@ -621,6 +623,7 @@ export default function Eventselect() {
                 </div>
               </div>
 
+              {/* บล็อคสรุป & ปุ่มจ่ายเงิน (mock) */}
               {selectedSeats.length > 0 && (
                 <div className="flex justify-center">
                   <div
@@ -633,22 +636,18 @@ export default function Eventselect() {
                     }}
                   >
                     {selectedSeats.length === 1 ? (
-                      // Single ticket display
+                      // Single ticket
                       <div className="flex items-start gap-4">
-                        {/* Concert Image */}
                         <div className="w-20 h-20 flex-shrink-0">
                           <img
-                            src="/src/assets/poster.png"
-                            alt="Robert Baltazar Trio Concert Poster"
+                            src={headerPoster}
+                            alt={event.title || "Event Poster"}
                             className="w-full h-full object-cover rounded-lg shadow"
                             onError={(e) => {
-                              console.log("failed to load:", e.currentTarget.src)
-                              e.currentTarget.style.display = "none"
+                              (e.currentTarget as HTMLImageElement).src = posterFallback;
                             }}
-                            onLoad={() => console.log("Image loaded successfully")}
                           />
                         </div>
-                        {/* Details */}
                         <div className="flex-1 space-y-3">
                           <div>
                             <div className="text-sm font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
@@ -661,25 +660,17 @@ export default function Eventselect() {
 
                           <div>
                             <div className="text-lg font-bold" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                              ROBERT BALTAZAR TRIO
+                              {event.title}
                             </div>
                             <div className="flex items-center gap-1 text-sm" style={{ color: "var(--gray-1, #666)" }}>
                               <MapPin className="w-3 h-3" />
-                              <span>MCC HALL, 3rd Floor</span>
+                              <span>{event.location || "-"}</span>
                             </div>
                             <div className="text-sm" style={{ color: "var(--gray-1, #666)" }}>
-                              The Mall Lifestore Bangkapi
-                            </div>
-                            <div
-                              className="flex items-center gap-1 text-sm mt-1"
-                              style={{ color: "var(--gray-1, #666)" }}
-                            >
-                              <Calendar className="w-3 h-3" />
-                              <span>{selectedDate === "march22" ? "Saturday, March 22" : "Sunday, March 23"}</span>
+                              {fmtDate(dateCards.find((d) => d.key === selectedDateKey)?.iso)}
                             </div>
                           </div>
 
-                          {/* Seat Details Grid */}
                           <div className="grid grid-cols-4 gap-2 pt-2 border-t">
                             <div className="text-center">
                               <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
@@ -715,7 +706,6 @@ export default function Eventselect() {
                             </div>
                           </div>
 
-                          {/* Payment Button */}
                           <button
                             className="w-full mt-4 px-6 py-3 rounded-full font-semibold transition-all hover:opacity-90"
                             style={{
@@ -723,7 +713,7 @@ export default function Eventselect() {
                               color: "var(--white, #FFFFFF)",
                               border: "none",
                               borderRadius: "25px",
-                              fontWeight: "600",
+                              fontWeight: 600,
                               cursor: "pointer",
                             }}
                           >
@@ -732,44 +722,33 @@ export default function Eventselect() {
                         </div>
                       </div>
                     ) : (
-                      // Multiple tickets display
+                      // Multiple tickets
                       <div className="space-y-6">
-                        {/* Header */}
                         <div className="text-center border-b pb-4">
                           <div className="text-sm font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
                             Multiple Tickets Reserved
                           </div>
                           <div className="text-2xl font-bold mt-2" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                            ROBERT BALTAZAR TRIO
+                            {event.title}
                           </div>
-                          <div
-                            className="flex items-center justify-center gap-1 text-sm mt-1"
-                            style={{ color: "var(--gray-1, #666)" }}
-                          >
+                          <div className="flex items-center justify-center gap-1 text-sm mt-1" style={{ color: "var(--gray-1, #666)" }}>
                             <Calendar className="w-3 h-3" />
-                            <span>{selectedDate === "march22" ? "Saturday, March 22" : "Sunday, March 23"}</span>
+                            <span>{fmtDate(dateCards.find((d) => d.key === selectedDateKey)?.iso)}</span>
                           </div>
                         </div>
 
-                        {/* Tickets Grid */}
                         <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
                           {selectedSeats.map((seat, index) => (
-                            <div
-                              key={`${seat.row}-${seat.seat}`}
-                              className="border rounded-lg p-4"
-                              style={{ borderColor: "var(--red, #FA3A2B)" }}
-                            >
+                            <div key={`${seat.row}-${seat.seat}`} className="border rounded-lg p-4" style={{ borderColor: "var(--red, #FA3A2B)" }}>
                               <div className="flex items-center gap-3 mb-3">
                                 <div className="w-12 h-12 flex-shrink-0">
                                   <img
-                                    src="/src/assets/poster.png"
-                                    alt="Robert Baltazar Trio Concert Poster"
+                                    src={headerPoster}
+                                    alt={event.title || "Event Poster"}
                                     className="w-full h-full object-cover rounded-lg shadow"
                                     onError={(e) => {
-                                      console.log("failed to load:", e.currentTarget.src)
-                                      e.currentTarget.style.display = "none"
+                                      (e.currentTarget as HTMLImageElement).src = posterFallback;
                                     }}
-                                    onLoad={() => console.log("Image loaded successfully")}
                                   />
                                 </div>
                                 <div>
@@ -784,26 +763,17 @@ export default function Eventselect() {
 
                               <div className="grid grid-cols-3 gap-2 text-center">
                                 <div>
-                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                    ZONE
-                                  </div>
-                                  <div className="font-bold text-sm" style={{ color: "var(--red, #FA3A2B)" }}>
-                                    {seat.zone}
-                                  </div>
+                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>ZONE</div>
+                                  <div className="font-bold text-sm" style={{ color: "var(--red, #FA3A2B)" }}>{seat.zone}</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                    SEAT
-                                  </div>
+                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>SEAT</div>
                                   <div className="font-bold text-sm" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                    {seat.row}
-                                    {seat.seat}
+                                    {seat.row}{seat.seat}
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                    PRICE
-                                  </div>
+                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>PRICE</div>
                                   <div className="font-bold text-sm" style={{ color: "var(--near-black-1, #100F0F)" }}>
                                     ฿{seat.price.toLocaleString()}
                                   </div>
@@ -813,7 +783,6 @@ export default function Eventselect() {
                           ))}
                         </div>
 
-                        {/* Total and Payment */}
                         <div className="border-t pt-4">
                           <div className="flex justify-between items-center mb-4">
                             <span className="text-lg font-semibold" style={{ color: "var(--near-black-1, #100F0F)" }}>
@@ -830,7 +799,7 @@ export default function Eventselect() {
                               color: "var(--white, #FFFFFF)",
                               border: "none",
                               borderRadius: "25px",
-                              fontWeight: "600",
+                              fontWeight: 600,
                               cursor: "pointer",
                             }}
                           >
@@ -846,8 +815,9 @@ export default function Eventselect() {
           )}
         </div>
       </section>
-      {/* Footer Section */}
+
+      {/* Footer */}
       <Footer />
     </div>
-  )
+  );
 }
