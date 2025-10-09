@@ -17,6 +17,7 @@ api.interceptors.request.use(
         const token = localStorage.getItem("token");
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
+            console.log("🔑 Token attached to request");
         }
         return config;
     },
@@ -28,14 +29,16 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
+            console.error("❌ 401 Unauthorized - Clearing token and redirecting");
             localStorage.removeItem("token");
+            localStorage.removeItem("tokenTimestamp");
             window.location.href = "/login";
         }
         return Promise.reject(error);
     }
 );
 
-// Helper functions
+// ==================== Auth API ====================
 export const authApi = {
     login: (username: string, password: string) =>
         api.post("/api/auth/login", { username, password }),
@@ -65,6 +68,33 @@ export const authApi = {
     me: () => api.get("/api/auth/me"),
 };
 
+// ==================== Profile API (ใหม่) ====================
+export const profileApi = {
+    // Get profile (ใช้ /me จาก auth แทน)
+    getProfile: () => api.get("/api/auth/me"),
+
+    // Update user profile
+    updateUser: (data: {
+        email: string;
+        firstName: string;
+        lastName: string;
+        phoneNumber: string;
+        idCard?: string;
+    }) => api.put("/api/profile/user", data),
+
+    // Update organizer profile
+    updateOrganizer: (data: {
+        email: string;
+        firstName: string;
+        lastName: string;
+        phoneNumber: string;
+        companyName?: string;
+        taxId?: string;
+        address?: string;
+    }) => api.put("/api/profile/organizer", data),
+};
+
+// ==================== Admin API ====================
 export const adminApi = {
     // Users
     getAllUsers: () => api.get("/api/admin/users"),

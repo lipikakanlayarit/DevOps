@@ -51,6 +51,11 @@ public class SecurityConfig {
                                 "/error"
                         ).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // Protected endpoints - ต้อง authenticate
+                        .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/profile/**").authenticated()  // ตรวจสอบว่ามีบรรทัดนี้
+                        .requestMatchers(HttpMethod.GET, "/api/profile").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/profile/**").authenticated()
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
                 )
