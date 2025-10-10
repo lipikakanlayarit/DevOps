@@ -134,11 +134,6 @@ export default function HomePage() {
         const eventsSection = document.getElementById("events-section");
         if (eventsSection) eventsSection.scrollIntoView({ behavior: "smooth" });
     };
-
-    const navigateToLogin = () => {
-        navigate("/login");
-    };
-
     const eventFilterOptions = [
         { label: "All", value: "All" },
         { label: "Concert", value: "Concert" },

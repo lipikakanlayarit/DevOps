@@ -15,12 +15,10 @@ type Action =
 
 type AuthContextType = {
     state: AuthState;
-    // ✅ ให้มีชื่อ loginViaBackend ตามที่หน้า Login เรียกใช้
-    loginViaBackend: (identifier: string, password: string) => Promise<{
-        token: string;
-        username: string;
-        role: string;
-    }>;
+    loginViaBackend: (
+        identifier: string,
+        password: string
+    ) => Promise<{ token: string; username: string; role: string }>;
     logout: () => void;
 };
 
@@ -59,16 +57,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     async function loginViaBackend(identifier: string, password: string) {
+        // เรียกผ่าน proxy: /api/*
         const res = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include",
+            credentials: "include", // ไม่เป็นไรถ้า backend ใช้ JWT อย่างเดียว
             body: JSON.stringify({ identifier, password }),
         });
+
         if (!res.ok) {
             const msg = (await res.json().catch(() => null))?.error || "Login failed";
             throw new Error(msg);
         }
+
         const data = (await res.json()) as { token: string; username: string; role: string };
 
         dispatch({ type: "LOGIN_SUCCESS", payload: data });
@@ -87,11 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         dispatch({ type: "LOGOUT" });
     }
 
-    return (
-        <AuthContext.Provider value={{ state, loginViaBackend, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
+    return <AuthContext.Provider value={{ state, loginViaBackend, logout }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => useContext(AuthContext);

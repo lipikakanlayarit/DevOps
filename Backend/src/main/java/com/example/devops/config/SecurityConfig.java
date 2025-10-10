@@ -32,7 +32,7 @@ public class SecurityConfig {
         http
                 .cors(c -> c.configurationSource(req -> {
                     CorsConfiguration cfg = new CorsConfiguration();
-                    cfg.setAllowedOrigins(List.of("http://localhost:5173")); // ✅ อนุญาต Vite
+                    cfg.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000")); // เพิ่ม port 3000
                     cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
                     cfg.setAllowedHeaders(List.of("Authorization","Content-Type"));
                     cfg.setAllowCredentials(true);
@@ -42,6 +42,7 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(reg -> reg
                         .requestMatchers("/api/auth/**").permitAll()          // ✅ เปิด login
+                        .requestMatchers("/api/events/**").permitAll()        // ✅ เพิ่มบรรทัดนี้ - เปิด events
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
