@@ -2,6 +2,7 @@ package com.example.devops.web;
 
 import com.example.devops.model.EventsNam;
 import com.example.devops.repo.EventsNamRepository;
+import com.example.devops.repo.OrganizerRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,15 +18,30 @@ public class EventController {
 
     @Autowired
     private EventsNamRepository eventsRepo;
+    
+    @Autowired
+    private OrganizerRepo organizerRepo;
 
     // สร้าง Event ใหม่
     @PostMapping
     public ResponseEntity<?> createEvent(@RequestBody EventRequest request) {
         try {
-            // เพิ่ม validation
+            // ✅ Validate required fields
             if (request.getOrganizerId() == null) {
                 return ResponseEntity.badRequest()
                         .body("Organizer ID is required");
+            }
+            
+            // ✅ Validate organizer exists in database
+            if (!organizerRepo.existsById(request.getOrganizerId())) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body("Organizer with ID " + request.getOrganizerId() + " does not exist. " +
+                              "Please make sure you are logged in as a valid organizer.");
+            }
+            
+            if (request.getEventName() == null || request.getEventName().trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body("Event name is required");
             }
 
             EventsNam event = new EventsNam();

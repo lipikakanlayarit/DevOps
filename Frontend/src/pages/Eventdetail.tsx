@@ -87,11 +87,16 @@ export default function EventDetails() {
     }
 
     const handleSaveEvent = async () => {
-        // ✅ FIX 2: ถ้าไม่ใช้ JWT ให้ลบเงื่อนไขนี้ออก หรือปรับตามระบบ auth
-        // if (state.status !== "authenticated") {
-        //     alert("โปรดล็อกอินก่อนสร้างอีเวนต์");
-        //     return;
-        // }
+        // ✅ FIX 2: Check if user is authenticated and is an organizer
+        if (state.status !== "authenticated") {
+            alert("โปรดล็อกอินก่อนสร้างอีเวนต์");
+            return;
+        }
+
+        if (state.role !== "ORGANIZER") {
+            alert("เฉพาะ Organizer เท่านั้นที่สามารถสร้างอีเวนต์ได้");
+            return;
+        }
 
         if (!eventData.eventName) { alert("กรุณากรอก Event Name"); return; }
         if (!eventData.category) { alert("กรุณาเลือก Category"); return; }
@@ -122,9 +127,9 @@ export default function EventDetails() {
             const startDatetime = toISO8601String(firstEntry.startDate, firstEntry.startTime);
             const endDatetime = toISO8601String(firstEntry.endDate, firstEntry.endTime);
 
-            // ✅ FIX 4: ปรับ payload ให้ตรงกับ Backend (EventRequest)
+            // ✅ FIX 4: Use actual organizer ID from authenticated user
             const payload = {
-                organizerId: 1, // ⚠️ ควรใช้จาก state.user.id ถ้ามีระบบ auth
+                organizerId: state.userId, // ✅ ใช้ userId จาก AuthContext
                 eventName: eventData.eventName,
                 description: eventData.description || "",
                 categoryId: categoryMap[eventData.category],
@@ -137,15 +142,15 @@ export default function EventDetails() {
 
             console.log("Sending payload:", payload);
 
-            // ✅ FIX 5: เรียก API โดยไม่ต้องใส่ Authorization ถ้า permitAll แล้ว
+            // ✅ FIX 5: Include JWT token in request header
             const headers: HeadersInit = {
                 "Content-Type": "application/json",
             };
 
-            // ถ้าใช้ JWT ให้เพิ่มบรรทัดนี้
-            // if (state.token) {
-            //     headers.Authorization = `Bearer ${state.token}`;
-            // }
+            // ✅ ส่ง JWT token ใน Authorization header
+            if (state.token) {
+                headers.Authorization = `Bearer ${state.token}`;
+            }
 
             const res = await fetch("/api/events", {
                 method: "POST",
