@@ -43,6 +43,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(reg -> reg
                         .requestMatchers("/api/auth/**").permitAll()          // ✅ เปิด login
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/events/**").hasAnyRole("ORGANIZER","ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

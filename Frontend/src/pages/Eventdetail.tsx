@@ -1,6 +1,8 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { api } from "@/lib/api"
 import { Sidebar } from "@/components/sidebarorg"
 import { Input } from "@/components/inputtxt"
 import { Plus, Calendar, Clock as ClockIcon, X, MapPin, Clock, Image as ImageIcon, Trash2 } from "lucide-react"
@@ -15,6 +17,7 @@ type DateTimeEntry = {
 }
 
 export default function EventDetails() {
+  const navigate = useNavigate()
   const [eventData, setEventData] = useState({
     eventName: "",
     category: "",
@@ -32,6 +35,7 @@ export default function EventDetails() {
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
   const [imgError, setImgError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const pickFile = () => fileInputRef.current?.click()
 
@@ -81,6 +85,46 @@ export default function EventDetails() {
 
   const removeDateTimeEntry = (id: number) => {
     setDateTimeEntries((prev) => prev.filter((e) => e.id !== id))
+  }
+
+  async function handleSave() {
+    if (!eventData.eventName) return alert("กรุณากรอก Event Name")
+    if (!dateTimeEntries.length) return alert("กรุณาเพิ่มวันและเวลา")
+
+    const first = dateTimeEntries[0]
+    if (!first.startDate || !first.startTime || !first.endDate || !first.endTime) {
+      return alert("กรุณากรอกวันและเวลาให้ครบ")
+    }
+
+    setSaving(true)
+    try {
+      const start = new Date(`${first.startDate}T${first.startTime}:00`)
+      const end = new Date(`${first.endDate}T${first.endTime}:00`)
+
+      const payload = {
+        eventName: eventData.eventName,
+        description: eventData.description || "",
+        // Optional: map category to ID if needed; keep null for now
+        categoryId: undefined as unknown as number | undefined,
+        startDateTime: start.toISOString(),
+        endDateTime: end.toISOString(),
+        venueName: eventData.locationName,
+        venueAddress: "",
+        maxCapacity: undefined as unknown as number | undefined,
+      }
+
+      const res = await api<{ id: number; eventName: string; status: string }>(
+        "/events",
+        { method: "POST", body: JSON.stringify(payload) }
+      )
+
+      alert(`สร้างอีเวนต์สำเร็จ: ${res.eventName} (ID: ${res.id})`)
+      navigate("/organizationmnge")
+    } catch (err: any) {
+      alert(err?.message || "บันทึกไม่สำเร็จ")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -428,17 +472,13 @@ export default function EventDetails() {
                 Cancel
               </Link>
 
-              {/* เดโม: ยังไม่ส่ง backend แค่ validate ว่ามีรูปและชื่ออีเวนต์ */}
               <button
                 type="button"
-                onClick={() => {
-                  if (!eventData.eventName) return alert("กรุณากรอก Event Name")
-                  if (!coverFile) return alert("กรุณาอัปโหลดรูปภาพ")
-                  alert(`บันทึกชั่วคราวสำเร็จ\nไฟล์: ${coverFile.name}`)
-                }}
+                onClick={handleSave}
+                disabled={saving}
                 className="rounded-full border border-gray-300 px-6 py-3 text-gray-900 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
-                Save &amp; Continue
+                {saving ? "Saving..." : "Save & Continue"}
               </button>
             </div>
           </div>
