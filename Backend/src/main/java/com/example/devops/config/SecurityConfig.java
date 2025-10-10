@@ -43,7 +43,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(reg -> reg
-                        .requestMatchers("/api/auth/**").permitAll()          // ✅ เปิด login
+                        .requestMatchers("/api/auth/login").permitAll()             // ✅ เปิด login
+                        .requestMatchers("/api/auth/register/**").permitAll()       // ✅ เปิด registration
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
