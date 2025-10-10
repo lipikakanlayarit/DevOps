@@ -46,6 +46,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login").permitAll()             // ✅ เปิด login
                         .requestMatchers("/api/auth/register/**").permitAll()       // ✅ เปิด registration
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/events/**").hasAnyRole("ORGANIZER","ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
