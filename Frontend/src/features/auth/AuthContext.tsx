@@ -3,14 +3,14 @@ import React, { createContext, useContext, useEffect, useReducer } from "react";
 type AuthState =
     | { status: "loading" }
     | { status: "unauthenticated" }
-    | { status: "authenticated"; token: string; username: string; role: string };
+    | { status: "authenticated"; token: string; username: string; role: string; userId: number };
 
 type Action =
     | {
     type: "RESTORE";
-    payload: { token?: string | null; username?: string | null; role?: string | null };
+    payload: { token?: string | null; username?: string | null; role?: string | null; userId?: string | null };
 }
-    | { type: "LOGIN_SUCCESS"; payload: { token: string; username: string; role: string } }
+    | { type: "LOGIN_SUCCESS"; payload: { token: string; username: string; role: string; userId: number } }
     | { type: "LOGOUT" };
 
 type AuthContextType = {
@@ -18,22 +18,22 @@ type AuthContextType = {
     loginViaBackend: (
         identifier: string,
         password: string
-    ) => Promise<{ token: string; username: string; role: string }>;
+    ) => Promise<{ token: string; username: string; role: string; userId: number }>;
     logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextType>({
     state: { status: "loading" },
-    loginViaBackend: async () => ({ token: "", username: "", role: "" }),
+    loginViaBackend: async () => ({ token: "", username: "", role: "", userId: 0 }),
     logout: () => {},
 });
 
 function reducer(state: AuthState, action: Action): AuthState {
     switch (action.type) {
         case "RESTORE": {
-            const { token, username, role } = action.payload;
-            if (token && username && role) {
-                return { status: "authenticated", token, username, role };
+            const { token, username, role, userId } = action.payload;
+            if (token && username && role && userId) {
+                return { status: "authenticated", token, username, role, userId: parseInt(userId) };
             }
             return { status: "unauthenticated" };
         }
@@ -53,7 +53,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const token = localStorage.getItem("auth.token");
         const username = localStorage.getItem("auth.username");
         const role = localStorage.getItem("auth.role");
-        dispatch({ type: "RESTORE", payload: { token, username, role } });
+        const userId = localStorage.getItem("auth.userId");
+        dispatch({ type: "RESTORE", payload: { token, username, role, userId } });
     }, []);
 
     async function loginViaBackend(identifier: string, password: string) {
@@ -70,13 +71,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw new Error(msg);
         }
 
-        const data = (await res.json()) as { token: string; username: string; role: string };
+        const data = (await res.json()) as { token: string; username: string; role: string; userId: number };
 
         dispatch({ type: "LOGIN_SUCCESS", payload: data });
 
         localStorage.setItem("auth.token", data.token);
         localStorage.setItem("auth.username", data.username);
         localStorage.setItem("auth.role", data.role);
+        localStorage.setItem("auth.userId", data.userId.toString());
 
         return data;
     }
@@ -85,6 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem("auth.token");
         localStorage.removeItem("auth.username");
         localStorage.removeItem("auth.role");
+        localStorage.removeItem("auth.userId");
         dispatch({ type: "LOGOUT" });
     }
 

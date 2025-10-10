@@ -11,7 +11,7 @@ public class EventsNam {
     @Column(name = "event_id")
     private Long event_id;
 
-    @Column(name = "organizer_id")
+    @Column(name = "organizer_id", nullable = false)
     private Long organizer_id;
 
     @Column(name = "event_name")

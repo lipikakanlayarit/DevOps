@@ -63,7 +63,8 @@ public class AuthController {
             return ResponseEntity.ok(Map.of(
                     "token", token,
                     "username", username,
-                    "role", role
+                    "role", role,
+                    "userId", admin.getId() // Add admin ID
             ));
         }
 
@@ -81,10 +82,12 @@ public class AuthController {
             String role = "ORGANIZER";
             String username = org.getUsername();
             String token = jwt.generateToken(username, role, org.getEmail());
+            // ✅ Include organizer ID in response for event creation
             return ResponseEntity.ok(Map.of(
                     "token", token,
                     "username", username,
-                    "role", role
+                    "role", role,
+                    "userId", org.getId() // Add organizer ID
             ));
         }
 
@@ -107,7 +110,8 @@ public class AuthController {
             return ResponseEntity.ok(Map.of(
                     "token", token,
                     "username", username,
-                    "role", role
+                    "role", role,
+                    "userId", user.getId() // Add user ID
             ));
         }
 
