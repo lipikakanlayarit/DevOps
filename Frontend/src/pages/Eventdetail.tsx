@@ -140,17 +140,17 @@ export default function EventDetails() {
             // ✅ FIX 5: เรียก API โดยไม่ต้องใส่ Authorization ถ้า permitAll แล้ว
             const headers: HeadersInit = {
                 "Content-Type": "application/json",
+                ...(state.status === "authenticated" && state.token ? { Authorization: `Bearer ${state.token}` } : {}),
             };
-
-            // ถ้าใช้ JWT ให้เพิ่มบรรทัดนี้
-            // if (state.token) {
-            //     headers.Authorization = `Bearer ${state.token}`;
-            // }
 
             const res = await fetch("/api/events", {
                 method: "POST",
                 headers,
-                body: JSON.stringify(payload),
+                // organizerId จะปล่อยให้ backend อ่านจาก JWT; หากไม่มี JWT ให้ส่งค่าที่มีอยู่ (กรณีทดสอบ)
+                body: JSON.stringify({
+                    ...payload,
+                    ...(state.status !== "authenticated" ? { organizerId: 1 } : {}),
+                }),
             });
 
             // อ่านข้อความจาก backend เพื่อช่วยดีบัก

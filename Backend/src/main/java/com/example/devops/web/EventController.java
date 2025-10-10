@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,16 +22,20 @@ public class EventController {
 
     // สร้าง Event ใหม่
     @PostMapping
-    public ResponseEntity<?> createEvent(@RequestBody EventRequest request) {
+    public ResponseEntity<?> createEvent(@RequestBody EventRequest request, Authentication auth) {
         try {
-            // เพิ่ม validation
-            if (request.getOrganizerId() == null) {
-                return ResponseEntity.badRequest()
-                        .body("Organizer ID is required");
+            // ถ้าไม่ได้ส่ง organizerId มา ให้พยายามดึงจาก JWT subject/username mapping (mock: organizer id = 1)
+            Long organizerId = request.getOrganizerId();
+            if (organizerId == null) {
+                if (auth == null || auth.getName() == null || auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ORGANIZER"))) {
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Organizer authentication required");
+                }
+                // TODO: Map username -> organizer_id via repository. For local fallback, default to 1.
+                organizerId = 1L;
             }
 
             EventsNam event = new EventsNam();
-            event.setOrganizer_id(request.getOrganizerId());
+            event.setOrganizer_id(organizerId);
             event.setEvent_name(request.getEventName());
             event.setDescription(request.getDescription());
             event.setCategory_id(request.getCategoryId());

@@ -41,8 +41,12 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(reg -> reg
-                        .requestMatchers("/api/auth/**").permitAll()          // ✅ เปิด login
-                        .requestMatchers("/api/events/**").permitAll()        // ✅ เพิ่มบรรทัดนี้ - เปิด events
+                        .requestMatchers("/api/auth/**").permitAll()          // login
+                        // Events: allow public GET, but require organizer for mutations
+                        .requestMatchers(HttpMethod.GET, "/api/events/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/events/**").hasRole("ORGANIZER")
+                        .requestMatchers(HttpMethod.PUT, "/api/events/**").hasRole("ORGANIZER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/events/**").hasRole("ORGANIZER")
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
