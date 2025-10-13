@@ -120,19 +120,16 @@ export default function OrganizerLogin() {
             const payload = {
                 email: form.email.trim(),
                 username: form.username.trim(),
-                password: form.password, // backend จะ hash
-                first_name: form.first_name.trim(),
-                last_name: form.last_name.trim(),
-                phone_number: form.phone_number.trim(),
+                password: form.password, // ให้ backend แฮช
+                firstName: form.first_name.trim(),
+                lastName: form.last_name.trim(),
+                phoneNumber: form.phone_number.trim(),
                 address: form.address.trim(),
-                company_name: form.company_name.trim(),
-                tax_id: form.tax_id.trim(),
-                verification_status: form.verification_status, // ส่ง PENDING
+                companyName: form.company_name.trim(),
+                taxId: form.tax_id.trim(),
+                // verification_status ไม่จำเป็นต้องส่ง ถ้า backend set เป็น PENDING เอง
             };
-
-            // เปลี่ยน endpoint ให้ตรงกับแบ็กเอนด์ของคุณ
-            // ตัวอย่าง: POST /api/organizers/signup
-            const data = await postJSON(`${API_BASE}/api/organizers/signup`, payload);
+            await postJSON(`${API_BASE}/api/auth/organizer/signup`, payload);
 
             // สำเร็จ: พาไปหน้า login ของ organizer หรือหน้า /login
             alert("สมัคร Organizer สำเร็จ! โปรดเข้าสู่ระบบ");

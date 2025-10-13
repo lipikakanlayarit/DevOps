@@ -1,302 +1,431 @@
-// Home.tsx 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useAuth } from "@/features/auth/AuthContext";
+import { profileApi } from "@/lib/api";
 import TicketCard from "@/components/TicketCard";
 import EventCard from "@/components/EventCard";
-import EventToolbar from "@/components/EventToolbar"; // ✅ ใช้ Toolbar ใหม่
+import EventToolbar from "@/components/EventToolbar";
 
-// ---------------- ProfileCard ----------------
-function ProfileCard({ onOpenEdit }: { onOpenEdit: () => void }) {
-  return (
-    <div className="w-72 h-[450px] bg-white border rounded-lg shadow p-4 flex flex-col items-center relative">
-      {/* จุดแดงมุมขวาบน */}
-      <button
-        onClick={onOpenEdit}
-        className="absolute top-4 right-4 w-4 h-4 bg-red-500 rounded-full cursor-pointer"
-      ></button>
-
-      {/* Avatar */}
-      <div className="w-32 h-32 rounded-full bg-gray-200 mb-4"></div>
-
-      {/* Email */}
-      <p className="text-gray-500 mb-6">Nurat_lnwza@gmail.com</p>
-
-      {/* ข้อมูลโปรไฟล์ */}
-      <div className="w-full space-y-3">
-        <div>
-          <p className="text-gray-400 text-sm">Name</p>
-          <p className="font-medium">Thidapon Chaokuwiang</p>
-        </div>
-        <div>
-          <p className="text-gray-400 text-sm">Phone Number</p>
-          <p className="font-medium">066 646 2988</p>
-        </div>
-        <div>
-          <p className="text-gray-400 text-sm">Date of Birth</p>
-          <p className="font-medium">12 January 1998</p>
-        </div>
-        <div>
-          <p className="text-gray-400 text-sm">Gender</p>
-          <p className="font-medium">Not Prefer</p>
-        </div>
-      </div>
-    </div>
-  );
+// ---------------- Types ----------------
+interface UserProfile {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    firstName: string;
+    lastName: string;
+    phoneNumber: string;
+    idCard?: string;
+    // Organizer fields
+    companyName?: string;
+    taxId?: string;
+    address?: string;
+    verificationStatus?: string;
 }
 
-// ---------------- Popup Form ----------------
-function EditProfilePopup({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-white/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-lg w-[700px] p-8">
-        <div className="flex gap-8">
-          {/* Avatar + Change Picture */}
-          <div className="flex flex-col items-center">
-            <div className="w-32 h-32 rounded-full bg-gray-300 mb-4"></div>
-            <button className="bg-red-500 text-white px-4 py-2 rounded-full text-sm">
-              Change Picture
-            </button>
-          </div>
+// ---------------- ProfileCard ----------------
+function ProfileCard({
+                         profile,
+                         onOpenEdit
+                     }: {
+    profile: UserProfile | null;
+    onOpenEdit: () => void;
+}) {
+    if (!profile) {
+        return (
+            <div className="w-72 h-[450px] bg-white border rounded-lg shadow p-4 flex items-center justify-center">
+                <p className="text-gray-500">Loading...</p>
+            </div>
+        );
+    }
 
-          {/* Form */}
-          <div className="flex-1 grid grid-cols-2 gap-4">
-            {["First Name", "Last Name", "Email", "Phone Number", "Gender", "Date of Birth"].map(
-              (label, i) => (
-                <div key={i}>
-                  <label className="block text-sm text-gray-600 mb-1">{label}</label>
-                  <input className="w-full border rounded-lg px-3 py-2" placeholder="Value" />
+    const isOrganizer = profile.role === "ORGANIZER";
+
+    return (
+        <div className="w-72 h-[450px] bg-white border rounded-lg shadow p-4 flex flex-col items-center relative">
+            <button
+                onClick={onOpenEdit}
+                className="absolute top-4 right-4 w-4 h-4 bg-red-500 rounded-full cursor-pointer hover:bg-red-600"
+                title="Edit Profile"
+            ></button>
+
+            <div className="w-32 h-32 rounded-full bg-gray-200 mb-4 flex items-center justify-center text-4xl font-bold text-gray-400">
+                {profile.firstName.charAt(0)}{profile.lastName.charAt(0)}
+            </div>
+
+            <p className="text-gray-500 mb-6">{profile.email}</p>
+
+            <div className="w-full space-y-3">
+                <div>
+                    <p className="text-gray-400 text-sm">Name</p>
+                    <p className="font-medium">{profile.firstName} {profile.lastName}</p>
                 </div>
-              )
-            )}
-          </div>
+                <div>
+                    <p className="text-gray-400 text-sm">Username</p>
+                    <p className="font-medium">{profile.username}</p>
+                </div>
+                <div>
+                    <p className="text-gray-400 text-sm">Phone Number</p>
+                    <p className="font-medium">{profile.phoneNumber}</p>
+                </div>
+                {isOrganizer ? (
+                    <>
+                        <div>
+                            <p className="text-gray-400 text-sm">Company</p>
+                            <p className="font-medium">{profile.companyName || '-'}</p>
+                        </div>
+                        <div>
+                            <p className="text-gray-400 text-sm">Status</p>
+                            <p className="font-medium">{profile.verificationStatus || '-'}</p>
+                        </div>
+                    </>
+                ) : (
+                    <div>
+                        <p className="text-gray-400 text-sm">ID Card</p>
+                        <p className="font-medium">{profile.idCard || '-'}</p>
+                    </div>
+                )}
+            </div>
         </div>
+    );
+}
 
-        {/* Save / Cancel */}
-        <div className="flex justify-end gap-4 mt-8">
-          <button
-            onClick={onClose}
-            className="bg-gray-300 text-black font-semibold px-6 py-2 rounded-full"
-          >
-            Cancel
-          </button>
-          <button className="bg-red-500 text-white font-semibold px-6 py-2 rounded-full">
-            Save
-          </button>
+// ---------------- Edit Popup ----------------
+function EditProfilePopup({
+                              profile,
+                              onClose,
+                              onSave
+                          }: {
+    profile: UserProfile;
+    onClose: () => void;
+    onSave: () => void;
+}) {
+    const isOrganizer = profile.role === "ORGANIZER";
+
+    const [formData, setFormData] = useState({
+        email: profile.email,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phoneNumber: profile.phoneNumber,
+        idCard: profile.idCard || "",
+        // Organizer fields
+        companyName: profile.companyName || "",
+        taxId: profile.taxId || "",
+        address: profile.address || "",
+    });
+
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+
+    const handleChange = (field: string, value: string) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+        setError("");
+    };
+
+    const handleSubmit = async () => {
+        setLoading(true);
+        setError("");
+
+        try {
+            if (isOrganizer) {
+                // Update organizer profile
+                await profileApi.updateOrganizer({
+                    email: formData.email,
+                    firstName: formData.firstName,
+                    lastName: formData.lastName,
+                    phoneNumber: formData.phoneNumber,
+                    companyName: formData.companyName,
+                    taxId: formData.taxId,
+                    address: formData.address,
+                });
+            } else {
+                // Update user profile
+                await profileApi.updateUser({
+                    email: formData.email,
+                    firstName: formData.firstName,
+                    lastName: formData.lastName,
+                    phoneNumber: formData.phoneNumber,
+                    idCard: formData.idCard,
+                });
+            }
+
+            console.log("✅ Profile updated successfully");
+            alert("Profile updated successfully!");
+
+            onSave();
+            onClose();
+        } catch (err: any) {
+            console.error("❌ Submit error:", err);
+            const errorMessage = err.response?.data?.error || err.message || "Failed to update profile";
+            setError(errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-white/30 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-lg w-[700px] p-8">
+                <h2 className="text-2xl font-bold mb-6">Edit Profile</h2>
+
+                {error && (
+                    <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+                        {error}
+                    </div>
+                )}
+
+                <div className="flex gap-8">
+                    <div className="flex flex-col items-center">
+                        <div className="w-32 h-32 rounded-full bg-gray-300 mb-4 flex items-center justify-center text-4xl font-bold text-gray-500">
+                            {formData.firstName.charAt(0)}{formData.lastName.charAt(0)}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm text-gray-600 mb-1">First Name</label>
+                            <input
+                                className="w-full border rounded-lg px-3 py-2"
+                                value={formData.firstName}
+                                onChange={(e) => handleChange("firstName", e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-gray-600 mb-1">Last Name</label>
+                            <input
+                                className="w-full border rounded-lg px-3 py-2"
+                                value={formData.lastName}
+                                onChange={(e) => handleChange("lastName", e.target.value)}
+                            />
+                        </div>
+                        <div className="col-span-2">
+                            <label className="block text-sm text-gray-600 mb-1">Email</label>
+                            <input
+                                type="email"
+                                className="w-full border rounded-lg px-3 py-2"
+                                value={formData.email}
+                                onChange={(e) => handleChange("email", e.target.value)}
+                            />
+                        </div>
+                        <div className="col-span-2">
+                            <label className="block text-sm text-gray-600 mb-1">Phone Number</label>
+                            <input
+                                className="w-full border rounded-lg px-3 py-2"
+                                value={formData.phoneNumber}
+                                onChange={(e) => handleChange("phoneNumber", e.target.value)}
+                            />
+                        </div>
+
+                        {isOrganizer ? (
+                            <>
+                                <div className="col-span-2">
+                                    <label className="block text-sm text-gray-600 mb-1">Company Name</label>
+                                    <input
+                                        className="w-full border rounded-lg px-3 py-2"
+                                        value={formData.companyName}
+                                        onChange={(e) => handleChange("companyName", e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-gray-600 mb-1">Tax ID</label>
+                                    <input
+                                        className="w-full border rounded-lg px-3 py-2"
+                                        value={formData.taxId}
+                                        onChange={(e) => handleChange("taxId", e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-gray-600 mb-1">Address</label>
+                                    <input
+                                        className="w-full border rounded-lg px-3 py-2"
+                                        value={formData.address}
+                                        onChange={(e) => handleChange("address", e.target.value)}
+                                    />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="col-span-2">
+                                <label className="block text-sm text-gray-600 mb-1">ID Card</label>
+                                <input
+                                    className="w-full border rounded-lg px-3 py-2"
+                                    value={formData.idCard}
+                                    onChange={(e) => handleChange("idCard", e.target.value)}
+                                />
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-4 mt-8">
+                    <button
+                        onClick={onClose}
+                        disabled={loading}
+                        className="bg-gray-300 text-black font-semibold px-6 py-2 rounded-full hover:bg-gray-400 disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSubmit}
+                        disabled={loading}
+                        className="bg-red-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-red-600 disabled:opacity-50"
+                    >
+                        {loading ? "Saving..." : "Save"}
+                    </button>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
 
 // ---------------- Ticket Popup ----------------
 function TicketPopup({ ticket, onClose }: { ticket: any; onClose: () => void }) {
-  if (!ticket) return null;
+    if (!ticket) return null;
 
-  return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-      <div className="w-[780px] max-w-full  bg-white overflow-hidden text-black shadow-lg relative">
-        {/* ปุ่มปิด X */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-black hover:text-gray-600 text-3xl z-10 font-bold leading-none w-8 h-8 flex items-center justify-center"
-        >
-          ×
-        </button>
-
-        {/* ใช้ TicketCard แบบเต็มขนาด */}
-        <div className="w-full h-auto">
-          <TicketCard {...ticket} />
+    return (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+            <div className="w-[780px] max-w-full bg-white overflow-hidden text-black shadow-lg relative">
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-black hover:text-gray-600 text-3xl z-10 font-bold leading-none w-8 h-8 flex items-center justify-center"
+                >
+                    ×
+                </button>
+                <div className="w-full h-auto">
+                    <TicketCard {...ticket} />
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
 
-// ---------------- Home ----------------
-export default function Home() {
-  const [category, setCategory] = useState("all");
-  const [query, setQuery] = useState("");
-  const [order, setOrder] = useState<"newest" | "oldest">("newest");
+// ---------------- Main Component ----------------
+export default function Profile() {
+    const { state } = useAuth();
+    const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [category, setCategory] = useState("all");
+    const [query, setQuery] = useState("");
+    const [order, setOrder] = useState<"newest" | "oldest">("newest");
+    const [showEdit, setShowEdit] = useState(false);
+    const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
 
-  const [showEdit, setShowEdit] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+    // Fetch profile data
+    const fetchProfile = async () => {
+        try {
+            console.log("🔄 Fetching profile...");
 
-  // sample tickets
-  const tickets = [
-    {
-      poster:
-        "https://images.unsplash.com/photo-1711655371211-0e0e3d000480?q=80&w=664&auto=format&fit=crop",
-      reserveId: "8101001259250007056700",
-      title: "ROBERT BALTAZAR TRIO",
-      venue: "MCC HALL, 3rd Floor, The Mall Lifestore Bangkapi",
-      showDate: "2025-03-22",
-      zone: "VIP",
-      row: 7,
-      column: 2,
-      total: "5,000",
-      type: "concert",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1584448141569-69f342da535c?w=600&auto=format&fit=crop",
-      reserveId: "8101001259250007056701",
-      title: "MONTREAL WINTER",
-      venue: "Paragon hall",
-      showDate: "2025-03-23",
-      zone: "VIP",
-      row: 5,
-      column: 10,
-      total: "4,500",
-      type: "concert",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1584448097764-374f81551427?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      reserveId: "8101001259250007056702",
-      title: "THE SILVER BROS",
-      venue: "Paragon hall",
-      showDate: "2025-03-23",
-      zone: "VIP",
-      row: 5,
-      column: 10,
-      total: "4,500",
-      type: "seminar",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1673506073257-c316106369d4?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDZ8fHxlbnwwfHx8fHw%3D",
-      reserveId: "8101001259250007056703",
-      title: "FOREST SERVICE",
-      venue: "Paragon hall",
-      showDate: "2025-03-27",
-      zone: "Premium",
-      row: 2,
-      column: 8,
-      total: "4,800",
-      type: "exhibition",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1622817245531-a07976979cf5?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8NHx8Y29uY2VydCUyMHRpY2tldHxlbnwwfHwwfHx8MA%3D%3D",
-      reserveId: "8101001259250007056700",
-      title: "THE VETVE",
-      venue: "MCC HALL, 3rd Floor, The Mall Lifestore Bangkapi",
-      showDate: "2025-03-22",
-      zone: "VIP",
-      row: 7,
-      column: 2,
-      total: "5,000",
-      type: "concert",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1571847140471-1d7766e825ea?q=80&w=733&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-      reserveId: "8101001259250007056701",
-      title: "VICTIM FILMS",
-      venue: "Paragon hall",
-      showDate: "2025-03-23",
-      zone: "VIP",
-      row: 5,
-      column: 10,
-      total: "4,500",
-      type: "concert",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1734055995662-de9e08b05793?w=600&auto=format&fit=crop",
-      reserveId: "8101001259250007056702",
-      title: "THE REWE",
-      venue: "Paragon hall",
-      showDate: "2025-03-23",
-      zone: "VIP",
-      row: 5,
-      column: 10,
-      total: "4,500",
-      type: "seminar",
-    },
-    {
-      poster:
-        "https://images.unsplash.com/photo-1739476479418-148b996e78bb?q=80&w=735&auto=format&fit=crop",
-      reserveId: "8101001259250007056703",
-      title: "HARDCORE",
-      venue: "Paragon hall",
-      showDate: "2025-03-27",
-      zone: "Premium",
-      row: 2,
-      column: 8,
-      total: "4,800",
-      type: "exhibition",
-    },
-  ];
+            // ใช้ profileApi.getProfile() ซึ่งเรียก /api/auth/me
+            const response = await profileApi.getProfile();
+            const data = response.data;
 
-  // filter + search + order
-  const filteredTickets = tickets
-    .filter(
-      (t) =>
-        (category === "all" || t.type === category) &&
-        (t.title.toLowerCase().includes(query.toLowerCase()) ||
-          t.venue.toLowerCase().includes(query.toLowerCase()))
-    )
-    .sort((a, b) =>
-      order === "newest"
-        ? new Date(b.showDate).getTime() - new Date(a.showDate).getTime()
-        : new Date(a.showDate).getTime() - new Date(b.showDate).getTime()
+            console.log("✅ Profile loaded:", data);
+            setProfile(data);
+        } catch (error: any) {
+            console.error("❌ Error fetching profile:", error);
+            // axios interceptor จะจัดการ redirect ไป login อัตโนมัติ
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        // ตรวจสอบว่า AuthContext พร้อมแล้วหรือยัง
+        if (state.status === "authenticated") {
+            fetchProfile();
+        } else if (state.status === "unauthenticated") {
+            window.location.href = "/login";
+        }
+        // ถ้ายัง loading ก็รอไปก่อน
+    }, [state.status]);
+
+    // Sample tickets (replace with real API call)
+    const tickets = [
+        {
+            poster: "https://images.unsplash.com/photo-1711655371211-0e0e3d000480?q=80&w=664&auto=format&fit=crop",
+            reserveId: "8101001259250007056700",
+            title: "ROBERT BALTAZAR TRIO",
+            venue: "MCC HALL, 3rd Floor, The Mall Lifestore Bangkapi",
+            showDate: "2025-03-22",
+            zone: "VIP",
+            row: 7,
+            column: 2,
+            total: "5,000",
+            type: "concert",
+        },
+    ];
+
+    const filteredTickets = tickets
+        .filter(
+            (t) =>
+                (category === "all" || t.type === category) &&
+                (t.title.toLowerCase().includes(query.toLowerCase()) ||
+                    t.venue.toLowerCase().includes(query.toLowerCase()))
+        )
+        .sort((a, b) =>
+            order === "newest"
+                ? new Date(b.showDate).getTime() - new Date(a.showDate).getTime()
+                : new Date(a.showDate).getTime() - new Date(b.showDate).getTime()
+        );
+
+    if (loading || state.status === "loading") {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <p className="text-xl">Loading...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex p-6 gap-10 bg-gray-100 min-h-screen">
+            <div className="ml-6 mr-5">
+                <ProfileCard profile={profile} onOpenEdit={() => setShowEdit(true)} />
+            </div>
+
+            <div className="flex-1 flex flex-col">
+                <div className="flex justify-between items-center mb-6 w-full">
+                    <h1 className="text-5xl font-extrabold">My Ticket</h1>
+                    <div className="w-fit">
+                        <EventToolbar
+                            categories={[
+                                { label: "All", value: "all" },
+                                { label: "Concert", value: "concert" },
+                                { label: "Seminar", value: "seminar" },
+                                { label: "Exhibition", value: "exhibition" },
+                            ]}
+                            category={category}
+                            onCategoryChange={setCategory}
+                            order={order}
+                            onOrderChange={setOrder}
+                            search={query}
+                            onSearchChange={setQuery}
+                        />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+                    {filteredTickets.map((ticket) => (
+                        <EventCard
+                            key={ticket.reserveId}
+                            cover={ticket.poster}
+                            dateRange={ticket.showDate}
+                            title={ticket.title}
+                            venue={ticket.venue}
+                            onClick={() => setSelectedTicket(ticket)}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {showEdit && profile && (
+                <EditProfilePopup
+                    profile={profile}
+                    onClose={() => setShowEdit(false)}
+                    onSave={fetchProfile}
+                />
+            )}
+
+            {selectedTicket && (
+                <TicketPopup ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
+            )}
+        </div>
     );
-
-  return (
-    <div className="flex p-6 gap-10 bg-gray-100 min-h-screen">
-      {/* Sidebar */}
-      <div className="ml-6 mr-5">
-        <ProfileCard onOpenEdit={() => setShowEdit(true)} />
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Title + Toolbar */}
-        <div className="flex justify-between items-center mb-6 w-full">
-          {/* Title */}
-          <h1 className="text-5xl font-extrabold">My Ticket</h1>
-
-          {/* Toolbar */}
-          <div className="w-fit">
-            <EventToolbar
-              categories={[
-                { label: "All", value: "all" },
-                { label: "Concert", value: "concert" },
-                { label: "Seminar", value: "seminar" },
-                { label: "Exhibition", value: "exhibition" },
-              ]}
-              category={category}
-              onCategoryChange={setCategory}
-              order={order}
-              onOrderChange={setOrder}
-              search={query}
-              onSearchChange={setQuery}
-            />
-          </div>
-        </div>
-
-        {/* EventCards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-          {filteredTickets.map((ticket) => (
-            <EventCard
-              key={ticket.reserveId}
-              cover={ticket.poster}
-              dateRange={ticket.showDate}
-              title={ticket.title}
-              venue={ticket.venue}
-              onClick={() => setSelectedTicket(ticket)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Popup: Profile Edit */}
-      {showEdit && <EditProfilePopup onClose={() => setShowEdit(false)} />}
-
-      {/* Popup: Ticket Card */}
-      {selectedTicket && (
-        <TicketPopup ticket={selectedTicket} onClose={() => setSelectedTicket(null)} />
-      )}
-    </div>
-  );
 }

@@ -256,9 +256,9 @@ export default function EventPermissionPage() {
       <div className="ml-64 p-8">
         <div className="mx-auto max-w-7xl">
           {/* Header (ให้ dropdown อยู่บนสุด) */}
-          <div className="mb-6 flex items-center justify-between gap-4 relative z-50">
+          <div className="mb-6 flex items-center justify-between gap-4 relative">
             <h1 className="text-3xl font-bold text-gray-900">Event Management</h1>
-            <div className="relative z-50">
+            <div className="relative">
               <EventToolbar
                 categories={categoryOptions}
                 category={statusFilter}

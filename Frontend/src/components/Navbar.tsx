@@ -10,8 +10,8 @@ function Brand({ sub }: { sub?: string }) {
             <span className="font-extrabold tracking-wide text-3xl">BUTCON</span>
             {sub && (
                 <span className="ml-2 text-lg font-bold uppercase text-red-500">
-          {sub}
-        </span>
+                    {sub}
+                </span>
             )}
         </div>
     );
@@ -166,7 +166,7 @@ function AccountPill({
 export default function Navbar() {
     const { state, logout } = useAuth();
 
-    // ✅ กันหน้าพังตอน state กำลัง restore
+    // แสดง loading state ขณะตรวจสอบ authentication
     if (state.status === "loading") {
         return (
             <header className="fixed top-0 left-0 right-0 z-40 bg-gray-100">
@@ -177,13 +177,17 @@ export default function Navbar() {
         );
     }
 
-    // ✅ อ่านจาก AuthContext ตามของจริง (ไม่มี state.user)
-    const isAuthenticated = state.status === "authenticated";
-    const role = isAuthenticated ? (state.role?.toUpperCase() ?? "GUEST") : "GUEST";
-    const username = isAuthenticated ? (state.username ?? "guest") : "guest";
+    // ✅ อ่านข้อมูลจาก state.user แทน
+    const isAuthenticated = state.status === "authenticated" && state.user !== null;
+    const role = isAuthenticated ? (state.user?.role?.toUpperCase() ?? "USER") : "GUEST";
+    const username = isAuthenticated ? (state.user?.username ?? "guest") : "guest";
 
+    // สไตล์ navbar ตาม role
     const getNavbarStyles = () => {
-        if (role === "ADMIN" || role === "ORGANIZER") {
+        if (role === "ADMIN") {
+            return "bg-zinc-800 backdrop-blur-sm text-white";
+        }
+        if (role === "ORGANIZER") {
             return "bg-zinc-800 backdrop-blur-sm text-white";
         }
         return "bg-[#DBDBDB]/95 backdrop-blur-md border-b border-black/5 text-gray-900";
@@ -192,21 +196,25 @@ export default function Navbar() {
     const brandSub =
         role === "ADMIN" ? "ADMIN" : role === "ORGANIZER" ? "ORGANIZER" : undefined;
 
+    // เมนูสำหรับ USER ธรรมดา
     const userMenu: MenuItem[] = [
         { label: "View Profile", to: "/profile" },
         { label: "Log out", onClick: logout },
     ];
 
+    // เมนูสำหรับ ORGANIZER
     const organizerMenu: MenuItem[] = [
-        { label: "Organization", to: "/organizationmnge" },
+        { label: "My Organization", to: "/organizationmnge" },
         { label: "Log out", onClick: logout },
     ];
 
+    // เมนูสำหรับ ADMIN
     const adminMenu: MenuItem[] = [
-        { label: "Event management", to: "/admin" },
+        { label: "Management", to: "/admin" },
         { label: "Log out", onClick: logout },
     ];
 
+    // เลือก menu ตาม role
     const accountMenu =
         role === "ADMIN" ? adminMenu : role === "ORGANIZER" ? organizerMenu : userMenu;
 
@@ -214,6 +222,7 @@ export default function Navbar() {
         <header className={`fixed top-0 left-0 right-0 z-40 ${getNavbarStyles()}`}>
             <div className="w-full">
                 <div className="h-[60px] flex items-center justify-between">
+                    {/* Layout สำหรับ ADMIN และ ORGANIZER */}
                     {role === "ADMIN" || role === "ORGANIZER" ? (
                         <>
                             <div className="pl-4">
@@ -226,13 +235,13 @@ export default function Navbar() {
                                     username={username}
                                     items={accountMenu}
                                     menuTextClass="text-[#1d1d1d]"
-                                    // ตอนนี้ AuthContext ไม่มี avatarUrl — ปล่อย undefined ไปก่อน
                                     avatarUrl={undefined}
                                     avatarAlt={username}
                                 />
                             </div>
                         </>
                     ) : isAuthenticated ? (
+                        /* Layout สำหรับ USER ที่ login แล้ว */
                         <>
                             <div className="flex-1" />
                             <div className="flex-1 flex justify-center">
@@ -250,6 +259,7 @@ export default function Navbar() {
                             </div>
                         </>
                     ) : (
+                        /* Layout สำหรับคนที่ยังไม่ login (GUEST) */
                         <>
                             <div className="flex-1" />
                             <div className="flex-1 flex justify-center">
