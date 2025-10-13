@@ -292,3 +292,4 @@ gh pr create --fill
 ```
 
 > เคล็ดลับ: ใช้ prefix ให้ชัดเจน เช่น `feat/`, `fix/`, `chore/`, `docs/`, `hotfix/` เพื่อให้ง่ายต่อการรีวิวและอัตโนมัติใน CI/CD
+
