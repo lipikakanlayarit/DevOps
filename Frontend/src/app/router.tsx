@@ -39,7 +39,9 @@ export const router = createBrowserRouter([
       { path: "signin", element: <SignIn /> },
       { path: "component", element: <Component /> },
       { path: "forbidden", element: <Forbidden /> },
-      { path: "eventselect/:id", element: <Eventselect /> },
+
+      // ❌ ลบ public eventselect ออก (ห้ามเข้าตรงโดยไม่ล็อกอิน)
+      // { path: "eventselect/:id", element: <Eventselect /> },
 
       // ---------- AUTH-ONLY ----------
       {
@@ -50,8 +52,8 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: "profile", element: <Profile /> },
-          // อันเดิมยังคงไว้ได้ (ถ้ายังมี flow เก่าใช้อยู่)
-          { path: "eventselect", element: <Eventselect /> },
+          // ✅ ย้าย eventselect เข้ามาใน RequireAuth group
+          { path: "eventselect/:id", element: <Eventselect /> },
           { path: "eventdetail", element: <Eventdetail /> },
           { path: "ticketdetail", element: <Ticketdetail /> },
           { path: "eventdashboard", element: <EventDashboard /> },

@@ -14,8 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Pattern;
 
 @RestController
@@ -27,8 +26,9 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenUtil jwtUtil;
 
-    // Password validation pattern
-    private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$");
+    // Password validation: >=8 chars, มีตัวเล็ก/ใหญ่ และตัวเลข
+    private static final Pattern PASSWORD_PATTERN =
+            Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$");
 
     public AuthController(UserRepository userRepo,
                           OrganizerRepo organizerRepo,
@@ -44,78 +44,108 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req, BindingResult br) {
         if (br.hasErrors()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "username and password are required"));
+            Map<String, Object> err = new HashMap<>();
+            err.put("error", "username and password are required");
+            return ResponseEntity.badRequest().body(err);
         }
 
         String identifier = trimSafe(req.getUsername());
+        String rawPassword = trimSafe(req.getPassword());
 
-        // ลองค้นใน User ก่อน
-        var userOpt = userRepo.findByUsernameIgnoreCase(identifier);
+        // --------- ลอง User ก่อน (username หรือ email) ---------
+        Optional<User> userOpt = userRepo.findByUsernameIgnoreCase(identifier);
         if (userOpt.isEmpty()) userOpt = userRepo.findByEmailIgnoreCase(identifier);
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();
-            if (passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+            String stored = safeUserPassword(user);
+
+            if (passwordMatches(rawPassword, stored)) {
+                upgradeHashIfNeededForUser(user, stored, rawPassword);
                 String token = jwtUtil.generateToken(user.getUsername(), user.getRole(), user.getEmail());
-                return ResponseEntity.ok(buildAuthResponse(token, user.getId().toString(), user.getUsername(), user.getRole(), user.getEmail()));
+                return ResponseEntity.ok(buildAuthResponse(
+                        token,
+                        String.valueOf(user.getId()),
+                        user.getUsername(),
+                        user.getRole(),
+                        user.getEmail()
+                ));
             }
         }
 
-        // ถ้าไม่เจอ ลอง Organizer
-        var orgOpt = organizerRepo.findByUsernameIgnoreCase(identifier);
+        // --------- ไม่ผ่าน -> ลอง Organizer ---------
+        Optional<Organizer> orgOpt = organizerRepo.findByUsernameIgnoreCase(identifier);
         if (orgOpt.isEmpty()) orgOpt = organizerRepo.findByEmailIgnoreCase(identifier);
 
         if (orgOpt.isPresent()) {
             Organizer org = orgOpt.get();
-            if (passwordEncoder.matches(req.getPassword(), org.getPasswordHash())) {
+            String stored = safeOrganizerPassword(org);
+
+            if (passwordMatches(rawPassword, stored)) {
+                upgradeHashIfNeededForOrganizer(org, stored, rawPassword);
                 String token = jwtUtil.generateToken(org.getUsername(), "ORGANIZER", org.getEmail());
-                return ResponseEntity.ok(buildAuthResponse(token, org.getId().toString(), org.getUsername(), "ORGANIZER", org.getEmail()));
+                return ResponseEntity.ok(buildAuthResponse(
+                        token,
+                        String.valueOf(org.getId()),
+                        org.getUsername(),
+                        "ORGANIZER",
+                        org.getEmail()
+                ));
             }
         }
 
-        return ResponseEntity.status(401).body(Map.of("error", "Invalid username/email or password"));
+        Map<String, Object> bad = new HashMap<>();
+        bad.put("error", "Invalid username/email or password");
+        return ResponseEntity.status(401).body(bad);
     }
 
     /* ==================== USER SIGNUP ==================== */
     @PostMapping("/signup")
     public ResponseEntity<?> signupUser(@Valid @RequestBody UserSignupRequest req, BindingResult br) {
         if (br.hasErrors()) {
-            var errors = br.getFieldErrors().stream()
-                    .map(f -> Map.of("field", f.getField(), "message", f.getDefaultMessage()))
-                    .toList();
-            return ResponseEntity.badRequest().body(Map.of("error", "Missing or invalid fields for user signup", "details", errors));
+            List<Map<String, Object>> errors = br.getFieldErrors().stream()
+                    .map(f -> {
+                        Map<String, Object> m = new HashMap<>();
+                        m.put("field", f.getField());
+                        m.put("message", f.getDefaultMessage());
+                        return m;
+                    }).toList();
+            Map<String, Object> res = new HashMap<>();
+            res.put("error", "Missing or invalid fields for user signup");
+            res.put("details", errors);
+            return ResponseEntity.badRequest().body(res);
         }
 
-        // Validate password strength
         if (!PASSWORD_PATTERN.matcher(req.getPassword()).matches()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Password must be at least 8 characters with uppercase, lowercase, and number"
-            ));
+            Map<String, Object> res = new HashMap<>();
+            res.put("error", "Password must be at least 8 characters with uppercase, lowercase, and number");
+            return ResponseEntity.badRequest().body(res);
         }
 
         try {
             String username = trimSafe(req.getUsername());
             String email = trimSafe(req.getEmail());
 
-            // Check duplicates in User table
+            // Duplicate check in User
             if (userRepo.findByUsernameIgnoreCase(username).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
+                return ResponseEntity.badRequest().body(singleError("Username already exists"));
             }
             if (userRepo.findByEmailIgnoreCase(email).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
+                return ResponseEntity.badRequest().body(singleError("Email already exists"));
             }
 
-            // Check duplicates in Organizer table
+            // Duplicate check in Organizer
             if (organizerRepo.findByUsernameIgnoreCase(username).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Username already taken by an organizer"));
+                return ResponseEntity.badRequest().body(singleError("Username already taken by an organizer"));
             }
             if (organizerRepo.findByEmailIgnoreCase(email).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already taken by an organizer"));
+                return ResponseEntity.badRequest().body(singleError("Email already taken by an organizer"));
             }
 
             User user = new User();
             user.setUsername(username);
             user.setEmail(email);
+            // entity ของโปรเจ็กต์นี้มักมี field password_hash mapped เป็น getPassword()/setPassword()
             user.setPassword(passwordEncoder.encode(req.getPassword()));
             user.setRole("USER");
             user.setFirstName(trimSafe(req.getFirstName()));
@@ -124,10 +154,13 @@ public class AuthController {
             user.setIdCardPassport(trimSafe(req.getIdCard()));
 
             userRepo.save(user);
-            return ResponseEntity.ok(Map.of("message", "User created successfully"));
+
+            Map<String, Object> ok = new HashMap<>();
+            ok.put("message", "User created successfully");
+            return ResponseEntity.ok(ok);
 
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", "Registration failed: " + e.getMessage()));
+            return ResponseEntity.status(500).body(singleError("Registration failed: " + e.getMessage()));
         }
     }
 
@@ -135,16 +168,22 @@ public class AuthController {
     @PostMapping("/organizer/signup")
     public ResponseEntity<?> signupOrganizer(@Valid @RequestBody OrganizerSignupRequest req, BindingResult br) {
         if (br.hasErrors()) {
-            var errors = br.getFieldErrors().stream()
-                    .map(f -> Map.of("field", f.getField(), "message", f.getDefaultMessage()))
-                    .toList();
-            return ResponseEntity.badRequest().body(Map.of("error", "Missing or invalid fields for organizer signup", "details", errors));
+            List<Map<String, Object>> errors = br.getFieldErrors().stream()
+                    .map(f -> {
+                        Map<String, Object> m = new HashMap<>();
+                        m.put("field", f.getField());
+                        m.put("message", f.getDefaultMessage());
+                        return m;
+                    }).toList();
+            Map<String, Object> res = new HashMap<>();
+            res.put("error", "Missing or invalid fields for organizer signup");
+            res.put("details", errors);
+            return ResponseEntity.badRequest().body(res);
         }
 
-        // Validate password strength
         if (!PASSWORD_PATTERN.matcher(req.getPassword()).matches()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Password must be at least 8 characters with uppercase, lowercase, and number"
+            return ResponseEntity.badRequest().body(singleError(
+                    "Password must be at least 8 characters with uppercase, lowercase, and number"
             ));
         }
 
@@ -152,20 +191,20 @@ public class AuthController {
             String username = trimSafe(req.getUsername());
             String email = trimSafe(req.getEmail());
 
-            // Check duplicates in Organizer table
+            // Dups in Organizer
             if (organizerRepo.findByUsernameIgnoreCase(username).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
+                return ResponseEntity.badRequest().body(singleError("Username already exists"));
             }
             if (organizerRepo.findByEmailIgnoreCase(email).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
+                return ResponseEntity.badRequest().body(singleError("Email already exists"));
             }
 
-            // Check duplicates in User table
+            // Dups in User
             if (userRepo.findByUsernameIgnoreCase(username).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Username already taken by a user"));
+                return ResponseEntity.badRequest().body(singleError("Username already taken by a user"));
             }
             if (userRepo.findByEmailIgnoreCase(email).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already taken by a user"));
+                return ResponseEntity.badRequest().body(singleError("Email already taken by a user"));
             }
 
             Organizer org = new Organizer();
@@ -181,10 +220,13 @@ public class AuthController {
             org.setVerificationStatus("PENDING");
 
             organizerRepo.save(org);
-            return ResponseEntity.ok(Map.of("message", "Organizer created successfully, pending verification"));
+
+            Map<String, Object> ok = new HashMap<>();
+            ok.put("message", "Organizer created successfully, pending verification");
+            return ResponseEntity.ok(ok);
 
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", "Registration failed: " + e.getMessage()));
+            return ResponseEntity.status(500).body(singleError("Registration failed: " + e.getMessage()));
         }
     }
 
@@ -262,6 +304,12 @@ public class AuthController {
         return s == null ? "" : s.trim();
     }
 
+    private static Map<String, Object> singleError(String message) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("error", message);
+        return m;
+    }
+
     private static Map<String, Object> buildAuthResponse(String token, String id, String username, String role, String email) {
         Map<String, Object> response = new HashMap<>();
         response.put("token", token);
@@ -272,5 +320,43 @@ public class AuthController {
         userData.put("email", email);
         response.put("user", userData);
         return response;
+    }
+
+    /* ==================== password helpers ==================== */
+
+    // รองรับทั้ง BCrypt ($2a/$2b/$2y) และ plaintext (สำหรับข้อมูลเก่า)
+    private boolean passwordMatches(String raw, String stored) {
+        if (stored == null) return false;
+        stored = stored.trim();
+        if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) {
+            return passwordEncoder.matches(raw, stored);
+        }
+        return raw.equals(stored);
+    }
+
+    private void upgradeHashIfNeededForUser(User user, String stored, String raw) {
+        if (stored == null) return;
+        if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) return;
+        String newHash = passwordEncoder.encode(raw);
+        // ในโปรเจ็กต์นี้ส่วนใหญ่ map password_hash -> getPassword()/setPassword()
+        user.setPassword(newHash);
+        userRepo.save(user);
+    }
+
+    private void upgradeHashIfNeededForOrganizer(Organizer org, String stored, String raw) {
+        if (stored == null) return;
+        if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) return;
+        String newHash = passwordEncoder.encode(raw);
+        org.setPasswordHash(newHash);
+        organizerRepo.save(org);
+    }
+
+    private String safeUserPassword(User u) {
+        // ถ้า entity ของคุณใช้ getPasswordHash() ให้เปลี่ยนบรรทัดนี้เป็น u.getPasswordHash()
+        return u.getPassword();
+    }
+
+    private String safeOrganizerPassword(Organizer o) {
+        return o.getPasswordHash();
     }
 }
