@@ -1,69 +1,72 @@
 // src/pages/Ticketdetail.tsx
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebarorg"
-import { Input } from "@/components/inputtxt"
-import { Plus, Calendar, Clock as ClockIcon, X } from "lucide-react"
-import { Link } from "react-router-dom"
-import { api } from "@/lib/api"
+import { useState, useEffect } from "react";
+import { Sidebar } from "@/components/sidebarorg";
+import { Input } from "@/components/inputtxt";
+import { Plus, Calendar, Clock as ClockIcon, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { api } from "@/lib/api";
 
 type ZoneItem = {
-    id: number
-    seatRow: string
-    seatColumn: string
-    zone: string
-    price: string
-}
+    id: number;
+    seatRow: string;
+    seatColumn: string;
+    zone: string;
+    price: string; // เก็บเป็น string จาก input แล้วค่อยแปลงเป็น number ตอนส่ง
+};
+
+// helper: แปลงวันที่/เวลาเป็น ISO-8601 พร้อม offset ไทย (+07:00) ให้ Instant.parse() ฝั่ง backend อ่านได้
+const toIsoThai = (d: string, t: string) => `${d}T${t}:00+07:00`;
 
 export default function TicketDetail() {
     // อ่าน event ล่าสุดจาก localStorage (จากขั้นสร้าง event)
-    const [lastEvent, setLastEvent] = useState<{ id: number; name?: string } | null>(null)
-    const [cachedEvent, setCachedEvent] = useState<any>(null)
+    const [lastEvent, setLastEvent] = useState<{ id: number; name?: string } | null>(null);
+    const [cachedEvent, setCachedEvent] = useState<any>(null);
 
     useEffect(() => {
         try {
-            const lastRaw = localStorage.getItem("event:last")
+            const lastRaw = localStorage.getItem("event:last");
             if (lastRaw) {
-                const last = JSON.parse(lastRaw)
-                setLastEvent(last)
-                const evRaw = localStorage.getItem(`event:${last.id}`)
-                if (evRaw) setCachedEvent(JSON.parse(evRaw))
+                const last = JSON.parse(lastRaw);
+                setLastEvent(last);
+                const evRaw = localStorage.getItem(`event:${last.id}`);
+                if (evRaw) setCachedEvent(JSON.parse(evRaw));
             }
         } catch {
             // ignore parse error
         }
-    }, [])
+    }, []);
 
     // Ticket Details (Zones)
     const [zones, setZones] = useState<ZoneItem[]>([
         { id: 1, seatRow: "", seatColumn: "", zone: "", price: "" },
-    ])
+    ]);
 
     const addZone = () => {
-        setZones(prev => [
+        setZones((prev) => [
             ...prev,
             {
-                id: prev.length ? Math.max(...prev.map(z => z.id)) + 1 : 1,
+                id: prev.length ? Math.max(...prev.map((z) => z.id)) + 1 : 1,
                 seatRow: "",
                 seatColumn: "",
                 zone: "",
                 price: "",
             },
-        ])
-    }
+        ]);
+    };
 
     const removeZone = (id: number) => {
-        setZones(prev => prev.filter(z => z.id !== id))
-    }
+        setZones((prev) => prev.filter((z) => z.id !== id));
+    };
 
     const setZoneField = (index: number, field: keyof ZoneItem, value: string) => {
-        setZones(prev => {
-            const next = [...prev]
-            next[index] = { ...next[index], [field]: value }
-            return next
-        })
-    }
+        setZones((prev) => {
+            const next = [...prev];
+            next[index] = { ...next[index], [field]: value };
+            return next;
+        });
+    };
 
     // Sales Period
     const [sales, setSales] = useState({
@@ -71,18 +74,18 @@ export default function TicketDetail() {
         startTime: "19:00",
         endDate: "2025-10-21",
         endTime: "22:00",
-    })
+    });
 
     // Ticket Allowed per Order
-    const [limits, setLimits] = useState({ min: "1", max: "1" })
+    const [limits, setLimits] = useState({ min: "1", max: "1" });
 
     // Ticket Status
-    const [status, setStatus] = useState<"available" | "unavailable" | "">("")
-    const [saving, setSaving] = useState(false)
+    const [status, setStatus] = useState<"available" | "unavailable" | "">("");
+    const [saving, setSaving] = useState(false);
 
     const onToggleStatus = (value: "available" | "unavailable") => {
-        setStatus(prev => (prev === value ? "" : value))
-    }
+        setStatus((prev) => (prev === value ? "" : value));
+    };
 
     // Save → ยิง API ไป backend
     async function handleSaveTicketDetail() {
@@ -100,47 +103,63 @@ export default function TicketDetail() {
                 return;
             }
 
+            // ตรวจ zone ขั้นพื้นฐาน
+            const invalid = zones.find(
+                (z) => !z.zone.trim() || !z.seatRow.trim() || !z.seatColumn.trim()
+            );
+            if (invalid) {
+                alert("กรุณากรอก Zone / Seat Row / Seat Column ให้ครบทุกรายการ");
+                return;
+            }
+
             setSaving(true);
 
             const eventId = lastEvent.id;
+            const normalizedStatus = (status || "available").toUpperCase(); // DEFAULT = AVAILABLE
 
             const payload = {
                 eventId,
                 ticket: {
                     name: "General Admission",
                     price: null, // ถ้าราคาผูกตามโซน ปล่อย null ที่ ticket
-                    salesStart: `${sales.startDate}T${sales.startTime}:00`,
-                    salesEnd:   `${sales.endDate}T${sales.endTime}:00`,
+                    salesStart: toIsoThai(sales.startDate, sales.startTime),
+                    salesEnd: toIsoThai(sales.endDate, sales.endTime),
                     perOrderMin: Number(limits.min || 1),
                     perOrderMax: Number(limits.max || 1),
-                    status, // "available" | "unavailable" | ""
+                    status: normalizedStatus, // "AVAILABLE" | "UNAVAILABLE"
                 },
-                zones: zones.map(z => ({
-                    name: z.zone,
-                    seatRow: z.seatRow,
-                    seatColumn: z.seatColumn,
-                    price: z.price ? Number(z.price) : null, // ถ้าราคาตามโซนจะไปลง zone_ticket_types ที่ backend
+                zones: zones.map((z) => ({
+                    name: z.zone.trim(),
+                    seatRow: z.seatRow.trim(),
+                    seatColumn: z.seatColumn.trim(),
+                    price: z.price ? Number(z.price) : null, // ถ้าราคาตามโซนจะไปลงฝั่ง backend
                 })),
             };
 
             console.log("DEBUG save ticket", {
                 url: `/events/${eventId}/tickets/setup`,
-                tokenBeginsWith: (localStorage.getItem("auth.token") || "").slice(0, 12),
+                tokenBeginsWith: (localStorage.getItem("token") || "").slice(0, 12),
                 payload,
             });
 
-            // แนะนำแบบรวบยอด (ทำ controller ไว้ที่ POST /api/events/{eventId}/tickets/setup)
-            await api<{ success: boolean; ticketTypeId?: number }>(
+            // ✅ ใช้ Axios แบบถูกต้อง (ต้องส่งใน field data ไม่ใช่ body)
+            const { data } = await api.post<{ success?: boolean; ticketTypeId?: number }>(
                 `/events/${eventId}/tickets/setup`,
-                { method: "POST", body: JSON.stringify(payload) }
+                payload,
+                { headers: { "Content-Type": "application/json" } }
             );
+
+            // รองรับทั้งแบบ success=true หรือแบบ response อื่นของคุณ
+            if (data && "success" in data && data.success === false) {
+                throw new Error("backend ไม่ได้ส่ง success=true");
+            }
 
             alert("บันทึก Ticket Detail เรียบร้อย");
             // TODO: จะ navigate ไปหน้าอื่นต่อก็ได้ เช่น dashboard
             // navigate("/eventdashboard");
         } catch (e: any) {
             console.error(e);
-            alert(e?.message ?? "บันทึก Ticket Detail ไม่สำเร็จ");
+            alert(e?.response?.data?.message || e?.message || "บันทึก Ticket Detail ไม่สำเร็จ");
         } finally {
             setSaving(false);
         }
@@ -162,14 +181,16 @@ export default function TicketDetail() {
                         <div className="mb-2 p-4 rounded border bg-white">
                             <div className="text-sm text-gray-500">Event just created (local)</div>
                             <div className="font-semibold">
-                                ID: {lastEvent.id}{lastEvent.name ? ` — ${lastEvent.name}` : ""}
+                                ID: {lastEvent.id}
+                                {lastEvent.name ? ` — ${lastEvent.name}` : ""}
                             </div>
                             {cachedEvent && (
                                 <div className="text-sm text-gray-600">
                                     <div>Start: {cachedEvent.startDateTime ?? cachedEvent.startDatetime}</div>
-                                    <div>End:   {cachedEvent.endDateTime   ?? cachedEvent.endDatetime}</div>
+                                    <div>End: {cachedEvent.endDateTime ?? cachedEvent.endDatetime}</div>
                                     <div>Venue: {cachedEvent.venueName}</div>
-                                    <div>Location: {cachedEvent.locationName}</div>
+                                    {/* Location อาจไม่มีใน cache */}
+                                    {cachedEvent.locationName && <div>Location: {cachedEvent.locationName}</div>}
                                 </div>
                             )}
                         </div>
@@ -224,7 +245,10 @@ export default function TicketDetail() {
                                         <div className="space-y-2">
                                             <label className="text-sm font-medium text-gray-700">Price</label>
                                             <Input
-                                                placeholder="Value"
+                                                type="number"
+                                                inputMode="decimal"
+                                                min="0"
+                                                placeholder="0"
                                                 value={z.price}
                                                 onChange={(e) => setZoneField(idx, "price", e.target.value)}
                                             />
@@ -292,7 +316,7 @@ export default function TicketDetail() {
                                 </div>
                             </div>
 
-                            {/* dummy cols ให้ layout เหมือนภาพ */}
+                            {/* spacer */}
                             <div className="opacity-0 pointer-events-none md:block hidden">
                                 <label className="text-sm font-medium text-gray-700">spacer</label>
                                 <Input disabled placeholder="" />
@@ -344,6 +368,7 @@ export default function TicketDetail() {
                                 </div>
                             </div>
 
+                            {/* spacer */}
                             <div className="opacity-0 pointer-events-none md:block hidden">
                                 <label className="text-sm font-medium text-gray-700">spacer</label>
                                 <Input disabled placeholder="" />
@@ -378,9 +403,12 @@ export default function TicketDetail() {
                                     Minimum ticket <span className="text-red-500 ml-1">*</span>
                                 </label>
                                 <Input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="1"
                                     placeholder="1"
                                     value={limits.min}
-                                    onChange={(e) => setLimits(l => ({ ...l, min: e.target.value }))}
+                                    onChange={(e) => setLimits((l) => ({ ...l, min: e.target.value }))}
                                 />
                             </div>
 
@@ -389,9 +417,12 @@ export default function TicketDetail() {
                                     Maximum ticket <span className="text-red-500 ml-1">*</span>
                                 </label>
                                 <Input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="1"
                                     placeholder="1"
                                     value={limits.max}
-                                    onChange={(e) => setLimits(l => ({ ...l, max: e.target.value }))}
+                                    onChange={(e) => setLimits((l) => ({ ...l, max: e.target.value }))}
                                 />
                             </div>
                         </div>
@@ -442,5 +473,5 @@ export default function TicketDetail() {
                 </div>
             </main>
         </div>
-    )
+    );
 }
