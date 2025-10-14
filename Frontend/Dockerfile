@@ -1,8 +1,10 @@
 # Frontend/Dockerfile.dev
-FROM node:20-alpine
+ARG NODE_IMAGE=node:20-bullseye-slim
+FROM ${NODE_IMAGE}
+
 WORKDIR /app
 
-# ใช้ lockfile ตามที่มีจริง (ด้านล่างใช้ npm)
+# ใช้ lockfile ตามที่มีจริง (npm)
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 

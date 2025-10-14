@@ -1,8 +1,6 @@
-// src/app/router.tsx
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
-// public pages
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import OrganizerLogin from "@/pages/OrganizerLogin";
@@ -12,7 +10,6 @@ import Component from "@/pages/Component";
 import Forbidden from "@/pages/Forbidden";
 import Landding from "@/pages/Landding";
 
-// protected pages
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
 import Eventdetail from "@/pages/Eventdetail";
@@ -23,7 +20,6 @@ import Admin from "@/pages/admin";
 import AdminEventdetail from "@/pages/admin-eventdetail";
 import EventPermission from "@/pages/admin-permission";
 
-// guards
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
@@ -32,7 +28,6 @@ export const router = createBrowserRouter([
         path: "/",
         element: <RootLayout />,
         children: [
-            // public
             { index: true, element: <Landding /> },
             { path: "home", element: <Home /> },
             { path: "login", element: <Login /> },
@@ -41,7 +36,6 @@ export const router = createBrowserRouter([
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
 
-            // auth-only (ทุก role ที่ login แล้ว)
             {
                 element: (
                     <RequireAuth>
@@ -53,11 +47,14 @@ export const router = createBrowserRouter([
                     { path: "eventselect", element: <Eventselect /> },
                     { path: "eventdetail", element: <Eventdetail /> },
                     { path: "ticketdetail", element: <Ticketdetail /> },
+
+                    // ✅ รองรับพารามิเตอร์ eventId
+                    { path: "eventdashboard/:eventId", element: <EventDashboard /> },
+                    // (ถ้าอยากคง path เดิมไว้ด้วยก็ได้)
                     { path: "eventdashboard", element: <EventDashboard /> },
                 ],
             },
 
-            // organizer/admin only
             {
                 path: "organizationmnge",
                 element: (
@@ -67,7 +64,6 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // admin group (ADMIN เท่านั้น)
             {
                 path: "admin",
                 element: (
@@ -84,7 +80,6 @@ export const router = createBrowserRouter([
                 ],
             },
 
-            // organizer group (ORGANIZER เท่านั้น)
             {
                 path: "organize",
                 element: (
@@ -98,7 +93,6 @@ export const router = createBrowserRouter([
                 ],
             },
 
-            // catch-all
             { path: "*", element: <NotFound /> },
         ],
     },
