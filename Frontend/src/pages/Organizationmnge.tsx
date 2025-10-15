@@ -207,10 +207,7 @@ export default function Organizationmnge() {
                         >
                             <div className="text-[18px] text-gray-900">{ev.title}</div>
                             <div className="text-right">
-                                <Link
-                                    to={`/eventdashboard/${ev.id}`}
-                                    className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition"
-                                >
+                                <Link to={`/eventdetail/${ev.id}`} className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition">
                                     View
                                 </Link>
 

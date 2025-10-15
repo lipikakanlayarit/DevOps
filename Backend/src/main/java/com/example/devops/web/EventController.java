@@ -1,21 +1,28 @@
 package com.example.devops.web;
 
+import com.example.devops.dto.EventCreateRequest;
+import com.example.devops.dto.EventResponse;
+import com.example.devops.dto.EventUpdateRequest;
 import com.example.devops.model.EventsNam;
 import com.example.devops.model.Organizer;
 import com.example.devops.repo.EventsNamRepository;
 import com.example.devops.repo.OrganizerRepo;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
+import static com.example.devops.dto.EventMapper.applyUpdate;
+import static com.example.devops.dto.EventMapper.toDto;
+import static com.example.devops.dto.EventMapper.toEntity;
+
 @RestController
 @RequestMapping("/api/events")
+@CrossOrigin(origins = {"http://localhost:5173"}, allowCredentials = "true")
 public class EventController {
 
     private final EventsNamRepository eventsRepository;
@@ -26,26 +33,13 @@ public class EventController {
         this.organizerRepo = organizerRepo;
     }
 
-    public static class CreateEventRequest {
-        @NotBlank
-        public String eventName;
-        public String description;
-        public Long categoryId; // optional
-        @NotBlank
-        public String startDateTime; // ISO-8601
-        @NotBlank
-        public String endDateTime;   // ISO-8601
-        @NotBlank
-        public String venueName;
-        public String venueAddress;
-        public Integer maxCapacity; // optional
-    }
-
+    // ------------------ CREATE ------------------
     @PostMapping
-    public ResponseEntity<?> create(@Valid @RequestBody CreateEventRequest req, Authentication auth) {
+    public ResponseEntity<?> create(@Valid @RequestBody EventCreateRequest req, Authentication auth) {
         if (auth == null || auth.getName() == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
+
         String username = auth.getName();
         Optional<Organizer> organizerOpt = organizerRepo.findByUsernameIgnoreCase(username)
                 .or(() -> organizerRepo.findByEmailIgnoreCase(username));
@@ -54,35 +48,38 @@ public class EventController {
             return ResponseEntity.status(403).body(Map.of("error", "Organizer not found or unauthorized"));
         }
 
-        Instant start;
-        Instant end;
-        try {
-            start = Instant.parse(req.startDateTime);
-            end = Instant.parse(req.endDateTime);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date time format; use ISO-8601"));
-        }
-
-        Organizer organizer = organizerOpt.get();
-
-        EventsNam ev = new EventsNam();
-        ev.setOrganizer_id(organizer.getId());
-        ev.setEvent_name(req.eventName);
-        ev.setDescription(req.description);
-        ev.setCategory_id(req.categoryId);
-        ev.setStart_datetime(start);
-        ev.setEnd_datetime(end);
-        ev.setVenue_name(req.venueName);
-        ev.setVenue_address(req.venueAddress);
-        ev.setMax_capacity(req.maxCapacity);
-        ev.setStatus("DRAFT");
+        EventsNam ev = toEntity(new EventsNam(), req, organizerOpt.get().getId());
+        if (ev.getStatus() == null) ev.setStatus("DRAFT");
 
         EventsNam saved = eventsRepository.save(ev);
+        EventResponse body = toDto(saved);
+        return ResponseEntity.ok(body);
+    }
 
-        return ResponseEntity.ok(Map.of(
-                "id", saved.getEvent_id(),
-                "eventName", saved.getEvent_name(),
-                "status", saved.getStatus()
-        ));
+    // ------------------ READ ------------------
+    @GetMapping("/{id}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> getOne(@PathVariable("id") Long id) { // 👈 ระบุชื่อ "id"
+        return eventsRepository.findById(id)
+                .<ResponseEntity<?>>map(ev -> ResponseEntity.ok(toDto(ev)))
+                .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Event not found")));
+    }
+
+    // ------------------ UPDATE ------------------
+    @PutMapping("/{id}")
+    public ResponseEntity<?> update(@PathVariable("id") Long id, // 👈 ระบุชื่อ "id"
+                                    @Valid @RequestBody EventUpdateRequest req,
+                                    Authentication auth) {
+        if (auth == null || auth.getName() == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        }
+
+        return eventsRepository.findById(id)
+                .<ResponseEntity<?>>map(ev -> {
+                    EventsNam updated = applyUpdate(ev, req);
+                    EventsNam saved = eventsRepository.save(updated);
+                    return ResponseEntity.ok(toDto(saved));
+                })
+                .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Event not found")));
     }
 }
