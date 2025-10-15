@@ -24,12 +24,18 @@ public class TicketSetupRequest {
     private String zone;
     private Double price;
 
+    // ---- Advanced Setting (global สำหรับอีเวนต์นี้) ----
+    // ใช้เป็นค่า default ตั้งให้ทุกรายการ ticket_types ที่ถูกสร้าง/รีเจน
+    private Integer minPerOrder;   // Minimum ticket per order
+    private Integer maxPerOrder;   // Maximum ticket per order
+    private Boolean active;        // true = Available, false = Unavailable
+
     @Getter @Setter
     @NoArgsConstructor @AllArgsConstructor
     public static class ZoneConfig {
-        private String code;      // "VIP" | "STANDARD"
-        private String name;      // แสดงผล
-        private Integer rowStart; // 1-indexed เช่น VIP ครอบคลุมแถว 1..2 (A..B)
+        private String code;       // "VIP" | "STANDARD"
+        private String name;       // แสดงผล
+        private Integer rowStart;  // 1-indexed เช่น VIP ครอบคลุมแถว 1..2 (A..B)
         private Integer rowEnd;
         private Double price;
         private Long ticketTypeId; // ถ้ามีเชื่อม TicketTypes

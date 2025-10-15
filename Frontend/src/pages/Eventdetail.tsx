@@ -279,7 +279,7 @@ export default function EventDetails() {
                                                 <option value="">Select</option>
                                                 <option value="1">Concert</option>
                                                 <option value="2">Seminar</option>
-                                                <option value="3">Festival</option>
+                                                <option value="3">Exhibition</option>
                                             </select>
                                             <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
                                                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -110,18 +110,25 @@ CREATE TABLE IF NOT EXISTS ticket_types (
     sale_start_datetime TIMESTAMPTZ,
     sale_end_datetime TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
+    -- Advanced Setting (ต่อออเดอร์)
+    min_per_order INT,
+    max_per_order INT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
--- เผื่อฐานเดิมยังไม่มี timestamp สองคอลัมน์นี้
+-- เผื่อฐานเดิมยังไม่มีคอลัมน์เหล่านี้
 ALTER TABLE ticket_types
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS min_per_order INT,
+    ADD COLUMN IF NOT EXISTS max_per_order INT;
 
 UPDATE ticket_types
 SET created_at = COALESCE(created_at, NOW()),
-    updated_at = COALESCE(updated_at, NOW());
+    updated_at = COALESCE(updated_at, NOW()),
+    min_per_order = COALESCE(min_per_order, 1),
+    max_per_order = COALESCE(max_per_order, 1);
 
 -- ===================
 -- RESERVED / PAYMENTS
@@ -323,7 +330,7 @@ VALUES ('admin@butcon.com','admin', crypt('password123', gen_salt('bf', 10)), 'S
 INSERT INTO categories (category_name, description) VALUES
                                                         ('Concert','Music concerts and live shows'),
                                                         ('Seminar','Business and academic seminars'),
-                                                        ('Festival','Outdoor and cultural festivals')
+                                                        ('Exhibition','Outdoor and cultural Exhibition')
     ON CONFLICT DO NOTHING;
 
 INSERT INTO events_nam (
@@ -339,14 +346,16 @@ INSERT INTO events_nam (
        'Chiang Mai Conference Center','Chiang Mai, Thailand',300,'PUBLISHED')
     ON CONFLICT DO NOTHING;
 
-INSERT INTO ticket_types (event_id, type_name, description, price, quantity_available, quantity_sold, sale_start_datetime, sale_end_datetime, is_active)
-VALUES
-    (1,'General Admission','Standard entry ticket',1500.00,3000,100,
-     TIMESTAMPTZ '2025-09-01 10:00:00+07', TIMESTAMPTZ '2025-11-01 18:00:00+07', TRUE),
-    (1,'VIP','VIP access with perks',5000.00,500,50,
-     TIMESTAMPTZ '2025-09-01 10:00:00+07', TIMESTAMPTZ '2025-11-01 18:00:00+07', TRUE),
-    (2,'Seminar Pass','Full-day seminar pass',1000.00,200,20,
-     TIMESTAMPTZ '2025-08-15 09:00:00+07', TIMESTAMPTZ '2025-10-15 09:00:00+07', TRUE)
+INSERT INTO ticket_types (
+    event_id, type_name, description, price, quantity_available, quantity_sold,
+    sale_start_datetime, sale_end_datetime, is_active, min_per_order, max_per_order
+) VALUES
+      (1,'General Admission','Standard entry ticket',1500.00,3000,100,
+       TIMESTAMPTZ '2025-09-01 10:00:00+07', TIMESTAMPTZ '2025-11-01 18:00:00+07', TRUE, 1, 10),
+      (1,'VIP','VIP access with perks',5000.00,500,50,
+       TIMESTAMPTZ '2025-09-01 10:00:00+07', TIMESTAMPTZ '2025-11-01 18:00:00+07', TRUE, 1, 5),
+      (2,'Seminar Pass','Full-day seminar pass',1000.00,200,20,
+       TIMESTAMPTZ '2025-08-15 09:00:00+07', TIMESTAMPTZ '2025-10-15 09:00:00+07', TRUE, 1, 4)
     ON CONFLICT DO NOTHING;
 
 INSERT INTO reserved (user_id, event_id, ticket_type_id, quantity, total_amount, payment_status, confirmation_code, notes)

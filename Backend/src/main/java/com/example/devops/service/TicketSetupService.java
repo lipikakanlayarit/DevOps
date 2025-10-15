@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
  * จัดการผังที่นั่ง (Seat Map) และโซนตั๋วของอีเวนต์
  * ตารางที่เกี่ยวข้อง:
  *   seat_zones(event_id) -> seat_rows(zone_id) -> seats(row_id)
- *   zone_ticket_types(zone_id, ticket_type_id) -> ticket_types(price)
+ *   zone_ticket_types(zone_id, ticket_type_id) -> ticket_types(price, min/max_per_order, is_active)
  */
 @Service
 @RequiredArgsConstructor
@@ -29,7 +29,7 @@ public class TicketSetupService {
     private final TicketTypesRepository ticketTypesRepo;
 
     // ------------------------------------------------------------
-    // READ: สำหรับ prefill Ticket Detail (ดึง seatRows/seatColumns + โซน + ราคา)
+    // READ: สำหรับ prefill Ticket Detail (ดึง seatRows/seatColumns + โซน + ราคา + Advanced Setting)
     // ------------------------------------------------------------
     @Transactional(readOnly = true)
     public Map<String, Object> getSetup(Long eventId) {
@@ -77,10 +77,24 @@ public class TicketSetupService {
             }
         }
 
+        // ----- Advanced Setting prefill จาก ticket_types ตัวแรกของอีเวนต์ -----
+        Integer minPer = null, maxPer = null;
+        Boolean active = null;
+        List<TicketTypes> types = ticketTypesRepo.findByEventId(eventId);
+        if (types != null && !types.isEmpty()) {
+            TicketTypes t0 = types.get(0);
+            minPer = t0.getMin_per_order();
+            maxPer = t0.getMax_per_order();
+            active = t0.getIs_active();
+        }
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("seatRows", seatRows);
         out.put("seatColumns", seatColumns);
         out.put("zones", zoneDtos);
+        out.put("minPerOrder", minPer);
+        out.put("maxPerOrder", maxPer);
+        out.put("active", active);
         return out;
     }
 
@@ -115,6 +129,11 @@ public class TicketSetupService {
             throw new IllegalArgumentException("seatRows/seatColumns ต้องมากกว่า 0");
         }
 
+        // ✅ รับค่าจาก Advanced Setting (global) + default
+        Integer minPer = req.getMinPerOrder() != null ? req.getMinPerOrder() : 1;
+        Integer maxPer = req.getMaxPerOrder() != null ? req.getMaxPerOrder() : 1;
+        Boolean active = req.getActive() == null ? Boolean.TRUE : req.getActive();
+
         // 3) สร้างโซน + ถ้ามีราคา → สร้าง ticket_types และ mapping
         List<SeatZones> zones = new ArrayList<>();
 
@@ -139,15 +158,17 @@ public class TicketSetupService {
                 if (ticketTypeId == null && z.getPrice() != null) {
                     TicketTypes tt = new TicketTypes();
                     tt.setEvent_id(eventId);
-                    tt.setType_name(z.getName() != null ? z.getName() :
-                            (z.getCode() != null ? z.getCode() : "GENERAL"));
+                    tt.setType_name(z.getName() != null ? z.getName()
+                            : (z.getCode() != null ? z.getCode() : "GENERAL"));
                     tt.setDescription("Auto-created from Ticket Setup");
                     tt.setPrice(BigDecimal.valueOf(z.getPrice()));
                     tt.setQuantity_available(null);
                     tt.setQuantity_sold(0);
                     tt.setSale_start_datetime(null);
                     tt.setSale_end_datetime(null);
-                    tt.setIs_active(true);
+                    tt.setIs_active(active);
+                    tt.setMin_per_order(minPer);
+                    tt.setMax_per_order(maxPer);
                     tt.setCreated_at(now);
                     tt.setUpdated_at(now);
                     ticketTypesRepo.save(tt);
@@ -180,7 +201,9 @@ public class TicketSetupService {
                 tt.setType_name(zone.getZone_name());
                 tt.setDescription("Auto-created from Ticket Setup (single zone)");
                 tt.setPrice(BigDecimal.valueOf(req.getPrice()));
-                tt.setIs_active(true);
+                tt.setIs_active(active);
+                tt.setMin_per_order(minPer);
+                tt.setMax_per_order(maxPer);
                 tt.setCreated_at(now);
                 tt.setUpdated_at(now);
                 ticketTypesRepo.save(tt);

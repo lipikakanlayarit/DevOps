@@ -10,6 +10,11 @@ public class TicketSetupResponse {
     private int seatColumns;
     private List<ZonePrice> zones;
 
+    // ---- Advanced Setting (prefill) ----
+    private Integer minPerOrder;
+    private Integer maxPerOrder;
+    private Boolean active;
+
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
     public static class ZonePrice {
         private String code;

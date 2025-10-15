@@ -1,3 +1,4 @@
+// src/pages/Organizationmnge.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Plus } from "lucide-react";
@@ -7,14 +8,17 @@ import CategoryRadio from "@/components/CategoryRadio";
 import PrimaryButton from "@/components/PrimaryButton";
 import { api } from "@/lib/api";
 
+type CategoryName = "concert" | "seminar" | "exhibition" | "other";
+type Order = "newest" | "oldest";
+
 type EventItem = {
     id: number | string;
     title: string;
-    category: "concert" | "seminar" | "exhibition" | "other";
-    updatedAt: string; // ISO string
+    category: CategoryName;
+    updatedAt?: string; // เก็บไว้โชว์ถ้าต้องใช้
+    sortTs: number;     // ใช้เรียงจริง (epoch ms)
+    sortTiebreaker: number; // กันเวลาชนกัน ใช้ id ตัวเลข
 };
-
-type Order = "newest" | "oldest";
 
 export default function Organizationmnge() {
     const location = useLocation() as any;
@@ -34,48 +38,73 @@ export default function Organizationmnge() {
     const [category, setCategory] = useState<"all" | "concert" | "seminar" | "exhibition">("all");
     const [order, setOrder] = useState<Order>("newest");
 
+    // helper: แปลง category id → ชื่อ
+    const mapCategory = (raw: any): CategoryName => {
+        // ลองทั้ง id และชื่อ
+        const id =
+            raw?.categoryId ?? raw?.category_id ?? raw?.categoryid ?? raw?.category ?? null;
+
+        // ถ้า backend ส่งเป็นสตริงชื่ออยู่แล้ว
+        if (typeof id === "string") {
+            const low = id.toLowerCase();
+            if (low === "concert" || low === "seminar" || low === "exhibition") return low as CategoryName;
+        }
+
+        // ถ้าเป็นตัวเลข
+        const n = Number(id);
+        switch (n) {
+            case 1: return "concert";
+            case 2: return "seminar";
+            case 3: return "exhibition";
+            default: return "other";
+        }
+    };
+
+    // helper: หา timestamp สำหรับเรียง
+    const pickSortTs = (ev: any): { ts: number; pretty?: string } => {
+        const candidates = [
+            ev.updatedAt, ev.updated_at, ev.updated_at_utc,
+            ev.createdAt, ev.created_at,
+            ev.startDateTime, ev.startDatetime, ev.start_datetime,
+        ].filter(Boolean) as string[];
+
+        for (const s of candidates) {
+            const t = Date.parse(s);
+            if (!Number.isNaN(t)) return { ts: t, pretty: new Date(t).toISOString() };
+        }
+        return { ts: 0, pretty: undefined };
+    };
+
     useEffect(() => {
         async function fetchEvents() {
             try {
                 setLoading(true);
-
-                // ✅ ใช้ instance เดิม (มี baseURL=/api) ⇒ ใส่ /events/mine พอ
-                const res = await api.get("/events/mine");
-                const data = res.data;
+                const res = await api.get("/events/mine"); // baseURL=/api อยู่แล้ว
+                const data = Array.isArray(res.data) ? res.data : [];
                 console.log("[Organization] /events/mine raw =", data);
 
-                // ✅ รองรับทั้ง camelCase และ snake_case จาก backend
-                const normalized: EventItem[] = (Array.isArray(data) ? data : []).map((ev: any) => {
+                const normalized: EventItem[] = data.map((ev: any) => {
                     const id =
-                        ev.id ??
-                        ev.eventId ??
-                        ev.event_id ??
-                        String(Math.random()); // กันกรณีไม่เจอ id
+                        ev.id ?? ev.eventId ?? ev.event_id ?? String(Math.random());
 
                     const title =
-                        ev.eventName ??
-                        ev.event_name ??
-                        ev.name ??
-                        "Untitled Event";
+                        ev.eventName ?? ev.event_name ?? ev.name ?? "Untitled Event";
 
-                    // category ยังไม่มีฟิลด์ตรงในตาราง -> ใส่ other ไปก่อน (หรือ map จาก category_id ถ้าต้องการ)
-                    const cat =
-                        (ev.category ??
-                            ev.category_name ??
-                            "other").toString().toLowerCase();
+                    const categoryName = mapCategory(ev);
 
-                    const updated =
-                        ev.updatedAt ??
-                        ev.updated_at ??
-                        ev.startDatetime ??
-                        ev.start_datetime ??
-                        new Date().toISOString();
+                    const { ts, pretty } = pickSortTs(ev);
+
+                    // tiebreaker: ใช้ id ที่เป็นตัวเลข ถ้าไม่ใช่ให้ 0
+                    const tie = Number(ev.id ?? ev.eventId ?? ev.event_id);
+                    const sortTiebreaker = Number.isFinite(tie) ? tie : 0;
 
                     return {
                         id,
                         title,
-                        category: (["concert", "seminar", "exhibition"].includes(cat) ? cat : "other") as EventItem["category"],
-                        updatedAt: new Date(updated).toString() === "Invalid Date" ? new Date().toISOString() : new Date(updated).toISOString(),
+                        category: categoryName,
+                        updatedAt: pretty,
+                        sortTs: ts,
+                        sortTiebreaker,
                     };
                 });
 
@@ -96,16 +125,28 @@ export default function Organizationmnge() {
 
     const filtered = useMemo(() => {
         let list = [...events];
-        if (category !== "all") list = list.filter((e) => e.category === category);
+
+        if (category !== "all") {
+            list = list.filter((e) => e.category === category);
+        }
+
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             list = list.filter((e) => e.title.toLowerCase().includes(q));
         }
-        list.sort((a, b) =>
-            order === "newest"
-                ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-                : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-        );
+
+        list.sort((a, b) => {
+            if (order === "newest") {
+                // มากไปน้อย
+                if (b.sortTs !== a.sortTs) return b.sortTs - a.sortTs;
+                return b.sortTiebreaker - a.sortTiebreaker;
+            } else {
+                // น้อยไปมาก
+                if (a.sortTs !== b.sortTs) return a.sortTs - b.sortTs;
+                return a.sortTiebreaker - b.sortTiebreaker;
+            }
+        });
+
         return list;
     }, [events, category, searchQuery, order]);
 
@@ -207,10 +248,12 @@ export default function Organizationmnge() {
                         >
                             <div className="text-[18px] text-gray-900">{ev.title}</div>
                             <div className="text-right">
-                                <Link to={`/eventdetail/${ev.id}`} className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition">
+                                <Link
+                                    to={`/eventdetail/${ev.id}`}
+                                    className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition"
+                                >
                                     View
                                 </Link>
-
                             </div>
                         </div>
                     ))}
