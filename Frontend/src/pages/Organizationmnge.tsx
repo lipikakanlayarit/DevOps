@@ -15,10 +15,29 @@ type EventItem = {
     id: number | string;
     title: string;
     category: CategoryName;
-    updatedAt?: string; // เก็บไว้โชว์ถ้าต้องใช้
-    sortTs: number;     // ใช้เรียงจริง (epoch ms)
-    sortTiebreaker: number; // กันเวลาชนกัน ใช้ id ตัวเลข
+    status: "PENDING" | "APPROVED" | "REJECTED" | string;
+    updatedAt?: string;
+    sortTs: number;
+    sortTiebreaker: number;
 };
+
+function StatusBadge({ status }: { status: string }) {
+    const s = (status || "").toUpperCase();
+    const { bg, text, label } =
+        s === "APPROVED"
+            ? { bg: "bg-green-100", text: "text-green-800", label: "Approved" }
+            : s === "REJECTED"
+                ? { bg: "bg-red-100", text: "text-red-800", label: "Rejected" }
+                : { bg: "bg-amber-100", text: "text-amber-800", label: "Pending" };
+
+    return (
+        <span
+            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${bg} ${text}`}
+        >
+      {label}
+    </span>
+    );
+}
 
 export default function Organizationmnge() {
     const location = useLocation() as any;
@@ -38,34 +57,35 @@ export default function Organizationmnge() {
     const [category, setCategory] = useState<"all" | "concert" | "seminar" | "exhibition">("all");
     const [order, setOrder] = useState<Order>("newest");
 
-    // helper: แปลง category id → ชื่อ
     const mapCategory = (raw: any): CategoryName => {
-        // ลองทั้ง id และชื่อ
-        const id =
-            raw?.categoryId ?? raw?.category_id ?? raw?.categoryid ?? raw?.category ?? null;
-
-        // ถ้า backend ส่งเป็นสตริงชื่ออยู่แล้ว
+        const id = raw?.categoryId ?? raw?.category_id ?? raw?.categoryid ?? raw?.category ?? null;
         if (typeof id === "string") {
             const low = id.toLowerCase();
             if (low === "concert" || low === "seminar" || low === "exhibition") return low as CategoryName;
         }
-
-        // ถ้าเป็นตัวเลข
         const n = Number(id);
         switch (n) {
-            case 1: return "concert";
-            case 2: return "seminar";
-            case 3: return "exhibition";
-            default: return "other";
+            case 1:
+                return "concert";
+            case 2:
+                return "seminar";
+            case 3:
+                return "exhibition";
+            default:
+                return "other";
         }
     };
 
-    // helper: หา timestamp สำหรับเรียง
     const pickSortTs = (ev: any): { ts: number; pretty?: string } => {
         const candidates = [
-            ev.updatedAt, ev.updated_at, ev.updated_at_utc,
-            ev.createdAt, ev.created_at,
-            ev.startDateTime, ev.startDatetime, ev.start_datetime,
+            ev.updatedAt,
+            ev.updated_at,
+            ev.updated_at_utc,
+            ev.createdAt,
+            ev.created_at,
+            ev.startDateTime,
+            ev.startDatetime,
+            ev.start_datetime,
         ].filter(Boolean) as string[];
 
         for (const s of candidates) {
@@ -79,36 +99,29 @@ export default function Organizationmnge() {
         async function fetchEvents() {
             try {
                 setLoading(true);
-                const res = await api.get("/events/mine"); // baseURL=/api อยู่แล้ว
+                const res = await api.get("/events/mine");
                 const data = Array.isArray(res.data) ? res.data : [];
-                console.log("[Organization] /events/mine raw =", data);
-
                 const normalized: EventItem[] = data.map((ev: any) => {
-                    const id =
-                        ev.id ?? ev.eventId ?? ev.event_id ?? String(Math.random());
-
-                    const title =
-                        ev.eventName ?? ev.event_name ?? ev.name ?? "Untitled Event";
-
+                    const id = ev.id ?? ev.eventId ?? ev.event_id ?? String(Math.random());
+                    const title = ev.eventName ?? ev.event_name ?? ev.name ?? "Untitled Event";
                     const categoryName = mapCategory(ev);
-
                     const { ts, pretty } = pickSortTs(ev);
-
-                    // tiebreaker: ใช้ id ที่เป็นตัวเลข ถ้าไม่ใช่ให้ 0
                     const tie = Number(ev.id ?? ev.eventId ?? ev.event_id);
                     const sortTiebreaker = Number.isFinite(tie) ? tie : 0;
+
+                    // รับ status จาก backend ถ้าไม่มีให้เป็น PENDING
+                    const status = (ev.status ?? "PENDING").toString().toUpperCase();
 
                     return {
                         id,
                         title,
                         category: categoryName,
+                        status,
                         updatedAt: pretty,
                         sortTs: ts,
                         sortTiebreaker,
                     };
                 });
-
-                console.log("[Organization] normalized =", normalized);
                 setEvents(normalized);
             } catch (err) {
                 console.error("[Organization] Failed to fetch events:", err);
@@ -117,7 +130,6 @@ export default function Organizationmnge() {
                 setLoading(false);
             }
         }
-
         fetchEvents();
     }, []);
 
@@ -125,28 +137,20 @@ export default function Organizationmnge() {
 
     const filtered = useMemo(() => {
         let list = [...events];
-
-        if (category !== "all") {
-            list = list.filter((e) => e.category === category);
-        }
-
+        if (category !== "all") list = list.filter((e) => e.category === category);
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             list = list.filter((e) => e.title.toLowerCase().includes(q));
         }
-
         list.sort((a, b) => {
             if (order === "newest") {
-                // มากไปน้อย
                 if (b.sortTs !== a.sortTs) return b.sortTs - a.sortTs;
                 return b.sortTiebreaker - a.sortTiebreaker;
             } else {
-                // น้อยไปมาก
                 if (a.sortTs !== b.sortTs) return a.sortTs - b.sortTs;
                 return a.sortTiebreaker - b.sortTiebreaker;
             }
         });
-
         return list;
     }, [events, category, searchQuery, order]);
 
@@ -163,7 +167,9 @@ export default function Organizationmnge() {
             <div className="bg-[#DBDBDB] min-h-screen flex flex-col">
                 {flash && (
                     <div className="mx-auto mt-6 w-full max-w-[1200px] px-4">
-                        <div className="mb-4 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">{flash}</div>
+                        <div className="mb-4 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">
+                            {flash}
+                        </div>
                     </div>
                 )}
 
@@ -203,7 +209,9 @@ export default function Organizationmnge() {
         <div className="bg-[#DBDBDB] min-h-screen">
             <div className="mx-auto max-w-[1200px] px-4 pb-10">
                 {flash && (
-                    <div className="mt-6 mb-2 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">{flash}</div>
+                    <div className="mt-6 mb-2 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">
+                        {flash}
+                    </div>
                 )}
 
                 <div className="flex items-start justify-between pt-6">
@@ -236,18 +244,20 @@ export default function Organizationmnge() {
 
                 {/* ตารางอีเวนต์ */}
                 <div className="mt-6 rounded-xl bg-white shadow-sm overflow-hidden">
-                    <div className="grid grid-cols-[1fr_140px] items-center px-6 py-4 border-b border-gray-200">
+                    <div className="grid grid-cols-[1fr_240px] items-center px-6 py-4 border-b border-gray-200">
                         <div className="text-lg font-semibold text-gray-900">Events</div>
-                        <div className="text-lg font-semibold text-gray-900 text-right">Action</div>
+                        <div className="text-lg font-semibold text-gray-900 text-right">Status / Action</div>
                     </div>
 
                     {filtered.map((ev) => (
                         <div
                             key={ev.id}
-                            className="grid grid-cols-[1fr_140px] items-center px-6 py-8 border-b last:border-b-0 border-gray-200"
+                            className="grid grid-cols-[1fr_240px] items-center px-6 py-8 border-b last:border-b-0 border-gray-200"
                         >
                             <div className="text-[18px] text-gray-900">{ev.title}</div>
-                            <div className="text-right">
+
+                            <div className="flex items-center justify-end gap-3">
+                                <StatusBadge status={ev.status} />
                                 <Link
                                     to={`/eventdetail/${ev.id}`}
                                     className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition"

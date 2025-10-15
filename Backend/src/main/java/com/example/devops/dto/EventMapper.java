@@ -1,3 +1,4 @@
+// src/main/java/com/example/devops/dto/EventMapper.java
 package com.example.devops.dto;
 
 import com.example.devops.model.EventsNam;
@@ -10,7 +11,7 @@ public class EventMapper {
     public static EventResponse toDto(EventsNam ev) {
         if (ev == null) return null;
         return EventResponse.builder()
-                .id(ev.getId()) // <-- ใช้ id ตรงกับ DTO
+                .id(ev.getId())
                 .eventName(nz(ev.getEventName()))
                 .description(nz(ev.getDescription()))
                 .categoryId(ev.getCategoryId())
@@ -35,7 +36,8 @@ public class EventMapper {
         target.setVenueName(req.getVenueName());
         target.setVenueAddress(req.getVenueAddress());
         target.setMaxCapacity(req.getMaxCapacity());
-        target.setStatus("DRAFT");
+        // เปลี่ยน default เดิม DRAFT -> PENDING
+        target.setStatus("PENDING");
         return target;
     }
 
@@ -51,13 +53,14 @@ public class EventMapper {
         if (req.getVenueName() != null)    target.setVenueName(req.getVenueName());
         if (req.getVenueAddress() != null) target.setVenueAddress(req.getVenueAddress());
         if (req.getMaxCapacity() != null)  target.setMaxCapacity(req.getMaxCapacity());
-        // ✅ EventUpdateRequest ไม่มี status → ข้ามไป
+        // ไม่ให้แก้ status ผ่าน Update request นี้
         return target;
     }
 
     private static String nz(String s) { return s == null ? "" : s; }
 
     // (optional) เผื่อไว้ถ้ามี string ISO-8601
+    @SuppressWarnings("unused")
     private static Instant parseOffsetToInstant(String s) {
         try {
             if (s == null || s.isBlank()) return null;

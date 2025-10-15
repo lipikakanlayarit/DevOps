@@ -1,3 +1,4 @@
+// src/main/java/com/example/devops/web/EventController.java
 package com.example.devops.web;
 
 import com.example.devops.dto.EventCreateRequest;
@@ -53,7 +54,8 @@ public class EventController {
         }
 
         EventsNam ev = toEntity(new EventsNam(), req, organizerOpt.get().getId());
-        if (ev.getStatus() == null) ev.setStatus("DRAFT");
+        // เปลี่ยน fallback เป็น PENDING
+        if (ev.getStatus() == null) ev.setStatus("PENDING");
 
         EventsNam saved = eventsRepository.save(ev);
         EventResponse body = toDto(saved);
@@ -91,7 +93,6 @@ public class EventController {
     //                             COVER IMAGE
     // =====================================================================
 
-    // Upload/Replace cover image
     @PostMapping(path = "/{id}/cover", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadCover(@PathVariable("id") Long id,
                                          @RequestParam("file") MultipartFile file,
@@ -107,7 +108,7 @@ public class EventController {
                         if (ct == null || !ct.startsWith("image/")) {
                             return ResponseEntity.badRequest().body(Map.of("error", "Only image files are allowed"));
                         }
-                        if (file.getSize() > 10 * 1024 * 1024) { // 10MB
+                        if (file.getSize() > 10 * 1024 * 1024) {
                             return ResponseEntity.badRequest().body(Map.of("error", "Max file size 10MB"));
                         }
 
@@ -124,7 +125,6 @@ public class EventController {
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Event not found")));
     }
 
-    // Get cover image (binary)
     @GetMapping("/{id}/cover")
     public ResponseEntity<byte[]> getCover(@PathVariable("id") Long id) {
         Optional<EventsNam> opt = eventsRepository.findById(id);
@@ -146,7 +146,6 @@ public class EventController {
                 .body(img);
     }
 
-    // Delete cover image
     @DeleteMapping("/{id}/cover")
     public ResponseEntity<?> deleteCover(@PathVariable("id") Long id, Authentication auth) {
         if (auth == null || auth.getName() == null) {

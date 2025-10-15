@@ -73,11 +73,45 @@ CREATE TABLE IF NOT EXISTS events_nam (
     venue_name VARCHAR(200),
     venue_address TEXT,
     max_capacity INT,
-    status VARCHAR(50),
+    status VARCHAR(50),               -- จะตั้ง DEFAULT ด้านล่าง (idempotent)
     cover_image BYTEA,
     cover_image_type VARCHAR(100),
     cover_updated_at TIMESTAMPTZ
     );
+
+-- ตั้งค่า DEFAULT ให้ status = 'PENDING' (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='events_nam' AND column_name='status'
+  ) THEN
+    -- column มีอยู่แล้วด้านบน
+    NULL;
+END IF;
+
+  -- ตั้ง DEFAULT
+EXECUTE 'ALTER TABLE events_nam ALTER COLUMN status SET DEFAULT ''PENDING''';
+EXCEPTION WHEN others THEN
+  -- เผื่อ ALTER ซ้ำไม่เป็นไร
+  NULL;
+END$$;
+
+-- เติมค่าให้แถวเดิมที่ยัง status เป็น NULL
+UPDATE events_nam SET status = 'PENDING' WHERE status IS NULL;
+
+-- (ทางเลือก) บังคับค่าให้ถูกต้องด้วย CHECK constraint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name='events_nam' AND constraint_name='events_status_check'
+  ) THEN
+ALTER TABLE events_nam
+    ADD CONSTRAINT events_status_check
+        CHECK (status IN ('PENDING','APPROVED','REJECTED','PUBLISHED'));
+END IF;
+END$$;
 
 -- เผื่อฐานเดิมยังไม่มีคอลัมน์รูป
 ALTER TABLE events_nam
@@ -333,6 +367,7 @@ INSERT INTO categories (category_name, description) VALUES
                                                         ('Exhibition','Outdoor and cultural Exhibition')
     ON CONFLICT DO NOTHING;
 
+-- Seed events → ให้เป็น PENDING ตามกติกา
 INSERT INTO events_nam (
     organizer_id, event_name, description, category_id,
     start_datetime, end_datetime, venue_name, venue_address,
@@ -340,10 +375,10 @@ INSERT INTO events_nam (
 ) VALUES
       (1,'BUTCON Music Fest 2025','Annual outdoor music festival',1,
        TIMESTAMPTZ '2025-11-01 18:00:00+07', TIMESTAMPTZ '2025-11-01 23:59:59+07',
-       'Central Park','Bangkok, Thailand',5000,'PUBLISHED'),
+       'Central Park','Bangkok, Thailand',5000,'PENDING'),
       (2,'Startup Seminar 2025','Seminar for startups and investors',2,
        TIMESTAMPTZ '2025-10-15 09:00:00+07', TIMESTAMPTZ '2025-10-15 17:00:00+07',
-       'Chiang Mai Conference Center','Chiang Mai, Thailand',300,'PUBLISHED')
+       'Chiang Mai Conference Center','Chiang Mai, Thailand',300,'PENDING')
     ON CONFLICT DO NOTHING;
 
 INSERT INTO ticket_types (
