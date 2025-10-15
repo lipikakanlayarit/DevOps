@@ -29,7 +29,7 @@ public class TicketSetupService {
     private final TicketTypesRepository ticketTypesRepo;
 
     // ------------------------------------------------------------
-    // 🟩 READ: สำหรับ prefill Ticket Detail (getSetup)
+    // READ: สำหรับ prefill Ticket Detail (ดึง seatRows/seatColumns + โซน + ราคา)
     // ------------------------------------------------------------
     @Transactional(readOnly = true)
     public Map<String, Object> getSetup(Long eventId) {
@@ -40,7 +40,6 @@ public class TicketSetupService {
             return null; // ยังไม่เคยตั้งค่า
         }
 
-        // ---------------- seatRows / seatColumns ----------------
         int seatRows = 0;
         int seatColumns = 0;
         if (seats != null && !seats.isEmpty()) {
@@ -51,6 +50,7 @@ public class TicketSetupService {
                     .filter(s -> !s.isEmpty())
                     .collect(Collectors.toCollection(LinkedHashSet::new));
             seatRows = rowLabels.size();
+
             seatColumns = seats.stream()
                     .map(Seats::getSeat_number)
                     .filter(Objects::nonNull)
@@ -59,7 +59,6 @@ public class TicketSetupService {
                     .orElse(0);
         }
 
-        // ---------------- zones ----------------
         List<Map<String, Object>> zoneDtos = new ArrayList<>();
         if (zones != null) {
             for (SeatZones z : zones) {
@@ -67,14 +66,12 @@ public class TicketSetupService {
                 m.put("code", safe(z.getDescription()));
                 m.put("name", safe(z.getZone_name()));
 
-                // 🔹 หา price จาก ticket_types
                 Integer price = null;
                 try {
                     BigDecimal p = zoneTicketTypesRepo.findFirstPriceByZoneId(z.getZone_id());
                     if (p != null) price = p.intValue();
-                } catch (Throwable ignore) {
-                    // ไม่มีราคาก็ข้าม
-                }
+                } catch (Throwable ignore) { /* no-op */ }
+
                 m.put("price", price);
                 zoneDtos.add(m);
             }
@@ -88,7 +85,7 @@ public class TicketSetupService {
     }
 
     // ------------------------------------------------------------
-    // 🟨 UPDATE: ใช้วิธี regenerate ใหม่ทั้งหมด
+    // UPDATE: ใช้วิธี regenerate ใหม่ทั้งหมด (delegate ไป setup)
     // ------------------------------------------------------------
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> update(Long eventId, TicketSetupRequest req) {
@@ -96,30 +93,34 @@ public class TicketSetupService {
     }
 
     // ------------------------------------------------------------
-    // 🟦 CREATE: ลบของเก่า → สร้างใหม่ทั้งหมด
+    // CREATE/REGENERATE: ลบของเก่า → สร้างใหม่ทั้งหมด (โซน/row/seat + ticket_types + mapping)
     // ------------------------------------------------------------
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> setup(Long eventId, TicketSetupRequest req) {
         System.out.println("[TicketSetupService] setup start eventId=" + eventId);
 
-        // 1️⃣ ลบของเก่า
+        final Instant now = Instant.now();
+
+        // 1) ลบของเก่าเรียงตาม FK
         seatsRepo.deleteByEventId(eventId);
         seatRowsRepo.deleteByEventId(eventId);
-        zoneTicketTypesRepo.deleteByEventId(eventId);
-        seatZonesRepo.deleteByEventId(eventId);
+        zoneTicketTypesRepo.deleteByEventId(eventId);   // ลบ mapping ก่อน
+        ticketTypesRepo.deleteByEventId(eventId);       // ลบ ticket_types ของอีเวนต์
+        seatZonesRepo.deleteByEventId(eventId);         // แล้วค่อยลบโซน
 
-        // 2️⃣ ตรวจ input
-        final Instant now = Instant.now();
+        // 2) ตรวจ input
         final int totalRows = req.getSeatRows();
         final int totalCols = req.getSeatColumns();
         if (totalRows <= 0 || totalCols <= 0) {
             throw new IllegalArgumentException("seatRows/seatColumns ต้องมากกว่า 0");
         }
 
-        // 3️⃣ สร้างโซน
+        // 3) สร้างโซน + ถ้ามีราคา → สร้าง ticket_types และ mapping
         List<SeatZones> zones = new ArrayList<>();
+
         if (req.getZones() != null && !req.getZones().isEmpty()) {
             for (TicketSetupRequest.ZoneConfig z : req.getZones()) {
+                // seat_zones
                 SeatZones zone = new SeatZones();
                 zone.setEvent_id(eventId);
                 zone.setZone_name(z.getName());
@@ -131,14 +132,36 @@ public class TicketSetupService {
                 seatZonesRepo.save(zone);
                 zones.add(zone);
 
-                // mapping zone ↔ ticket_type (ถ้ามี)
-                if (z.getTicketTypeId() != null) {
-                    ZoneTicketTypesId id = new ZoneTicketTypesId(zone.getZone_id(), z.getTicketTypeId());
+                // 3.1 ใช้ ticketTypeId ที่ส่งมาถ้ามี
+                Long ticketTypeId = z.getTicketTypeId();
+
+                // 3.2 ถ้า UI ส่ง price มา → สร้าง ticket_types ใหม่
+                if (ticketTypeId == null && z.getPrice() != null) {
+                    TicketTypes tt = new TicketTypes();
+                    tt.setEvent_id(eventId);
+                    tt.setType_name(z.getName() != null ? z.getName() :
+                            (z.getCode() != null ? z.getCode() : "GENERAL"));
+                    tt.setDescription("Auto-created from Ticket Setup");
+                    tt.setPrice(BigDecimal.valueOf(z.getPrice()));
+                    tt.setQuantity_available(null);
+                    tt.setQuantity_sold(0);
+                    tt.setSale_start_datetime(null);
+                    tt.setSale_end_datetime(null);
+                    tt.setIs_active(true);
+                    tt.setCreated_at(now);
+                    tt.setUpdated_at(now);
+                    ticketTypesRepo.save(tt);
+                    ticketTypeId = tt.getTicket_type_id();
+                }
+
+                // 3.3 ทำ mapping โซน ↔ ticket_type ถ้ามี id แล้ว
+                if (ticketTypeId != null) {
+                    ZoneTicketTypesId id = new ZoneTicketTypesId(zone.getZone_id(), ticketTypeId);
                     zoneTicketTypesRepo.save(new ZoneTicketTypes(id));
                 }
             }
         } else {
-            // โซนเดียว
+            // โซนเดียว (รองรับรูปแบบเก่า)
             SeatZones zone = new SeatZones();
             zone.setEvent_id(eventId);
             zone.setZone_name(req.getZone() != null ? req.getZone() : "GENERAL");
@@ -149,9 +172,25 @@ public class TicketSetupService {
             zone.setUpdated_at(now);
             seatZonesRepo.save(zone);
             zones.add(zone);
+
+            // ถ้ามีราคาเดี่ยว ๆ → สร้าง ticket type + mapping
+            if (req.getPrice() != null) {
+                TicketTypes tt = new TicketTypes();
+                tt.setEvent_id(eventId);
+                tt.setType_name(zone.getZone_name());
+                tt.setDescription("Auto-created from Ticket Setup (single zone)");
+                tt.setPrice(BigDecimal.valueOf(req.getPrice()));
+                tt.setIs_active(true);
+                tt.setCreated_at(now);
+                tt.setUpdated_at(now);
+                ticketTypesRepo.save(tt);
+
+                ZoneTicketTypesId id = new ZoneTicketTypesId(zone.getZone_id(), tt.getTicket_type_id());
+                zoneTicketTypesRepo.save(new ZoneTicketTypes(id));
+            }
         }
 
-        // 4️⃣ สร้างแถว (SeatRows)
+        // 4) seat_rows
         Map<String, TicketSetupRequest.ZoneConfig> cfgByName = new HashMap<>();
         if (req.getZones() != null) {
             for (TicketSetupRequest.ZoneConfig zc : req.getZones()) {
@@ -165,10 +204,10 @@ public class TicketSetupService {
             var cfg = cfgByName.get(zone.getZone_name() == null ? "" : zone.getZone_name().toLowerCase());
             if (cfg != null) {
                 if (cfg.getRowStart() != null) start = cfg.getRowStart();
-                if (cfg.getRowEnd() != null) end = cfg.getRowEnd();
+                if (cfg.getRowEnd() != null)   end   = cfg.getRowEnd();
             }
             start = Math.max(1, start);
-            end = Math.min(totalRows, end);
+            end   = Math.min(totalRows, end);
             if (start > end) continue;
 
             for (int i = start; i <= end; i++) {
@@ -183,7 +222,7 @@ public class TicketSetupService {
             }
         }
 
-        // 5️⃣ สร้างที่นั่ง (Seats)
+        // 5) seats
         int totalSeats = 0;
         for (SeatRows row : allRows) {
             for (int c = 1; c <= totalCols; c++) {
@@ -212,7 +251,7 @@ public class TicketSetupService {
     }
 
     // ------------------------------------------------------------
-    // 🟧 ใช้ในหน้า Seat Map Viewer
+    // ใช้ในหน้า Seat Map Viewer
     // ------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getSeatGrid(Long eventId) {
@@ -244,7 +283,7 @@ public class TicketSetupService {
     }
 
     // ------------------------------------------------------------
-    // 🟦 ดึงโซนทั้งหมดของ event
+    // ดึงโซนทั้งหมดของ event
     // ------------------------------------------------------------
     @Transactional(readOnly = true)
     public List<SeatZones> getZones(Long eventId) {
@@ -252,7 +291,7 @@ public class TicketSetupService {
     }
 
     // ------------------------------------------------------------
-    // 🔧 helpers
+    // helpers
     // ------------------------------------------------------------
     private static String safe(String s) {
         return s == null ? "" : s;
