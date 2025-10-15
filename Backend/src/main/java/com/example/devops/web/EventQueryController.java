@@ -25,26 +25,24 @@ public class EventQueryController {
         }
 
         String key = Optional.ofNullable(auth.getName()).orElse("").trim();
-        System.out.println("[EventQueryController] key = " + key);
-
-        // ✅ ดึง organizer_id จาก email หรือ username
         Long orgId = organizerRepo.findIdByEmailOrUsernameIgnoreCase(key).orElse(null);
         if (orgId == null) {
             return ResponseEntity.ok(List.of());
         }
 
-        // ✅ ดึง events ตาม organizer_id
+        // ต้องมีเมธอดนี้ใน EventsNamRepository:
+        // List<EventsNam> findByOrganizerIdOrderByIdDesc(Long organizerId);
         List<EventsNam> list = eventsNamRepository.findByOrganizerIdOrderByIdDesc(orgId);
 
         List<Map<String, Object>> result = list.stream().map(ev -> {
             Map<String, Object> map = new HashMap<>();
-            map.put("id", ev.getEvent_id());
-            map.put("eventName", ev.getEvent_name());
-            map.put("status", ev.getStatus());
-            map.put("categoryId", ev.getCategory_id());
-            map.put("startDatetime", ev.getStart_datetime());
-            map.put("endDatetime", ev.getEnd_datetime());
-            map.put("venue", ev.getVenue_name());
+            map.put("id",             ev.getId());
+            map.put("eventName",      ev.getEventName());
+            map.put("status",         ev.getStatus());
+            map.put("categoryId",     ev.getCategoryId());
+            map.put("startDateTime",  ev.getStartDatetime());
+            map.put("endDateTime",    ev.getEndDatetime());
+            map.put("venue",          ev.getVenueName());
             return map;
         }).toList();
 
