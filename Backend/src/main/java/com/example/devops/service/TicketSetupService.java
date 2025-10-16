@@ -59,7 +59,7 @@ public class TicketSetupService {
         if (req.getZones() != null && !req.getZones().isEmpty()) {
             for (TicketSetupRequest.ZoneConfig z : req.getZones()) {
                 SeatZones zone = new SeatZones();
-                zone.setEvent_id(eventId);
+                zoneพไเ.setEvent_id(eventId);
                 zone.setZone_name(z.getName());
                 zone.setDescription(z.getCode());
                 // ✅ กันกรณี rowStart เป็น null (เช่นผู้ใช้ใส่แค่ชื่อโซน/ราคา)
