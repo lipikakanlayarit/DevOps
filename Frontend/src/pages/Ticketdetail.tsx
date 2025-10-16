@@ -1,19 +1,23 @@
 // src/pages/Ticketdetail.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/sidebarorg";
 import { Input } from "@/components/inputtxt";
 import { Plus, Calendar, Clock as ClockIcon, X } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom"; // ✅
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 
-type ZoneItem = {
-    id: number;
-    seatRow: string;    // ใช้เป็นค่ากลาง seatRows จากรายการแรก
-    seatColumn: string; // ใช้เป็นค่ากลาง seatColumns จากรายการแรก
-    zone: string;       // code / name ของโซน
-    price: string;      // เก็บ string จาก input แล้วแปลงเป็น number ตอนส่ง
+type ZoneItem = { id: number; seatRow: string; seatColumn: string; zone: string; price: string };
+
+type TicketSetupDto = {
+    seatRows: number;
+    seatColumns: number;
+    zones: { code: string; name: string; price?: number }[];
+    // Advanced Setting
+    minPerOrder?: number;
+    maxPerOrder?: number;
+    active?: boolean;
 };
 
 const toNum = (v: string | number | null | undefined, fallback = 0) => {
@@ -22,29 +26,32 @@ const toNum = (v: string | number | null | undefined, fallback = 0) => {
 };
 
 export default function TicketDetail() {
-    const navigate = useNavigate(); // ✅ redirect หลัง save
+    const { eventId } = useParams<{ eventId?: string }>();
+    const navigate = useNavigate();
 
-    // อ่าน event ล่าสุดจาก localStorage
-    const [lastEvent, setLastEvent] = useState<{ id: number; name?: string } | null>(null);
+    // ต้องมี eventId เสมอ
+    const eid = Number(eventId);
+    const hasId = Number.isFinite(eid) && eid > 0;
+
+    // ใช้เช็คว่ามีข้อมูลเดิมไหม (ถ้ามี => ใช้ PUT)
+    const [hasExisting, setHasExisting] = useState(false);
+
+    // header (optional): ดึงจาก localStorage ตาม id ที่อยู่ในพาธ
     const [cachedEvent, setCachedEvent] = useState<any>(null);
-
     useEffect(() => {
+        if (!hasId) return;
         try {
-            const lastRaw = localStorage.getItem("event:last");
-            if (lastRaw) {
-                const last = JSON.parse(lastRaw);
-                setLastEvent(last);
-                const evRaw = localStorage.getItem(`event:${last.id}`);
-                if (evRaw) setCachedEvent(JSON.parse(evRaw));
-            }
-        } catch {/* ignore */}
-    }, []);
+            const raw = localStorage.getItem(`event:${eid}`);
+            if (raw) setCachedEvent(JSON.parse(raw));
+        } catch {
+            /* ignore */
+        }
+    }, [hasId, eid]);
 
-    // Zones
+    // ---------- zones ----------
     const [zones, setZones] = useState<ZoneItem[]>([
         { id: 1, seatRow: "", seatColumn: "", zone: "", price: "" },
     ]);
-
     const addZone = () => {
         setZones((prev) => [
             ...prev,
@@ -58,55 +65,99 @@ export default function TicketDetail() {
         ]);
     };
     const removeZone = (id: number) => setZones((prev) => prev.filter((z) => z.id !== id));
-    const setZoneField = (index: number, field: keyof ZoneItem, value: string) => {
+    const setZoneField = (idx: number, field: keyof ZoneItem, value: string) => {
         setZones((prev) => {
             const next = [...prev];
-            next[index] = { ...next[index], [field]: value };
+            next[idx] = { ...next[idx], [field]: value };
             return next;
         });
     };
 
-    // UI ส่วนอื่น (ไม่ได้ส่งใน payload)
-    const [sales, setSales] = useState({
-        startDate: "2025-10-21",
-        startTime: "19:00",
-        endDate: "2025-10-21",
-        endTime: "22:00",
-    });
-    const [limits, setLimits] = useState({ min: "1", max: "1" });
-    const [status, setStatus] = useState<"available" | "unavailable" | "">("");
-    const [saving, setSaving] = useState(false);
-    const onToggleStatus = (v: "available" | "unavailable") => setStatus((p) => (p === v ? "" : v));
+    // ---------- Sales Period (UI only) ----------
+    const [sales, setSales] = useState({ startDate: "", startTime: "", endDate: "", endTime: "" });
 
-    // Save → ยิง API แบบ TicketSetupRequest แล้ว redirect
+    // ---------- Advanced (จริงแล้ว ไม่ใช่ UI-only) ----------
+    const [limits, setLimits] = useState({ min: "1", max: "1" });
+    // ใช้ radio + default เป็น available เพื่อไม่ให้ active กลายเป็น undefined
+    const [status, setStatus] = useState<"available" | "unavailable">("available");
+
+    const [saving, setSaving] = useState(false);
+
+    // ---------- Prefill ticket data ----------
+    useEffect(() => {
+        if (!hasId) return;
+        let ignore = false;
+
+        (async () => {
+            try {
+                const { data } = await api.get<TicketSetupDto>(`/events/${eid}/tickets/setup`);
+                if (ignore || !data) return;
+
+                setHasExisting(true);
+
+                const row = data.seatRows ?? 0;
+                const col = data.seatColumns ?? 0;
+                const list = (data.zones ?? []).map((z, i) => ({
+                    id: i + 1,
+                    seatRow: i === 0 ? String(row) : "",
+                    seatColumn: i === 0 ? String(col) : "",
+                    zone: z.code || z.name || "",
+                    price: z.price != null ? String(z.price) : "",
+                }));
+                setZones(
+                    list.length
+                        ? list
+                        : [{ id: 1, seatRow: String(row || ""), seatColumn: String(col || ""), zone: "", price: "" }]
+                );
+
+                // Prefill Advanced Setting
+                setLimits((l) => ({
+                    ...l,
+                    min: typeof data.minPerOrder === "number" ? String(data.minPerOrder) : "1",
+                    max: typeof data.maxPerOrder === "number" ? String(data.maxPerOrder) : "1",
+                }));
+                setStatus(typeof data.active === "boolean" ? (data.active ? "available" : "unavailable") : "available");
+            } catch {
+                // ไม่มีของเดิม → เริ่มใหม่
+                setHasExisting(false);
+                setZones([{ id: 1, seatRow: "", seatColumn: "", zone: "", price: "" }]);
+                setLimits({ min: "1", max: "1" });
+                setStatus("available");
+            }
+        })();
+
+        return () => {
+            ignore = true;
+        };
+    }, [hasId, eid]);
+
+    // ---------- Save / Update ----------
     async function handleSaveTicketDetail() {
+        if (!hasId) {
+            alert("ไม่พบรหัสอีเวนต์ใน URL");
+            return navigate("/organizationmnge", { replace: true });
+        }
+
         try {
-            if (!lastEvent?.id) {
-                alert("ไม่พบ event ล่าสุด — กรุณากลับไปสร้างอีเวนต์ใหม่อีกครั้ง");
-                return;
-            }
-            if (!zones.length) {
-                alert("กรุณาเพิ่มอย่างน้อย 1 โซน");
-                return;
-            }
+            if (!zones.length) return alert("กรุณาเพิ่มอย่างน้อย 1 โซน");
 
             const rowsN = Number(zones[0].seatRow);
             const colsN = Number(zones[0].seatColumn);
             if (!Number.isFinite(rowsN) || rowsN <= 0 || !Number.isFinite(colsN) || colsN <= 0) {
-                alert("Seat Row/Seat Column ต้องเป็นตัวเลขและมากกว่า 0");
-                return;
+                return alert("Seat Row/Seat Column ต้องเป็นตัวเลขและมากกว่า 0");
+            }
+            if (zones.find((z) => !z.zone.trim())) {
+                return alert("กรุณากรอกชื่อ Zone ให้ครบ");
             }
 
-            const invalid = zones.find((z) => !z.zone.trim());
-            if (invalid) {
-                alert("กรุณากรอกชื่อ Zone ให้ครบทุกรายการ");
-                return;
-            }
+            // validate Advanced
+            const minN = limits.min ? Number(limits.min) : NaN;
+            const maxN = limits.max ? Number(limits.max) : NaN;
+            if (!Number.isFinite(minN) || minN < 1) return alert("Minimum ticket ต้องเป็นเลขตั้งแต่ 1 ขึ้นไป");
+            if (!Number.isFinite(maxN) || maxN < 1) return alert("Maximum ticket ต้องเป็นเลขตั้งแต่ 1 ขึ้นไป");
+            if (minN > maxN) return alert("Minimum ต้องไม่มากกว่า Maximum");
 
-            setSaving(true);
-            const eventId = lastEvent.id;
-
-            const payload = {
+            const payload: TicketSetupDto = {
                 seatRows: rowsN,
                 seatColumns: colsN,
                 zones: zones.map((z) => ({
@@ -114,30 +165,26 @@ export default function TicketDetail() {
                     name: z.zone.trim(),
                     price: z.price ? toNum(z.price, 0) : undefined,
                 })),
+                // ส่ง boolean ตายตัว ไม่มี undefined
+                minPerOrder: minN,
+                maxPerOrder: maxN,
+                active: status === "available" ? true : false,
             };
 
-            console.log("DEBUG save ticket ->", {
-                url: `/events/${eventId}/tickets/setup`,
-                payload,
-            });
+            setSaving(true);
+            if (hasExisting) {
+                await api.put(`/events/${eid}/tickets/setup`, payload);
+            } else {
+                await api.post(`/events/${eid}/tickets/setup`, payload);
+            }
 
-            await api.post(`/events/${eventId}/tickets/setup`, payload, {
-                headers: { "Content-Type": "application/json" },
-            });
-
-            // ✅ redirect ทันที พร้อมส่ง flash message ไปหน้า Organization
             navigate("/organizationmnge", {
                 replace: true,
-                state: { flash: "บันทึก Ticket/Seat map เรียบร้อย ✅" },
+                state: { flash: "อัปเดต Ticket/Seat map เรียบร้อย ✅" },
             });
-            return;
         } catch (e: any) {
             const msg =
-                e?.response?.data?.message ||
-                e?.response?.data?.error ||
-                e?.response?.data?.detail ||
-                e?.message ||
-                "บันทึกไม่สำเร็จ";
+                e?.response?.data?.message || e?.response?.data?.error || e?.message || "บันทึกไม่สำเร็จ";
             console.error("SAVE_TICKET_ERROR:", e?.response || e);
             alert(msg);
         } finally {
@@ -148,28 +195,32 @@ export default function TicketDetail() {
     return (
         <div className="flex min-h-screen bg-gray-100">
             <Sidebar />
-
             <main className="flex-1 p-6">
                 <div className="space-y-6">
-                    {/* Header */}
                     <div className="flex justify-between items-center">
                         <h1 className="text-2xl font-bold text-gray-900">Ticket Detail</h1>
+                        {hasId && (
+                            <Link
+                                to={`/eventdetail/${eid}`}
+                                className="text-sm underline text-blue-600 hover:text-blue-800"
+                            >
+                                กลับไป Event Details
+                            </Link>
+                        )}
                     </div>
 
-                    {/* Event summary */}
-                    {lastEvent && (
+                    {hasId && (
                         <div className="mb-2 p-4 rounded border bg-white">
-                            <div className="text-sm text-gray-500">Event just created (local)</div>
+                            <div className="text-sm text-gray-500">Event</div>
                             <div className="font-semibold">
-                                ID: {lastEvent.id}
-                                {lastEvent.name ? ` — ${lastEvent.name}` : ""}
+                                ID: {eid}
+                                {cachedEvent?.eventName ? ` — ${cachedEvent.eventName}` : ""}
                             </div>
                             {cachedEvent && (
                                 <div className="text-sm text-gray-600">
                                     <div>Start: {cachedEvent.startDateTime ?? cachedEvent.startDatetime}</div>
                                     <div>End: {cachedEvent.endDateTime ?? cachedEvent.endDatetime}</div>
                                     <div>Venue: {cachedEvent.venueName}</div>
-                                    {cachedEvent.locationName && <div>Location: {cachedEvent.locationName}</div>}
                                 </div>
                             )}
                         </div>
@@ -206,7 +257,9 @@ export default function TicketDetail() {
 
                                         <div className="space-y-2">
                                             <label className="text-sm font-medium text-gray-700">
-                                                Seat Column {idx === 0 && <span className="text-xs text-gray-500">(ใช้เป็นค่ากลาง)</span>}
+                                                Seat Column {idx === 0 && (
+                                                <span className="text-xs text-gray-500">(ใช้เป็นค่ากลาง)</span>
+                                            )}
                                             </label>
                                             <Input
                                                 placeholder="เช่น 20"
@@ -354,7 +407,7 @@ export default function TicketDetail() {
                         </div>
                     </section>
 
-                    {/* Advanced Setting (UI เท่านั้น) */}
+                    {/* Advanced Setting */}
                     <section className="bg-white rounded-lg p-6 shadow-sm">
                         <h2 className="text-lg font-semibold text-gray-900">Advanced Setting</h2>
                         <p className="text-sm text-gray-600">Additional configurations for your ticket</p>
@@ -363,7 +416,9 @@ export default function TicketDetail() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <h3 className="text-base font-semibold text-gray-900">Ticket allowed per order</h3>
-                                <p className="text-sm text-gray-600">you can limit the number of tickets users can purchase per day</p>
+                                <p className="text-sm text-gray-600">
+                                    you can limit the number of tickets users can purchase per day
+                                </p>
                             </div>
                             <div />
                         </div>
@@ -401,22 +456,25 @@ export default function TicketDetail() {
                         <div className="mt-8 space-y-3">
                             <h3 className="text-base font-semibold text-gray-900">Ticket Status</h3>
 
+                            {/* ใช้ radio (เลือกได้ตัวเดียว) เพื่อให้ active ถูกส่งแน่นอน */}
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
-                                    type="checkbox"
+                                    type="radio"
+                                    name="ticket-status"
                                     checked={status === "available"}
-                                    onChange={() => onToggleStatus("available")}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    onChange={() => setStatus("available")}
+                                    className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
                                 <span className="text-sm text-gray-800">Available</span>
                             </label>
 
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
-                                    type="checkbox"
+                                    type="radio"
+                                    name="ticket-status"
                                     checked={status === "unavailable"}
-                                    onChange={() => onToggleStatus("unavailable")}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    onChange={() => setStatus("unavailable")}
+                                    className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
                                 <span className="text-sm text-gray-800">Unavailable</span>
                             </label>
@@ -426,7 +484,7 @@ export default function TicketDetail() {
                     {/* Action Buttons */}
                     <div className="flex justify-end gap-3">
                         <Link
-                            to="/organizationmnge" // ✅
+                            to="/organizationmnge"
                             className="rounded-full bg-[#FA3A2B] px-5 py-3 text-white font-medium shadow-sm hover:bg-[#e23325] transition-colors"
                         >
                             Cancel
@@ -437,7 +495,7 @@ export default function TicketDetail() {
                             onClick={handleSaveTicketDetail}
                             disabled={saving}
                         >
-                            {saving ? "Saving..." : "Save"}
+                            {saving ? "Saving..." : hasExisting ? "Update" : "Save"}
                         </button>
                     </div>
                 </div>

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
+// Public pages
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import OrganizerLogin from "@/pages/OrganizerLogin";
@@ -10,16 +11,20 @@ import Component from "@/pages/Component";
 import Forbidden from "@/pages/Forbidden";
 import Landding from "@/pages/Landding";
 
+// Protected pages
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
 import Eventdetail from "@/pages/Eventdetail";
 import Ticketdetail from "@/pages/Ticketdetail";
 import EventDashboard from "@/pages/Eventdashboard";
 import Organizationmnge from "@/pages/Organizationmnge";
+
+// Admin pages
 import Admin from "@/pages/admin";
 import AdminEventdetail from "@/pages/admin-eventdetail";
 import EventPermission from "@/pages/admin-permission";
 
+// Guards
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
@@ -28,6 +33,7 @@ export const router = createBrowserRouter([
         path: "/",
         element: <RootLayout />,
         children: [
+            // ---------- Public ----------
             { index: true, element: <Landding /> },
             { path: "home", element: <Home /> },
             { path: "login", element: <Login /> },
@@ -36,6 +42,7 @@ export const router = createBrowserRouter([
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
 
+            // ---------- Auth required ----------
             {
                 element: (
                     <RequireAuth>
@@ -45,16 +52,26 @@ export const router = createBrowserRouter([
                 children: [
                     { path: "profile", element: <Profile /> },
                     { path: "eventselect", element: <Eventselect /> },
+
+                    // Create Event
                     { path: "eventdetail", element: <Eventdetail /> },
+
+                    // ✅ Edit Event (prefill from id)
+                    { path: "eventdetail/:eventId", element: <Eventdetail /> },
+
+                    // ✅ Ticket Details (prefill & update)
+                    { path: "ticketdetail/:eventId", element: <Ticketdetail /> },
+
+                    // Fallback (เดิม ถ้าเข้าโดยยังไม่มี id)
                     { path: "ticketdetail", element: <Ticketdetail /> },
 
-                    // ✅ รองรับพารามิเตอร์ eventId
+                    // Event dashboard (ถ้าใช้งาน)
                     { path: "eventdashboard/:eventId", element: <EventDashboard /> },
-                    // (ถ้าอยากคง path เดิมไว้ด้วยก็ได้)
                     { path: "eventdashboard", element: <EventDashboard /> },
                 ],
             },
 
+            // ---------- Organizer/ Admin ----------
             {
                 path: "organizationmnge",
                 element: (
@@ -64,6 +81,7 @@ export const router = createBrowserRouter([
                 ),
             },
 
+            // ---------- Admin ----------
             {
                 path: "admin",
                 element: (
@@ -80,19 +98,7 @@ export const router = createBrowserRouter([
                 ],
             },
 
-            {
-                path: "organize",
-                element: (
-                    <RequireRole roles={["ORGANIZER"]}>
-                        <Outlet />
-                    </RequireRole>
-                ),
-                children: [
-                    { path: "events", element: <div>Organizer Events</div> },
-                    { path: "manage", element: <div>Organizer Manage</div> },
-                ],
-            },
-
+            // ---------- 404 ----------
             { path: "*", element: <NotFound /> },
         ],
     },

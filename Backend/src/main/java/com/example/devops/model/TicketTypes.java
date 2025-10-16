@@ -43,6 +43,13 @@ public class TicketTypes {
     @Column(name = "is_active")
     private Boolean is_active;
 
+    // ---- Advanced Setting ----
+    @Column(name = "min_per_order")
+    private Integer min_per_order;
+
+    @Column(name = "max_per_order")
+    private Integer max_per_order;
+
     @Column(name = "created_at")
     private Instant created_at;
 

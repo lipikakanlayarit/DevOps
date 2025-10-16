@@ -1,3 +1,4 @@
+// src/pages/Organizationmnge.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Plus } from "lucide-react";
@@ -7,14 +8,36 @@ import CategoryRadio from "@/components/CategoryRadio";
 import PrimaryButton from "@/components/PrimaryButton";
 import { api } from "@/lib/api";
 
+type CategoryName = "concert" | "seminar" | "exhibition" | "other";
+type Order = "newest" | "oldest";
+
 type EventItem = {
     id: number | string;
     title: string;
-    category: "concert" | "seminar" | "exhibition" | "other";
-    updatedAt: string; // ISO string
+    category: CategoryName;
+    status: "PENDING" | "APPROVED" | "REJECTED" | string;
+    updatedAt?: string;
+    sortTs: number;
+    sortTiebreaker: number;
 };
 
-type Order = "newest" | "oldest";
+function StatusBadge({ status }: { status: string }) {
+    const s = (status || "").toUpperCase();
+    const { bg, text, label } =
+        s === "APPROVED"
+            ? { bg: "bg-green-100", text: "text-green-800", label: "Approved" }
+            : s === "REJECTED"
+                ? { bg: "bg-red-100", text: "text-red-800", label: "Rejected" }
+                : { bg: "bg-amber-100", text: "text-amber-800", label: "Pending" };
+
+    return (
+        <span
+            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${bg} ${text}`}
+        >
+      {label}
+    </span>
+    );
+}
 
 export default function Organizationmnge() {
     const location = useLocation() as any;
@@ -34,52 +57,71 @@ export default function Organizationmnge() {
     const [category, setCategory] = useState<"all" | "concert" | "seminar" | "exhibition">("all");
     const [order, setOrder] = useState<Order>("newest");
 
+    const mapCategory = (raw: any): CategoryName => {
+        const id = raw?.categoryId ?? raw?.category_id ?? raw?.categoryid ?? raw?.category ?? null;
+        if (typeof id === "string") {
+            const low = id.toLowerCase();
+            if (low === "concert" || low === "seminar" || low === "exhibition") return low as CategoryName;
+        }
+        const n = Number(id);
+        switch (n) {
+            case 1:
+                return "concert";
+            case 2:
+                return "seminar";
+            case 3:
+                return "exhibition";
+            default:
+                return "other";
+        }
+    };
+
+    const pickSortTs = (ev: any): { ts: number; pretty?: string } => {
+        const candidates = [
+            ev.updatedAt,
+            ev.updated_at,
+            ev.updated_at_utc,
+            ev.createdAt,
+            ev.created_at,
+            ev.startDateTime,
+            ev.startDatetime,
+            ev.start_datetime,
+        ].filter(Boolean) as string[];
+
+        for (const s of candidates) {
+            const t = Date.parse(s);
+            if (!Number.isNaN(t)) return { ts: t, pretty: new Date(t).toISOString() };
+        }
+        return { ts: 0, pretty: undefined };
+    };
+
     useEffect(() => {
         async function fetchEvents() {
             try {
                 setLoading(true);
-
-                // ✅ ใช้ instance เดิม (มี baseURL=/api) ⇒ ใส่ /events/mine พอ
                 const res = await api.get("/events/mine");
-                const data = res.data;
-                console.log("[Organization] /events/mine raw =", data);
+                const data = Array.isArray(res.data) ? res.data : [];
+                const normalized: EventItem[] = data.map((ev: any) => {
+                    const id = ev.id ?? ev.eventId ?? ev.event_id ?? String(Math.random());
+                    const title = ev.eventName ?? ev.event_name ?? ev.name ?? "Untitled Event";
+                    const categoryName = mapCategory(ev);
+                    const { ts, pretty } = pickSortTs(ev);
+                    const tie = Number(ev.id ?? ev.eventId ?? ev.event_id);
+                    const sortTiebreaker = Number.isFinite(tie) ? tie : 0;
 
-                // ✅ รองรับทั้ง camelCase และ snake_case จาก backend
-                const normalized: EventItem[] = (Array.isArray(data) ? data : []).map((ev: any) => {
-                    const id =
-                        ev.id ??
-                        ev.eventId ??
-                        ev.event_id ??
-                        String(Math.random()); // กันกรณีไม่เจอ id
-
-                    const title =
-                        ev.eventName ??
-                        ev.event_name ??
-                        ev.name ??
-                        "Untitled Event";
-
-                    // category ยังไม่มีฟิลด์ตรงในตาราง -> ใส่ other ไปก่อน (หรือ map จาก category_id ถ้าต้องการ)
-                    const cat =
-                        (ev.category ??
-                            ev.category_name ??
-                            "other").toString().toLowerCase();
-
-                    const updated =
-                        ev.updatedAt ??
-                        ev.updated_at ??
-                        ev.startDatetime ??
-                        ev.start_datetime ??
-                        new Date().toISOString();
+                    // รับ status จาก backend ถ้าไม่มีให้เป็น PENDING
+                    const status = (ev.status ?? "PENDING").toString().toUpperCase();
 
                     return {
                         id,
                         title,
-                        category: (["concert", "seminar", "exhibition"].includes(cat) ? cat : "other") as EventItem["category"],
-                        updatedAt: new Date(updated).toString() === "Invalid Date" ? new Date().toISOString() : new Date(updated).toISOString(),
+                        category: categoryName,
+                        status,
+                        updatedAt: pretty,
+                        sortTs: ts,
+                        sortTiebreaker,
                     };
                 });
-
-                console.log("[Organization] normalized =", normalized);
                 setEvents(normalized);
             } catch (err) {
                 console.error("[Organization] Failed to fetch events:", err);
@@ -88,7 +130,6 @@ export default function Organizationmnge() {
                 setLoading(false);
             }
         }
-
         fetchEvents();
     }, []);
 
@@ -101,11 +142,15 @@ export default function Organizationmnge() {
             const q = searchQuery.toLowerCase();
             list = list.filter((e) => e.title.toLowerCase().includes(q));
         }
-        list.sort((a, b) =>
-            order === "newest"
-                ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-                : new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-        );
+        list.sort((a, b) => {
+            if (order === "newest") {
+                if (b.sortTs !== a.sortTs) return b.sortTs - a.sortTs;
+                return b.sortTiebreaker - a.sortTiebreaker;
+            } else {
+                if (a.sortTs !== b.sortTs) return a.sortTs - b.sortTs;
+                return a.sortTiebreaker - b.sortTiebreaker;
+            }
+        });
         return list;
     }, [events, category, searchQuery, order]);
 
@@ -122,7 +167,9 @@ export default function Organizationmnge() {
             <div className="bg-[#DBDBDB] min-h-screen flex flex-col">
                 {flash && (
                     <div className="mx-auto mt-6 w-full max-w-[1200px] px-4">
-                        <div className="mb-4 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">{flash}</div>
+                        <div className="mb-4 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">
+                            {flash}
+                        </div>
                     </div>
                 )}
 
@@ -162,7 +209,9 @@ export default function Organizationmnge() {
         <div className="bg-[#DBDBDB] min-h-screen">
             <div className="mx-auto max-w-[1200px] px-4 pb-10">
                 {flash && (
-                    <div className="mt-6 mb-2 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">{flash}</div>
+                    <div className="mt-6 mb-2 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">
+                        {flash}
+                    </div>
                 )}
 
                 <div className="flex items-start justify-between pt-6">
@@ -195,25 +244,26 @@ export default function Organizationmnge() {
 
                 {/* ตารางอีเวนต์ */}
                 <div className="mt-6 rounded-xl bg-white shadow-sm overflow-hidden">
-                    <div className="grid grid-cols-[1fr_140px] items-center px-6 py-4 border-b border-gray-200">
+                    <div className="grid grid-cols-[1fr_240px] items-center px-6 py-4 border-b border-gray-200">
                         <div className="text-lg font-semibold text-gray-900">Events</div>
-                        <div className="text-lg font-semibold text-gray-900 text-right">Action</div>
+                        <div className="text-lg font-semibold text-gray-900 text-right">Status / Action</div>
                     </div>
 
                     {filtered.map((ev) => (
                         <div
                             key={ev.id}
-                            className="grid grid-cols-[1fr_140px] items-center px-6 py-8 border-b last:border-b-0 border-gray-200"
+                            className="grid grid-cols-[1fr_240px] items-center px-6 py-8 border-b last:border-b-0 border-gray-200"
                         >
                             <div className="text-[18px] text-gray-900">{ev.title}</div>
-                            <div className="text-right">
+
+                            <div className="flex items-center justify-end gap-3">
+                                <StatusBadge status={ev.status} />
                                 <Link
-                                    to={`/eventdashboard/${ev.id}`}
+                                    to={`/eventdetail/${ev.id}`}
                                     className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition"
                                 >
                                     View
                                 </Link>
-
                             </div>
                         </div>
                     ))}
