@@ -1,16 +1,22 @@
-// EventResponse.java
 package com.example.devops.dto;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.Instant;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class EventResponse {
     private Long id;
     private String eventName;
     private String description;
     private Long categoryId;
-    private Instant startDateTime; // ส่งเป็น ISO-8601 อัตโนมัติ
+    private Instant startDateTime;
     private Instant endDateTime;
     private String venueName;
     private String venueAddress;

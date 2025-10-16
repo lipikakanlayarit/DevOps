@@ -3,89 +3,84 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Sidebar from "@/components/sidebar";
-import { ChevronRight, X, Check, AlertTriangle } from "lucide-react";
+import { X, Check, AlertTriangle } from "lucide-react";
 import SearchBar from "@/components/SearchBar";
 import CategoryRadio from "@/components/CategoryRadio";
-import poster1 from "@/assets/poster.png";
+import { api } from "@/lib/api"; // <-- ใช้ axios instance ของโปรเจกต์คุณ
 
-/* ==============================
-   Mock pending events data
-   ============================== */
-const pendingEvents = [
-    {
-        id: "PE001",
-        title: "SUMMER JAZZ FESTIVAL 2025",
-        category: "Concert",
-        organizer: "THAI TICKET MAJOR",
-        organizerDetails: {
-            name: "THAI TICKET MAJOR",
-            phone: "+66 (0) 2-262-3456",
-            email: "contact@thaiticketmajor.com",
-            address:
-                "999/9 The Offices at CentralWorld, 17th Floor, Rama I Road, Pathumwan, Bangkok 10330",
-        },
-        showDates: ["15 March 2025", "16 March 2025"],
-        ticketAllowPerson: "4 Tickets per Person",
-        location: "Impact Arena, Muang Thong Thani",
-        salePeriod: "1 February 2025 - 10 March 2025",
-        poster: poster1,
-        description:
-            "A spectacular summer jazz festival featuring international and local artists performing across multiple stages with food and beverage vendors.",
-        submittedDate: "20 Jan 2025",
-        status: "pending",
-        estimatedAttendees: "15,000",
-        ticketPrice: "1,500 - 5,000 THB",
-    },
-    {
-        id: "PE002",
-        title: "TECH CONFERENCE BANGKOK",
-        category: "Conference",
-        organizer: "EVENT PRO CO.",
-        organizerDetails: {
-            name: "EVENT PRO CO.",
-            phone: "+66 (0) 2-555-1234",
-            email: "info@eventpro.co.th",
-            address: "123 Business Park, Sukhumvit Road, Bangkok 10110",
-        },
-        showDates: ["10 April 2025"],
-        ticketAllowPerson: "2 Tickets per Person",
-        location: "Queen Sirikit National Convention Center",
-        salePeriod: "15 February 2025 - 5 April 2025",
-        poster: poster1,
-        description:
-            "Annual technology conference featuring keynote speakers, workshops, and networking sessions for tech professionals.",
-        submittedDate: "18 Jan 2025",
-        status: "pending",
-        estimatedAttendees: "2,500",
-        ticketPrice: "2,000 - 8,000 THB",
-    },
-    {
-        id: "PE003",
-        title: "FOOD & WINE EXPO",
-        category: "Exhibition",
-        organizer: "EXPO THAILAND",
-        organizerDetails: {
-            name: "EXPO THAILAND",
-            phone: "+66 (0) 2-777-9999",
-            email: "contact@expothailand.com",
-            address: "456 Exhibition Center, Ratchada Road, Bangkok 10400",
-        },
-        showDates: ["5 May 2025", "6 May 2025", "7 May 2025"],
-        ticketAllowPerson: "6 Tickets per Person",
-        location: "BITEC Bangna",
-        salePeriod: "1 March 2025 - 1 May 2025",
-        poster: poster1,
-        description:
-            "Premier food and wine exhibition showcasing local and international cuisine, cooking demonstrations, and wine tastings.",
-        submittedDate: "15 Jan 2025",
-        status: "under_review",
-        estimatedAttendees: "8,000",
-        ticketPrice: "500 - 1,200 THB",
-    },
-];
-
-type PendingEvent = typeof pendingEvents[number];
 type StatusFilter = "all" | "pending" | "under_review";
+type ServerStatus = "PENDING" | "APPROVED" | "REJECTED" | "PUBLISHED" | string;
+
+type ApiEvent = {
+    // ปรับให้ครอบคลุมชื่อฟิลด์จาก backend
+    event_id?: number;        // events_nam.event_id (จาก DB จริง)
+    id?: number | string;     // เผื่อ backend ส่งเป็น id
+    event_name?: string;
+    title?: string;
+    category_id?: number;
+    category_name?: string;
+    organizer_id?: number;
+    organizer?: string;
+    start_datetime?: string;
+    end_datetime?: string;
+    venue_name?: string;
+    venue_address?: string;
+    status?: ServerStatus;    // PENDING/APPROVED/REJECTED...
+    created_at?: string;
+    submittedDate?: string;   // เผื่อเคยตั้งแบบนี้
+    poster?: string;          // ถ้ามี
+};
+
+type UiEvent = {
+    id: string;
+    title: string;
+    category: string;
+    organizer: string;
+    showDates: string[];
+    location: string;
+    submittedDate: string;
+    status: "pending" | "under_review" | string;
+    poster?: string | null;
+};
+
+const PAGE_SIZE = 8;
+
+/** แปลงข้อมูลจาก API → รูปแบบที่หน้า UI ต้องใช้ */
+function mapEvent(e: ApiEvent): UiEvent {
+    const id =
+        (e.event_id != null ? String(e.event_id) : e.id != null ? String(e.id) : "");
+    const title = e.event_name || e.title || "(untitled)";
+    const category = e.category_name || (e.category_id ? `#${e.category_id}` : "—");
+    const organizer = e.organizer || (e.organizer_id ? `Organizer#${e.organizer_id}` : "—");
+    const showDates = [e.start_datetime, e.end_datetime].filter(Boolean).map(s => new Date(s!).toLocaleString());
+    const location = e.venue_name || e.venue_address || "—";
+
+    // แมปสถานะจากฝั่ง server → ตัวกรองหน้า UI
+    // - PENDING -> "pending"
+    // - (ถ้ามีสถานะกำลังตรวจ) ให้แมปเป็น "under_review" ตาม UI
+    const statusUpper = (e.status || "").toUpperCase();
+    const uiStatus =
+        statusUpper === "PENDING" ? "pending"
+            : statusUpper === "UNDER_REVIEW" ? "under_review"
+                : statusUpper;
+
+    const submitted =
+        e.submittedDate ||
+        e.created_at ||
+        ""; // ถ้า backend ไม่มี ก็แสดงว่าง
+
+    return {
+        id,
+        title,
+        category,
+        organizer,
+        showDates: showDates.length ? showDates : ["—"],
+        location,
+        submittedDate: submitted,
+        status: uiStatus,
+        poster: e.poster ?? null,
+    };
+}
 
 /* ==============================
    Pagination Controls
@@ -102,7 +97,6 @@ const PaginationControls = ({
     showPageNumbers?: boolean;
 }) => {
     const maxVisiblePages = 5;
-
     const getVisiblePages = () => {
         if (totalPages <= maxVisiblePages) {
             return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -115,7 +109,6 @@ const PaginationControls = ({
         }
         return Array.from({ length: end - start + 1 }, (_, i) => start + i);
     };
-
     const visiblePages = getVisiblePages();
 
     return (
@@ -237,8 +230,9 @@ const PaginationControls = ({
 };
 
 /* ==============================
-   Event Detail Modal (without Submitted Documents)
+   Modals (ตัดส่วนที่ไม่จำเป็นออก เหลือ confirm)
    ============================== */
+
 function EventDetailModal({
                               open,
                               onClose,
@@ -246,20 +240,16 @@ function EventDetailModal({
                           }: {
     open: boolean;
     onClose: () => void;
-    event: PendingEvent | null;
+    event: UiEvent | null;
 }) {
     useEffect(() => {
         if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
+        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [open, onClose]);
 
     if (!open || !event) return null;
-
-    const stop = (e: React.MouseEvent) => e.stopPropagation();
 
     return (
         <div
@@ -269,165 +259,44 @@ function EventDetailModal({
             aria-modal="true"
         >
             <div
-                className="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-                onClick={stop}
+                className="w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+                onClick={(e) => e.stopPropagation()}
             >
-                {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-                    <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                        {event.title}
-                    </h3>
-                    <button
-                        onClick={onClose}
-                        className="p-2 rounded-full hover:bg-white/80 transition-colors duration-200"
-                    >
+                    <h3 className="text-2xl font-bold text-gray-900">{event.title}</h3>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/80">
                         <X className="h-6 w-6 text-gray-600" />
                     </button>
                 </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto">
-                    <div className="p-6 space-y-6">
-                        <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl p-6">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="flex justify-center lg:justify-start">
-                                    <img
-                                        src={event.poster}
-                                        alt={event.title}
-                                        className="w-72 h-96 object-cover rounded-xl shadow-lg"
-                                    />
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <span className="block text-xs font-medium text-gray-500 mb-1">
-                        Category
-                      </span>
-                                            <span className="text-sm font-semibold text-gray-900">
-                        {event.category}
-                      </span>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <span className="block text-xs font-medium text-gray-500 mb-1">
-                        Status
-                      </span>
-                                            <span className="text-sm font-semibold text-gray-900 capitalize">
-                        {event.status.replace("_", " ")}
-                      </span>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <span className="block text-xs font-medium text-gray-500 mb-1">
-                        Estimated Attendees
-                      </span>
-                                            <span className="text-sm font-semibold text-gray-900">
-                        {event.estimatedAttendees}
-                      </span>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <span className="block text-xs font-medium text-gray-500 mb-1">
-                        Ticket Price
-                      </span>
-                                            <span className="text-sm font-semibold text-gray-900">
-                        {event.ticketPrice}
-                      </span>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white rounded-lg p-3 shadow-sm">
-                    <span className="block text-xs font-medium text-gray-500 mb-2">
-                      Show Dates
-                    </span>
-                                        <div className="flex flex-wrap gap-1">
-                                            {event.showDates.map((date, index) => (
-                                                <span
-                                                    key={index}
-                                                    className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium"
-                                                >
-                          {date}
-                        </span>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white rounded-lg p-3 shadow-sm">
-                    <span className="block text-xs font-medium text-gray-500 mb-1">
-                      Sale Period
-                    </span>
-                                        <span className="text-sm font-semibold text-gray-900">
-                      {event.salePeriod}
-                    </span>
-                                    </div>
-
-                                    <div className="bg-white rounded-lg p-3 shadow-sm">
-                    <span className="block text-xs font-medium text-gray-500 mb-1">
-                      Location
-                    </span>
-                                        <span className="text-sm font-semibold text-gray-900">
-                      {event.location}
-                    </span>
-                                    </div>
-                                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <div className="text-xs text-gray-500 mb-1">Category</div>
+                            <div className="font-medium">{event.category}</div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-gray-500 mb-1">Status</div>
+                            <div className="font-medium capitalize">{event.status.replace("_", " ")}</div>
+                        </div>
+                        <div className="md:col-span-2">
+                            <div className="text-xs text-gray-500 mb-1">Show Dates</div>
+                            <div className="flex flex-wrap gap-1">
+                                {event.showDates.map((d, i) => (
+                                    <span key={i} className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                    {d}
+                  </span>
+                                ))}
                             </div>
                         </div>
-
-                        {/* Description */}
-                        <div className="bg-white rounded-xl p-6 shadow-sm border">
-                            <h4 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-                                <div className="w-1 h-5 bg-blue-500 rounded-full" />
-                                Event Description
-                            </h4>
-                            <p className="text-gray-700 leading-relaxed">
-                                {event.description}
-                            </p>
-                        </div>
-
-                        {/* Organizer */}
-                        <div className="bg-white rounded-xl p-6 shadow-sm border">
-                            <h4 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-                                <div className="w-1 h-5 bg-green-500 rounded-full" />
-                                Organizer Information
-                            </h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                  <span className="block text-sm font-medium text-gray-500 mb-1">
-                    Organization
-                  </span>
-                                    <span className="text-gray-900 font-medium">
-                    {event.organizerDetails.name}
-                  </span>
-                                </div>
-                                <div>
-                  <span className="block text-sm font-medium text-gray-500 mb-1">
-                    Phone
-                  </span>
-                                    <span className="text-gray-900 font-medium">
-                    {event.organizerDetails.phone}
-                  </span>
-                                </div>
-                                <div className="md:col-span-2">
-                  <span className="block text-sm font-medium text-gray-500 mb-1">
-                    Email
-                  </span>
-                                    <span className="text-gray-900 font-medium">
-                    {event.organizerDetails.email}
-                  </span>
-                                </div>
-                                <div className="md:col-span-2">
-                  <span className="block text-sm font-medium text-gray-500 mb-1">
-                    Address
-                  </span>
-                                    <span className="text-gray-900 font-medium">
-                    {event.organizerDetails.address}
-                  </span>
-                                </div>
-                            </div>
+                        <div className="md:col-span-2">
+                            <div className="text-xs text-gray-500 mb-1">Location</div>
+                            <div className="font-medium">{event.location}</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+                <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
                     <button
                         onClick={onClose}
                         className="px-4 py-2 text-sm border border-gray-300 text-gray-700 bg-white rounded-md hover:bg-gray-50"
@@ -440,38 +309,44 @@ function EventDetailModal({
     );
 }
 
-/* ==============================
-   Permission Action Modal (NO TEXTAREA)
-   ============================== */
 function PermissionActionModal({
                                    open,
                                    onClose,
                                    event,
                                    action,
+                                   onDone,
                                }: {
     open: boolean;
     onClose: () => void;
-    event: PendingEvent | null;
+    event: UiEvent | null;
     action: "approve" | "reject" | null;
+    onDone: () => void;
 }) {
     useEffect(() => {
         if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
+        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [open, onClose]);
 
     if (!open || !event || !action) return null;
 
-    const stop = (e: React.MouseEvent) => e.stopPropagation();
     const isApprove = action === "approve";
 
-    const handleSubmit = () => {
-        // TODO: call API approve/reject — ไม่ต้องส่ง reason
-        console.log(`${action} event ${event.id}`);
-        onClose();
+    const handleSubmit = async () => {
+        try {
+            // เรียกจริงไป backend
+            if (isApprove) {
+                await api.post(`/admin/events/${event.id}/approve`);
+            } else {
+                await api.post(`/admin/events/${event.id}/reject`);
+            }
+            onClose();
+            onDone(); // refresh list
+        } catch (err) {
+            console.error(err);
+            alert("ทำรายการไม่สำเร็จ");
+        }
     };
 
     return (
@@ -483,37 +358,20 @@ function PermissionActionModal({
         >
             <div
                 className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
-                onClick={stop}
+                onClick={(e) => e.stopPropagation()}
             >
-                <div
-                    className={`px-6 py-4 border-b ${
-                        isApprove ? "bg-green-50" : "bg-red-50"
-                    }`}
-                >
-                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                        {isApprove ? (
-                            <>
-                                <Check className="h-5 w-5 text-green-600" />
-                                Approve Event
-                            </>
-                        ) : (
-                            <>
-                                <X className="h-5 w-5 text-red-600" />
-                                Reject Event
-                            </>
-                        )}
+                <div className={`px-6 py-4 border-b ${isApprove ? "bg-green-50" : "bg-red-50"}`}>
+                    <h3 className="text-xl font-bold text-gray-900">
+                        {isApprove ? "Approve Event" : "Reject Event"}
                     </h3>
                 </div>
 
                 <div className="p-6">
                     <p className="text-gray-700">
                         คุณต้องการ<strong className="mx-1 uppercase">{action}</strong>
-                        อีเวนต์ “<span className="font-semibold">{event.title}</span>”
-                        ใช่ไหม?
+                        อีเวนต์ “<span className="font-semibold">{event.title}</span>” ใช่ไหม?
                     </p>
-                    <p className="text-gray-500 text-sm mt-2">
-                        *ไม่จำเป็นต้องกรอกเหตุผล — สามารถยืนยันได้ทันที
-                    </p>
+                    <p className="text-gray-500 text-sm mt-2">*ไม่ต้องกรอกเหตุผล</p>
                 </div>
 
                 <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
@@ -525,10 +383,8 @@ function PermissionActionModal({
                     </button>
                     <button
                         onClick={handleSubmit}
-                        className={`px-4 py-2 text-sm rounded-md font-medium transition-colors ${
-                            isApprove
-                                ? "bg-green-600 text-white hover:bg-green-700"
-                                : "bg-red-600 text-white hover:bg-red-700"
+                        className={`px-4 py-2 text-sm rounded-md font-medium ${
+                            isApprove ? "bg-green-600 text-white hover:bg-green-700" : "bg-red-600 text-white hover:bg-red-700"
                         }`}
                     >
                         {isApprove ? "Approve" : "Reject"}
@@ -540,7 +396,7 @@ function PermissionActionModal({
 }
 
 /* ==============================
-   AdminEventPermission (Main Component)
+   Main Component
    ============================== */
 export default function AdminEventPermission() {
     // State: filter/search
@@ -548,67 +404,81 @@ export default function AdminEventPermission() {
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
     // State: modals
-    const [selectedEvent, setSelectedEvent] = useState<PendingEvent | null>(null);
+    const [selectedEvent, setSelectedEvent] = useState<UiEvent | null>(null);
     const [detailModalOpen, setDetailModalOpen] = useState(false);
     const [actionModalOpen, setActionModalOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<"approve" | "reject" | null>(null);
 
-    // State: pagination
-    const PAGE_SIZE = 8;
+    // Data + pagination
+    const [rows, setRows] = useState<UiEvent[]>([]);
     const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const pageSize = PAGE_SIZE;
+    const statusParam = statusFilter === "all" ? undefined : statusFilter;
 
-    // Filtering
-    const filteredEvents = useMemo(() => {
-        let list = pendingEvents;
+    const fetchList = async (opts?: { page?: number }) => {
+        const p = opts?.page ?? page;
+        try {
+            // ปรับพารามให้ตรงกับ backend ของคุณ
+            const { data } = await api.get("/admin/events", {
+                params: {
+                    status: statusParam, // คาดหวังว่า backend map 'pending' → PENDING เองได้
+                    q: query || undefined,
+                    page: p - 1,         // ถ้า backend นับจาก 0
+                    size: pageSize,
+                },
+            });
 
-        if (statusFilter !== "all") {
-            list = list.filter((e) => e.status === statusFilter);
+            // รองรับทั้งแบบ page object และ array ธรรมดา
+            const items: ApiEvent[] = Array.isArray(data?.content) ? data.content
+                : Array.isArray(data) ? data
+                    : Array.isArray(data?.items) ? data.items
+                        : [];
+            const mapped = items.map(mapEvent);
+            setRows(mapped);
+
+            const tp =
+                typeof data?.totalPages === "number"
+                    ? Math.max(1, data.totalPages)
+                    : typeof data?.total_pages === "number"
+                        ? Math.max(1, data.total_pages)
+                        : // ถ้า backend ไม่ส่งรวมหน้า ก็ประเมินจากจำนวน item (กรณี simple list)
+                        Math.max(1, Math.ceil(mapped.length / pageSize));
+            setTotalPages(tp);
+            setPage(p);
+        } catch (err) {
+            console.error(err);
+            setRows([]);
+            setTotalPages(1);
         }
-        if (query.trim()) {
-            const q = query.toLowerCase();
-            list = list.filter((e) =>
-                [e.id, e.title, e.organizer, e.category, e.location, e.salePeriod, e.submittedDate]
-                    .join(" ")
-                    .toLowerCase()
-                    .includes(q)
-            );
-        }
-        return list;
-    }, [query, statusFilter]);
+    };
 
-    // Pagination derive
-    const totalPages = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE));
-    const pageItems = useMemo(() => {
-        const start = (page - 1) * PAGE_SIZE;
-        return filteredEvents.slice(start, start + PAGE_SIZE);
-    }, [filteredEvents, page]);
-
+    // เมื่อเปลี่ยนเงื่อนไข ให้โหลดหน้า 1 ใหม่
     useEffect(() => {
-        // reset to first page when filter/search changes
-        setPage(1);
+        fetchList({ page: 1 });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [query, statusFilter]);
+
+    const pageItems = rows; // เพราะใช้ server-side paging
 
     // Handlers
-    const handleRowClick = (ev: PendingEvent) => {
+    const handleRowClick = (ev: UiEvent) => {
         setSelectedEvent(ev);
         setDetailModalOpen(true);
     };
-
-    const handleApprove = (e: React.MouseEvent, ev: PendingEvent) => {
-        e.stopPropagation(); // Prevent row click
+    const handleApprove = (e: React.MouseEvent, ev: UiEvent) => {
+        e.stopPropagation();
         setSelectedEvent(ev);
         setPendingAction("approve");
         setActionModalOpen(true);
     };
-
-    const handleReject = (e: React.MouseEvent, ev: PendingEvent) => {
-        e.stopPropagation(); // Prevent row click
+    const handleReject = (e: React.MouseEvent, ev: UiEvent) => {
+        e.stopPropagation();
         setSelectedEvent(ev);
         setPendingAction("reject");
         setActionModalOpen(true);
     };
 
-    // Badges
     const getStatusBadge = (status: string) => {
         switch (status) {
             case "pending":
@@ -632,7 +502,6 @@ export default function AdminEventPermission() {
         }
     };
 
-    // Filter options
     const statusOptions = [
         { label: "All Status", value: "all" },
         { label: "Pending", value: "pending" },
@@ -666,11 +535,11 @@ export default function AdminEventPermission() {
                 </div>
 
                 {/* TABLE VIEW */}
-                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-0">
+                <div className="flex-1 overflow-y-auto px-6 py-6">
                     <div className="bg-white rounded-t-lg shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-200">
                             <h2 className="text-lg font-semibold text-gray-800">
-                                Pending Events: {filteredEvents.length}
+                                Pending Events
                             </h2>
                         </div>
 
@@ -678,30 +547,14 @@ export default function AdminEventPermission() {
                             <table className="w-full">
                                 <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        ID
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        TITLE
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        CATEGORY
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        ORGANIZER
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        DATES
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        SUBMITTED
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        STATUS
-                                    </th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">
-                                        ACTIONS
-                                    </th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">ID</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">TITLE</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">CATEGORY</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">ORGANIZER</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">DATES</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">SUBMITTED</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">STATUS</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-xs uppercase tracking-wide">ACTIONS</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -711,21 +564,14 @@ export default function AdminEventPermission() {
                                         className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
                                         onClick={() => handleRowClick(ev)}
                                     >
-                                        <td className="py-3 px-4 text-gray-800 font-mono text-sm">
-                                            {ev.id}
-                                        </td>
+                                        <td className="py-3 px-4 text-gray-800 font-mono text-sm">{ev.id}</td>
                                         <td className="py-3 px-4 text-gray-800">
                                             <div className="flex items-center gap-3">
-                                                <img
-                                                    src={ev.poster}
-                                                    alt={ev.title}
-                                                    className="w-10 h-10 rounded object-cover"
-                                                />
+                                                {/* ถ้าอยากโชว์รูปจริงค่อยไปดึง cover จาก /api/events/{id}/cover */}
+                                                <div className="w-10 h-10 rounded bg-gray-100" />
                                                 <div className="flex flex-col">
                                                     <span className="font-medium">{ev.title}</span>
-                                                    <span className="text-xs text-gray-500 line-clamp-1">
-                              {ev.location}
-                            </span>
+                                                    <span className="text-xs text-gray-500 line-clamp-1">{ev.location}</span>
                                                 </div>
                                             </div>
                                         </td>
@@ -734,7 +580,7 @@ export default function AdminEventPermission() {
                                         <td className="py-3 px-4 text-gray-800">
                                             <span className="text-sm">{ev.showDates.join(", ")}</span>
                                         </td>
-                                        <td className="py-3 px-4 text-gray-800">{ev.submittedDate}</td>
+                                        <td className="py-3 px-4 text-gray-800">{ev.submittedDate || "—"}</td>
                                         <td className="py-3 px-4">{getStatusBadge(ev.status)}</td>
                                         <td className="py-3 px-4">
                                             <div className="flex items-center gap-2">
@@ -757,13 +603,10 @@ export default function AdminEventPermission() {
 
                                 {pageItems.length === 0 && (
                                     <tr>
-                                        <td
-                                            className="py-12 px-4 text-center text-sm text-gray-500"
-                                            colSpan={8}
-                                        >
+                                        <td className="py-12 px-4 text-center text-sm text-gray-500" colSpan={8}>
                                             <div className="flex flex-col items-center gap-3">
                                                 <AlertTriangle className="h-10 w-10 text-gray-400" />
-                                                No events found matching your criteria.
+                                                No events found.
                                             </div>
                                         </td>
                                     </tr>
@@ -778,7 +621,7 @@ export default function AdminEventPermission() {
                         <PaginationControls
                             currentPage={page}
                             totalPages={totalPages}
-                            onPageChange={setPage}
+                            onPageChange={(p) => fetchList({ page: p })}
                             showPageNumbers
                         />
                     </div>
@@ -796,6 +639,7 @@ export default function AdminEventPermission() {
                 onClose={() => setActionModalOpen(false)}
                 event={selectedEvent}
                 action={pendingAction}
+                onDone={() => fetchList({ page })}
             />
         </div>
     );
