@@ -1,7 +1,18 @@
 // src/lib/api.ts
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
+/**
+ * ✅ BASE URL
+ * - ถ้าไม่ได้ตั้งค่า VITE_API_URL -> ใช้ "/api" (ให้ Vite proxy ไป backend)
+ * - ถ้าตั้งเป็น "http://localhost:8080" -> จะต่อท้าย "/api" ให้อัตโนมัติ
+ * - ถ้าตั้งเป็น "http://localhost:8080/api" ก็ใช้ได้เลย
+ */
+const RAW_BASE = (import.meta as any).env?.VITE_API_URL as string | undefined;
+const API_BASE = (() => {
+    if (!RAW_BASE) return "/api";
+    const t = RAW_BASE.replace(/\/+$/, ""); // ตัด / ท้าย
+    return t.endsWith("/api") ? t : `${t}/api`;
+})();
 
 export const api = axios.create({
     baseURL: API_BASE,
@@ -11,7 +22,9 @@ export const api = axios.create({
     withCredentials: true,
 });
 
-// Request interceptor - แนบ token ทุก request
+// ======================================================
+// ✅ Request Interceptor – แนบ Token ทุก Request
+// ======================================================
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem("token");
@@ -24,7 +37,9 @@ api.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
-// Response interceptor - จัดการ 401
+// ======================================================
+// ✅ Response Interceptor – จัดการ 401 Unauthorized
+// ======================================================
 api.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -38,10 +53,12 @@ api.interceptors.response.use(
     }
 );
 
-// ==================== Auth API ====================
+// ======================================================
+// ✅ Auth API
+// ======================================================
 export const authApi = {
     login: (username: string, password: string) =>
-        api.post("/api/auth/login", { username, password }),
+        api.post("/auth/login", { username, password }),
 
     signup: (data: {
         email: string;
@@ -51,7 +68,7 @@ export const authApi = {
         lastName: string;
         phoneNumber: string;
         idCard: string;
-    }) => api.post("/api/auth/signup", data),
+    }) => api.post("/auth/signup", data),
 
     signupOrganizer: (data: {
         email: string;
@@ -63,26 +80,25 @@ export const authApi = {
         address: string;
         companyName: string;
         taxId: string;
-    }) => api.post("/api/auth/organizer/signup", data),
+    }) => api.post("/auth/organizer/signup", data),
 
-    me: () => api.get("/api/auth/me"),
+    me: () => api.get("/auth/me"),
 };
 
-// ==================== Profile API (ใหม่) ====================
+// ======================================================
+// ✅ Profile API
+// ======================================================
 export const profileApi = {
-    // Get profile (ใช้ /me จาก auth แทน)
-    getProfile: () => api.get("/api/auth/me"),
+    getProfile: () => api.get("/auth/me"),
 
-    // Update user profile
     updateUser: (data: {
         email: string;
         firstName: string;
         lastName: string;
         phoneNumber: string;
         idCard?: string;
-    }) => api.put("/api/profile/user", data),
+    }) => api.put("/profile/user", data),
 
-    // Update organizer profile
     updateOrganizer: (data: {
         email: string;
         firstName: string;
@@ -91,27 +107,53 @@ export const profileApi = {
         companyName?: string;
         taxId?: string;
         address?: string;
-    }) => api.put("/api/profile/organizer", data),
+    }) => api.put("/profile/organizer", data),
 };
 
-// ==================== Admin API ====================
+// ======================================================
+// ✅ Event & Ticket API (เพิ่มส่วนนี้)
+// ======================================================
+export const eventApi = {
+    // สร้างอีเวนต์ใหม่
+    createEvent: (data: {
+        eventName: string;
+        description?: string;
+        categoryId?: number;
+        startDateTime: string;
+        endDateTime: string;
+        venueName: string;
+        venueAddress?: string;
+        maxCapacity?: number;
+    }) => api.post("/events", data),
+
+    // ตั้งค่า tickets สำหรับอีเวนต์นั้น
+    setupTickets: (eventId: number, data: any) =>
+        api.post(`/events/${eventId}/tickets/setup`, data),
+
+    // ดึงรายละเอียดอีเวนต์
+    getEventById: (id: number) => api.get(`/events/${id}`),
+
+    // ดึงอีเวนต์ทั้งหมด
+    getAllEvents: () => api.get("/events"),
+};
+
+// ======================================================
+// ✅ Admin API
+// ======================================================
 export const adminApi = {
-    // Users
-    getAllUsers: () => api.get("/api/admin/users"),
-    getUserById: (id: string) => api.get(`/api/admin/users/${id}`),
+    getAllUsers: () => api.get("/admin/users"),
+    getUserById: (id: string) => api.get(`/admin/users/${id}`),
     changeUserRole: (id: string, role: string) =>
-        api.patch(`/api/admin/users/${id}/role`, { role }),
-    deleteUser: (id: string) => api.delete(`/api/admin/users/${id}`),
+        api.patch(`/admin/users/${id}/role`, { role }),
+    deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
 
-    // Organizers
-    getAllOrganizers: () => api.get("/api/admin/organizers"),
-    getOrganizerById: (id: string) => api.get(`/api/admin/organizers/${id}`),
-    verifyOrganizer: (id: string) => api.patch(`/api/admin/organizers/${id}/verify`),
-    rejectOrganizer: (id: string) => api.patch(`/api/admin/organizers/${id}/reject`),
+    getAllOrganizers: () => api.get("/admin/organizers"),
+    getOrganizerById: (id: string) => api.get(`/admin/organizers/${id}`),
+    verifyOrganizer: (id: string) => api.patch(`/admin/organizers/${id}/verify`),
+    rejectOrganizer: (id: string) => api.patch(`/admin/organizers/${id}/reject`),
     updateOrganizerStatus: (id: string, status: string) =>
-        api.patch(`/api/admin/organizers/${id}/status`, { status }),
-    deleteOrganizer: (id: string) => api.delete(`/api/admin/organizers/${id}`),
+        api.patch(`/admin/organizers/${id}/status`, { status }),
+    deleteOrganizer: (id: string) => api.delete(`/admin/organizers/${id}`),
 
-    // Stats
-    getStatistics: () => api.get("/api/admin/stats"),
+    getStatistics: () => api.get("/admin/stats"),
 };
