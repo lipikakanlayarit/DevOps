@@ -1,532 +1,580 @@
-// src/pages/Eventdetail.tsx
-"use client";
+// src/pages/Eventdetail.test.tsx
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import EventDetails from './Eventdetail';
+import { api } from '@/lib/api';
 
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { api } from "@/lib/api";
-import { Sidebar } from "@/components/sidebarorg";
-import { Input } from "@/components/inputtxt";
-import { Plus, X, Image as ImageIcon, Trash2, MapPin, Clock } from "lucide-react";
+// Mock dependencies
+vi.mock('@/lib/api', () => ({
+    api: {
+        get: vi.fn(),
+        post: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+    },
+}));
 
-type DateTimeEntry = {
-    id: number;
-    startDate: string;
-    startTime: string;
-    endDate: string;
-    endTime: string;
-};
+vi.mock('@/components/sidebarorg', () => ({
+    Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
+}));
 
-function toUTC(dateStr: string, timeStr: string) {
-    return new Date(`${dateStr}T${timeStr}:00+07:00`).toISOString();
-}
-function isoToLocalParts(iso?: string) {
-    if (!iso) return { date: "", time: "" };
-    try {
-        const d = new Date(iso);
-        const pad = (n: number) => String(n).padStart(2, "0");
-        return {
-            date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-            time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-        };
-    } catch { return { date: "", time: "" }; }
-}
+vi.mock('@/components/inputtxt', () => ({
+    Input: ({ value, onChange, placeholder, disabled }: any) => (
+        <input
+            data-testid="custom-input"
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            disabled={disabled}
+        />
+    ),
+}));
 
-export default function EventDetails() {
-    const { eventId } = useParams<{ eventId?: string }>();
-    const isEdit = !!eventId && Number(eventId) > 0;
-    const navigate = useNavigate();
+// Mock navigate
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+    const actual = await vi.importActual('react-router-dom');
+    return {
+        ...actual,
+        useNavigate: () => mockNavigate,
+    };
+});
 
-    const [eventData, setEventData] = useState({
-        eventName: "",
-        category: "",
-        locationType: "venue" as "venue" | "announced",
-        locationName: "",
-        description: "",
+describe('EventDetails Component', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        localStorage.clear();
+        global.alert = vi.fn();
+        global.confirm = vi.fn(() => true);
+        URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+        URL.revokeObjectURL = vi.fn();
     });
 
-    const [dateTimeEntries, setDateTimeEntries] = useState<DateTimeEntry[]>([
-        { id: 1, startDate: "", startTime: "", endDate: "", endTime: "" },
-    ]);
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
 
-    // ---------- Image ----------
-    const fileInputRef = useRef<HTMLInputElement | null>(null);
-    const [coverFile, setCoverFile] = useState<File | null>(null);
-    const [coverPreview, setCoverPreview] = useState<string | null>(null);
-    const [imgError, setImgError] = useState<string | null>(null);
-
-    const pickFile = () => fileInputRef.current?.click();
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setImgError(null);
-
-        if (!/^image\//.test(file.type)) {
-            setImgError("กรุณาเลือกรูปภาพเท่านั้น (PNG/JPG/JPEG/GIF)");
-            e.target.value = "";
-            return;
-        }
-        if (file.size > 10 * 1024 * 1024) {
-            setImgError("ไฟล์ใหญ่เกิน 10MB");
-            e.target.value = "";
-            return;
-        }
-
-        setCoverFile(file);
-        setCoverPreview(URL.createObjectURL(file));
-    };
-    const clearImageLocalOnly = () => {
-        setCoverFile(null);
-        if (coverPreview) URL.revokeObjectURL(coverPreview);
-        setCoverPreview(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+    const renderComponent = (eventId?: string) => {
+        const path = eventId ? `/eventdetail/${eventId}` : '/eventdetail';
+        return render(
+            <MemoryRouter initialEntries={[path]}>
+                <Routes>
+                    <Route path="/eventdetail/:eventId?" element={<EventDetails />} />
+                </Routes>
+            </MemoryRouter>
+        );
     };
 
-    const deleteImageFromServer = async () => {
-        if (!isEdit || !eventId) return;
-        if (!confirm("ลบรูปจากเซิร์ฟเวอร์ใช่ไหม?")) return;
-        try {
-            await api.delete(`/events/${eventId}/cover`);
-            clearImageLocalOnly();
-            // เคลียร์ preview ให้ไม่โชว์รูปเดิม
-            setCoverPreview(null);
-        } catch (e: any) {
-            alert(e?.response?.data?.error || "ลบรูปไม่สำเร็จ");
-        }
-    };
+    describe('Create Mode (New Event)', () => {
+        it('should render create event form correctly', () => {
+            renderComponent();
 
-    // ---------- Misc ----------
-    const [saving, setSaving] = useState(false);
-    const [loading, setLoading] = useState(false);
+            expect(screen.getByText('Event Details')).toBeInTheDocument();
+            expect(screen.getByText('Add all of your event details.')).toBeInTheDocument();
+            expect(screen.getByText('Show Date and Time')).toBeInTheDocument();
+            expect(screen.getByText('Location')).toBeInTheDocument();
+            expect(screen.getByText('Description')).toBeInTheDocument();
+        });
 
-    // ---------- Prefill when edit ----------
-    useEffect(() => {
-        if (!isEdit) {
-            const now = new Date();
-            const next = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const yyyy = next.getFullYear();
-            const mm = pad(next.getMonth() + 1);
-            const dd = pad(next.getDate());
-            setDateTimeEntries([{
-                id: 1,
-                startDate: `${yyyy}-${mm}-${dd}`,
-                startTime: "19:00",
-                endDate: `${yyyy}-${mm}-${dd}`,
-                endTime: "22:00",
-            }]);
-            return;
-        }
+        it('should initialize with default date/time (7 days from now)', () => {
+            renderComponent();
 
-        let ignore = false;
-        (async () => {
-            try {
-                setLoading(true);
-                const { data } = await api.get(`/events/${eventId}`);
-                if (ignore || !data) return;
+            const dateInputs = screen.getAllByDisplayValue(/\d{4}-\d{2}-\d{2}/);
+            expect(dateInputs.length).toBeGreaterThan(0);
 
-                const name = data.eventName ?? data.event_name ?? data.name ?? "";
-                const desc = data.description ?? "";
-                const catId = data.categoryId ?? data.category_id ?? "";
-                const venueName = data.venueName ?? data.venue_name ?? "";
-                const startIso = data.startDateTime ?? data.startDatetime ?? data.start_datetime;
-                const endIso = data.endDateTime ?? data.endDatetime ?? data.end_datetime;
+            const timeInputs = screen.getAllByDisplayValue('19:00');
+            expect(timeInputs.length).toBeGreaterThan(0);
+        });
 
-                const s = isoToLocalParts(startIso);
-                const e = isoToLocalParts(endIso);
+        it('should update event name input', () => {
+            renderComponent();
 
-                setEventData({
-                    eventName: name,
-                    description: desc,
-                    category: catId ? String(catId) : "",
-                    locationType: venueName && venueName !== "To be announced" ? "venue" : "announced",
-                    locationName: venueName && venueName !== "To be announced" ? venueName : "",
-                });
-                setDateTimeEntries([{ id: 1, startDate: s.date, startTime: s.time, endDate: e.date, endTime: e.time }]);
+            const inputs = screen.getAllByTestId('custom-input');
+            const eventNameInput = inputs[0];
 
-                // ✅ preload รูปจาก backend (cache-busting)
-                setCoverPreview(`/api/events/${eventId}/cover?ts=${Date.now()}`);
+            fireEvent.change(eventNameInput, { target: { value: 'Test Event' } });
+            expect(eventNameInput).toHaveValue('Test Event');
+        });
 
-                // cache ไป Ticketdetail
-                const cached = {
-                    id: Number(eventId),
-                    eventName: name,
-                    startDateTime: startIso,
-                    endDateTime: endIso,
-                    venueName,
-                };
-                localStorage.setItem(`event:${eventId}`, JSON.stringify(cached));
-                localStorage.setItem(`event:last`, JSON.stringify({ id: Number(eventId), name }));
-            } catch (e) {
-                console.error("LOAD_EVENT_FAILED", e);
-            } finally {
-                setLoading(false);
-            }
-        })();
-        return () => { ignore = true; };
-    }, [isEdit, eventId]);
+        it('should update category selection', () => {
+            renderComponent();
 
-    // ---------- Save ----------
-    async function handleSave() {
-        const first = dateTimeEntries[0];
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
 
-        if (!eventData.eventName.trim()) return alert("กรุณากรอก Event Name");
-        if (!eventData.category) return alert("กรุณาเลือก Category");
-        if (!first || !first.startDate || !first.startTime || !first.endDate || !first.endTime) {
-            return alert("กรุณากรอกวันและเวลาให้ครบ");
-        }
-        if (eventData.locationType === "venue" && !eventData.locationName.trim()) {
-            return alert("กรุณากรอกชื่อสถานที่ (Location name)");
-        }
+            expect(categorySelect).toHaveValue('1');
+        });
 
-        const payload = {
-            eventName: eventData.eventName.trim(),
-            description: eventData.description || "",
-            startDateTime: toUTC(first.startDate, first.startTime),
-            endDateTime: toUTC(first.endDate, first.endTime),
-            venueName: eventData.locationType === "venue" ? eventData.locationName.trim() : "To be announced",
-            venueAddress: "",
-            maxCapacity: null as number | null,
-            categoryId: Number(eventData.category),
+        it('should show validation error when event name is empty', async () => {
+            renderComponent();
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(global.alert).toHaveBeenCalledWith('กรุณากรอก Event Name');
+            });
+        });
+
+        it('should show validation error when category is not selected', async () => {
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Test Event' } });
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(global.alert).toHaveBeenCalledWith('กรุณาเลือก Category');
+            });
+        });
+
+        it('should show validation error when location name is empty for venue type', async () => {
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Test Event' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const venueRadio = screen.getByLabelText(/Venue/i);
+            fireEvent.click(venueRadio);
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(global.alert).toHaveBeenCalledWith('กรุณากรอกชื่อสถานที่ (Location name)');
+            });
+        });
+
+        it('should create new event successfully', async () => {
+            const mockResponse = { data: { event_id: 123 } };
+            vi.mocked(api.post).mockResolvedValue(mockResponse);
+
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'New Event' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(api.post).toHaveBeenCalledWith(
+                    '/events',
+                    expect.objectContaining({
+                        eventName: 'New Event',
+                        categoryId: 1,
+                    }),
+                    expect.any(Object)
+                );
+                expect(global.alert).toHaveBeenCalledWith('สร้างอีเวนต์สำเร็จ!');
+                expect(mockNavigate).toHaveBeenCalledWith('/ticketdetail/123', { replace: true });
+            });
+        });
+    });
+
+    describe('Edit Mode (Existing Event)', () => {
+        const mockEventData = {
+            eventName: 'Existing Event',
+            description: 'Test description',
+            categoryId: 2,
+            venueName: 'Main Hall',
+            startDateTime: '2025-10-20T19:00:00+07:00',
+            endDateTime: '2025-10-20T22:00:00+07:00',
         };
 
-        setSaving(true);
-        try {
-            let newId = Number(eventId);
-            if (isEdit) {
-                await api.put(`/events/${eventId}`, payload);
-            } else {
-                const { data: res } = await api.post(`/events`, payload, { headers: { "Content-Type": "application/json" } });
-                newId = res?.event_id ?? res?.id;
-                if (!newId) throw new Error("ไม่พบ event_id หรือ id ในผลลัพธ์ของ backend");
-            }
+        it('should load existing event data', async () => {
+            vi.mocked(api.get).mockResolvedValue({ data: mockEventData });
 
-            // ✅ ถ้ามีไฟล์รูป → อัปโหลดไปเซิร์ฟเวอร์
-            if (coverFile) {
-                const fd = new FormData();
-                fd.append("file", coverFile);
-                await api.post(`/events/${newId}/cover`, fd, {
-                    headers: { "Content-Type": "multipart/form-data" },
+            renderComponent('456');
+
+            expect(screen.getByText('กำลังโหลดข้อมูลอีเวนต์...')).toBeInTheDocument();
+
+            await waitFor(() => {
+                expect(api.get).toHaveBeenCalledWith('/events/456');
+            });
+
+            await waitFor(() => {
+                expect(screen.queryByText('กำลังโหลดข้อมูลอีเวนต์...')).not.toBeInTheDocument();
+            });
+        });
+
+        it('should show link to ticket details in edit mode', async () => {
+            vi.mocked(api.get).mockResolvedValue({ data: mockEventData });
+
+            renderComponent('456');
+
+            await waitFor(() => {
+                const link = screen.getByText('ไป Ticket Details ของอีเวนต์นี้');
+                expect(link).toBeInTheDocument();
+                expect(link).toHaveAttribute('href', '/ticketdetail/456');
+            });
+        });
+
+        it('should update existing event successfully', async () => {
+            vi.mocked(api.get).mockResolvedValue({ data: mockEventData });
+            vi.mocked(api.put).mockResolvedValue({ data: { success: true } });
+
+            renderComponent('456');
+
+            await waitFor(() => {
+                expect(screen.queryByText('กำลังโหลดข้อมูลอีเวนต์...')).not.toBeInTheDocument();
+            });
+
+            const saveButton = screen.getByText('Update & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(api.put).toHaveBeenCalledWith(
+                    '/events/456',
+                    expect.any(Object)
+                );
+                expect(global.alert).toHaveBeenCalledWith('อัปเดตอีเวนต์สำเร็จ!');
+            });
+        });
+    });
+
+    describe('Image Upload', () => {
+        it('should handle image file selection', () => {
+            renderComponent();
+
+            const file = new File(['image'], 'test.png', { type: 'image/png' });
+            const fileInput = screen.getByLabelText(/Choose image/i).closest('button')?.parentElement?.querySelector('input[type="file"]') as HTMLInputElement;
+
+            if (fileInput) {
+                Object.defineProperty(fileInput, 'files', {
+                    value: [file],
+                    writable: false,
                 });
+
+                fireEvent.change(fileInput);
+
+                expect(URL.createObjectURL).toHaveBeenCalledWith(file);
+            }
+        });
+
+        it('should show error for non-image file', () => {
+            renderComponent();
+
+            const file = new File(['content'], 'test.txt', { type: 'text/plain' });
+            const fileInput = screen.getByLabelText(/Choose image/i).closest('button')?.parentElement?.querySelector('input[type="file"]') as HTMLInputElement;
+
+            if (fileInput) {
+                Object.defineProperty(fileInput, 'files', {
+                    value: [file],
+                    writable: false,
+                });
+
+                fireEvent.change(fileInput);
+
+                expect(screen.getByText(/กรุณาเลือกรูปภาพเท่านั้น/i)).toBeInTheDocument();
+            }
+        });
+
+        it('should show error for file larger than 10MB', () => {
+            renderComponent();
+
+            const largeFile = new File(['x'.repeat(11 * 1024 * 1024)], 'large.png', { type: 'image/png' });
+            Object.defineProperty(largeFile, 'size', { value: 11 * 1024 * 1024 });
+
+            const fileInput = screen.getByLabelText(/Choose image/i).closest('button')?.parentElement?.querySelector('input[type="file"]') as HTMLInputElement;
+
+            if (fileInput) {
+                Object.defineProperty(fileInput, 'files', {
+                    value: [largeFile],
+                    writable: false,
+                });
+
+                fireEvent.change(fileInput);
+
+                expect(screen.getByText(/ไฟล์ใหญ่เกิน 10MB/i)).toBeInTheDocument();
+            }
+        });
+
+        it('should upload image when creating event', async () => {
+            const mockResponse = { data: { event_id: 789 } };
+            vi.mocked(api.post).mockResolvedValue(mockResponse);
+
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Event with Image' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const file = new File(['image'], 'test.png', { type: 'image/png' });
+            const fileInput = screen.getByLabelText(/Choose image/i).closest('button')?.parentElement?.querySelector('input[type="file"]') as HTMLInputElement;
+
+            if (fileInput) {
+                Object.defineProperty(fileInput, 'files', {
+                    value: [file],
+                    writable: false,
+                });
+                fireEvent.change(fileInput);
             }
 
-            const cached = { id: newId, ...payload, savedAt: new Date().toISOString() };
-            localStorage.setItem(`event:${newId}`, JSON.stringify(cached));
-            localStorage.setItem(`event:last`, JSON.stringify({ id: newId, name: payload.eventName }));
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
 
-            alert(isEdit ? "อัปเดตอีเวนต์สำเร็จ!" : "สร้างอีเวนต์สำเร็จ!");
-            navigate(`/ticketdetail/${newId}`, { replace: true });
-        } catch (err: any) {
-            console.error(err);
-            alert(err?.response?.data?.error || err?.response?.data?.message || "บันทึกไม่สำเร็จ");
-        } finally {
-            setSaving(false);
-        }
-    }
+            await waitFor(() => {
+                expect(api.post).toHaveBeenCalledTimes(2); // event + image
+            });
+        });
 
-    // ---------- UI ----------
-    return (
-        <div className="flex min-h-screen bg-gray-100">
-            <Sidebar />
-            <main className="flex-1 p-6">
-                <div className="space-y-6">
-                    <div className="flex justify-between items-center">
-                        <h1 className="text-2xl font-bold text-gray-900">
-                            {isEdit ? "Edit Event" : "Event Details"}
-                        </h1>
-                        {isEdit && (
-                            <Link to={`/ticketdetail/${eventId}`} className="text-sm underline text-blue-600 hover:text-blue-800">
-                                ไป Ticket Details ของอีเวนต์นี้
-                            </Link>
-                        )}
-                    </div>
+        it('should delete image from server in edit mode', async () => {
+            const mockEventData = {
+                eventName: 'Event',
+                categoryId: 1,
+                venueName: 'Hall',
+                startDateTime: '2025-10-20T19:00:00+07:00',
+                endDateTime: '2025-10-20T22:00:00+07:00',
+            };
 
-                    {loading ? (
-                        <div className="bg-white p-6 rounded-lg shadow-sm">กำลังโหลดข้อมูลอีเวนต์...</div>
-                    ) : (
-                        <>
-                            {/* Event Details */}
-                            <div className="bg-white rounded-lg p-6 shadow-sm">
-                                <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Event Details</h2>
-                                    <p className="text-sm text-gray-600">Add all of your event details.</p>
-                                </div>
+            vi.mocked(api.get).mockResolvedValue({ data: mockEventData });
+            vi.mocked(api.delete).mockResolvedValue({ data: { success: true } });
 
-                                <div className="space-y-6">
-                                    {/* Event Name */}
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Event Name <span className="text-red-500 ml-1">*</span>
-                                        </label>
-                                        <Input
-                                            placeholder="Name of your project"
-                                            value={eventData.eventName}
-                                            onChange={(e) => setEventData({ ...eventData, eventName: e.target.value })}
-                                        />
-                                    </div>
+            renderComponent('456');
 
-                                    {/* Category */}
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Category <span className="text-red-500 ml-1">*</span>
-                                        </label>
-                                        <div className="relative">
-                                            <select
-                                                value={eventData.category}
-                                                onChange={(e) => setEventData({ ...eventData, category: e.target.value })}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white appearance-none pr-10"
-                                                required
-                                            >
-                                                <option value="">Select</option>
-                                                <option value="1">Concert</option>
-                                                <option value="2">Seminar</option>
-                                                <option value="3">Exhibition</option>
-                                            </select>
-                                            <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                </svg>
-                                            </div>
-                                        </div>
-                                        <p className="text-xs text-gray-500">* ต้องเลือกให้ตรงกับ categories ในฐานข้อมูล</p>
-                                    </div>
+            await waitFor(() => {
+                expect(screen.queryByText('กำลังโหลดข้อมูลอีเวนต์...')).not.toBeInTheDocument();
+            });
 
-                                    {/* Upload Picture */}
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Upload Picture <span className="text-red-500 ml-1">*</span>
-                                        </label>
+            const deleteButton = screen.getByText('ลบรูปจากเซิร์ฟเวอร์');
+            fireEvent.click(deleteButton);
 
-                                        {coverPreview && (
-                                            <div className="relative w-full max-w-2xl">
-                                                <img src={coverPreview} alt="Preview" className="w-full aspect-[16/9] object-cover rounded-lg border" />
-                                                <button
-                                                    type="button"
-                                                    onClick={clearImageLocalOnly}
-                                                    className="absolute top-2 right-10 bg-white/90 hover:bg-white text-red-600 border rounded-full p-1 shadow-sm"
-                                                    title="Remove image (local)"
-                                                    aria-label="Remove image (local)"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        )}
+            await waitFor(() => {
+                expect(global.confirm).toHaveBeenCalled();
+                expect(api.delete).toHaveBeenCalledWith('/events/456/cover');
+            });
+        });
+    });
 
-                                        <div className={`border-2 border-dashed ${coverPreview ? "border-gray-200" : "border-gray-300"} rounded-lg p-6 text-center hover:border-gray-400 transition-colors`}>
-                                            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                                            <button
-                                                type="button"
-                                                onClick={pickFile}
-                                                className="inline-flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                                            >
-                                                <ImageIcon className="w-4 h-4" />
-                                                {coverPreview ? "Change image" : "Choose image"}
-                                            </button>
+    describe('Date and Time Management', () => {
+        it('should add new date/time entry', () => {
+            renderComponent();
 
-                                            {isEdit && (
-                                                <button
-                                                    type="button"
-                                                    onClick={deleteImageFromServer}
-                                                    className="inline-flex items-center gap-2 bg-white border border-red-300 text-red-600 hover:bg-red-50 ml-3 px-4 py-2 rounded-lg text-sm"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                    ลบรูปจากเซิร์ฟเวอร์
-                                                </button>
-                                            )}
+            const addButton = screen.getByText('Add Date and Time');
+            fireEvent.click(addButton);
 
-                                            <p className="text-xs text-gray-500 mt-2">PNG, JPG, JPEG, GIF up to 10MB</p>
-                                            {imgError && <p className="text-xs text-red-600 mt-1">{imgError}</p>}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+            const dateInputs = screen.getAllByLabelText(/Start Date/i);
+            expect(dateInputs.length).toBe(2);
+        });
 
-                            {/* Show Date and Time */}
-                            <div className="bg-white rounded-lg p-6 shadow-sm">
-                                <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Show Date and Time</h2>
-                                    <p className="text-sm text-gray-600">Let attendee know your event's start and end time.</p>
-                                </div>
+        it('should remove date/time entry', () => {
+            renderComponent();
 
-                                <div className="space-y-6">
-                                    {dateTimeEntries.map((entry, index) => (
-                                        <div key={entry.id} className="relative space-y-4 p-4 border border-gray-200 rounded-lg">
-                                            <button
-                                                type="button"
-                                                onClick={() => setDateTimeEntries(prev => prev.filter(e => e.id !== entry.id))}
-                                                className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
-                                                aria-label="Remove date-time block"
-                                                title="Remove"
-                                            >
-                                                <X className="w-5 h-5" />
-                                            </button>
+            const addButton = screen.getByText('Add Date and Time');
+            fireEvent.click(addButton);
 
-                                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Start Date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={entry.startDate}
-                                                        onChange={(e) => {
-                                                            const updated = [...dateTimeEntries];
-                                                            updated[index].startDate = e.target.value;
-                                                            setDateTimeEntries(updated);
-                                                        }}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                    />
-                                                </div>
+            const removeButtons = screen.getAllByLabelText('Remove date-time block');
+            fireEvent.click(removeButtons[0]);
 
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Start Time</label>
-                                                    <input
-                                                        type="time"
-                                                        step={300}
-                                                        value={entry.startTime}
-                                                        onChange={(e) => {
-                                                            const updated = [...dateTimeEntries];
-                                                            updated[index].startTime = e.target.value;
-                                                            setDateTimeEntries(updated);
-                                                        }}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                    />
-                                                </div>
+            const dateInputs = screen.getAllByLabelText(/Start Date/i);
+            expect(dateInputs.length).toBe(1);
+        });
 
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">End Date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={entry.endDate}
-                                                        onChange={(e) => {
-                                                            const updated = [...dateTimeEntries];
-                                                            updated[index].endDate = e.target.value;
-                                                            setDateTimeEntries(updated);
-                                                        }}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                    />
-                                                </div>
+        it('should update start date', () => {
+            renderComponent();
 
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">End Time</label>
-                                                    <input
-                                                        type="time"
-                                                        step={300}
-                                                        value={entry.endTime}
-                                                        onChange={(e) => {
-                                                            const updated = [...dateTimeEntries];
-                                                            updated[index].endTime = e.target.value;
-                                                            setDateTimeEntries(updated);
-                                                        }}
-                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+            const startDateInput = screen.getByLabelText(/Start Date/i);
+            fireEvent.change(startDateInput, { target: { value: '2025-12-25' } });
 
-                                    <button
-                                        onClick={() =>
-                                            setDateTimeEntries(prev => [
-                                                ...prev,
-                                                { id: prev.length ? Math.max(...prev.map(p => p.id)) + 1 : 1, startDate: "", startTime: "", endDate: "", endTime: "" },
-                                            ])
-                                        }
-                                        className="flex items-center gap-2 text-[#09090B] border border-gray-300 rounded-full px-4 py-2 hover:bg-gray-50 transition-colors"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                        Add Date and Time
-                                    </button>
-                                </div>
-                            </div>
+            expect(startDateInput).toHaveValue('2025-12-25');
+        });
 
-                            {/* Location */}
-                            <div className="bg-white rounded-lg p-6 shadow-sm">
-                                <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Location</h2>
-                                    <p className="text-sm text-gray-600">Let attendees know where your event is held.</p>
-                                </div>
+        it('should update start time', () => {
+            renderComponent();
 
-                                <div className="space-y-4">
-                                    <div className="flex gap-4">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="locationType"
-                                                value="venue"
-                                                checked={eventData.locationType === "venue"}
-                                                onChange={(e) => setEventData({ ...eventData, locationType: e.target.value as any })}
-                                                className="hidden"
-                                            />
-                                            <span className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
-                                                eventData.locationType === "venue" ? "border-blue-600 text-blue-600 bg-blue-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                                            }`}>
-                        <MapPin className="w-4 h-4" /> Venue
-                      </span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="locationType"
-                                                value="announced"
-                                                checked={eventData.locationType === "announced"}
-                                                onChange={(e) => setEventData({ ...eventData, locationType: e.target.value as any })}
-                                                className="hidden"
-                                            />
-                                            <span className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
-                                                eventData.locationType === "announced" ? "border-blue-600 text-blue-600 bg-blue-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                                            }`}>
-                        <Clock className="w-4 h-4" /> To be announced
-                      </span>
-                                        </label>
-                                    </div>
+            const startTimeInput = screen.getByLabelText(/Start Time/i);
+            fireEvent.change(startTimeInput, { target: { value: '20:00' } });
 
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Location name <span className="text-red-500 ml-1">*</span>
-                                        </label>
-                                        <Input
-                                            placeholder={eventData.locationType === "venue" ? "Main Hall / Auditorium A" : "To be announced (auto)"}
-                                            value={eventData.locationType === "venue" ? eventData.locationName : "To be announced"}
-                                            onChange={(e) => setEventData({ ...eventData, locationName: e.target.value })}
-                                            disabled={eventData.locationType !== "venue"}
-                                        />
-                                        {eventData.locationType !== "venue" && (
-                                            <p className="text-xs text-gray-500">ระบบจะบันทึกเป็น “To be announced” อัตโนมัติ</p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+            expect(startTimeInput).toHaveValue('20:00');
+        });
+    });
 
-                            {/* Description */}
-                            <div className="bg-white rounded-lg p-6 shadow-sm">
-                                <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Description</h2>
-                                </div>
-                                <textarea
-                                    placeholder="Add more details about your event."
-                                    value={eventData.description}
-                                    onChange={(e) => setEventData({ ...eventData, description: e.target.value })}
-                                    rows={6}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                />
-                            </div>
+    describe('Location Type', () => {
+        it('should switch to venue location type', () => {
+            renderComponent();
 
-                            {/* Actions */}
-                            <div className="flex justify-end gap-3">
-                                <Link to="/organizationmnge" className="rounded-full bg-[#FA3A2B] px-5 py-3 text-white font-medium shadow-sm hover:bg-[#e23325] transition-colors">
-                                    Cancel
-                                </Link>
-                                <button
-                                    type="button"
-                                    onClick={handleSave}
-                                    disabled={saving}
-                                    className="rounded-full border border-gray-300 px-6 py-3 text-gray-900 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
-                                >
-                                    {saving ? "Saving..." : isEdit ? "Update & Continue" : "Save & Continue"}
-                                </button>
-                            </div>
-                        </>
-                    )}
-                </div>
-            </main>
-        </div>
-    );
-}
+            const venueRadio = screen.getByLabelText(/Venue/i);
+            fireEvent.click(venueRadio);
+
+            const locationInputs = screen.getAllByTestId('custom-input');
+            const locationInput = locationInputs.find(input =>
+                input.getAttribute('placeholder')?.includes('Main Hall')
+            );
+
+            expect(locationInput).not.toBeDisabled();
+        });
+
+        it('should switch to "to be announced" location type', () => {
+            renderComponent();
+
+            const announcedRadio = screen.getByLabelText(/To be announced/i);
+            fireEvent.click(announcedRadio);
+
+            const locationInputs = screen.getAllByTestId('custom-input');
+            const locationInput = locationInputs.find(input =>
+                input.getAttribute('value') === 'To be announced'
+            );
+
+            expect(locationInput).toBeDisabled();
+        });
+
+        it('should save "To be announced" when announced type is selected', async () => {
+            vi.mocked(api.post).mockResolvedValue({ data: { event_id: 999 } });
+
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Test Event' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const announcedRadio = screen.getByLabelText(/To be announced/i);
+            fireEvent.click(announcedRadio);
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(api.post).toHaveBeenCalledWith(
+                    '/events',
+                    expect.objectContaining({
+                        venueName: 'To be announced',
+                    }),
+                    expect.any(Object)
+                );
+            });
+        });
+    });
+
+    describe('Description', () => {
+        it('should update description textarea', () => {
+            renderComponent();
+
+            const descriptionTextarea = screen.getByPlaceholderText(/Add more details about your event/i);
+            fireEvent.change(descriptionTextarea, { target: { value: 'Event description here' } });
+
+            expect(descriptionTextarea).toHaveValue('Event description here');
+        });
+    });
+
+    describe('Cancel Button', () => {
+        it('should render cancel button with correct link', () => {
+            renderComponent();
+
+            const cancelButton = screen.getByText('Cancel');
+            expect(cancelButton).toHaveAttribute('href', '/organizationmnge');
+        });
+    });
+
+    describe('Error Handling', () => {
+        it('should handle API error when creating event', async () => {
+            const errorMessage = 'Server error';
+            vi.mocked(api.post).mockRejectedValue({
+                response: { data: { error: errorMessage } },
+            });
+
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Test Event' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(global.alert).toHaveBeenCalledWith(errorMessage);
+            });
+        });
+
+        it('should handle API error when loading event', async () => {
+            vi.mocked(api.get).mockRejectedValue(new Error('Load failed'));
+
+            renderComponent('456');
+
+            await waitFor(() => {
+                expect(api.get).toHaveBeenCalled();
+            });
+        });
+
+        it('should handle missing event_id in create response', async () => {
+            vi.mocked(api.post).mockResolvedValue({ data: {} });
+
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Test Event' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                expect(global.alert).toHaveBeenCalledWith(
+                    expect.stringContaining('ไม่พบ event_id')
+                );
+            });
+        });
+    });
+
+    describe('LocalStorage', () => {
+        it('should save event data to localStorage after successful creation', async () => {
+            vi.mocked(api.post).mockResolvedValue({ data: { event_id: 123 } });
+
+            renderComponent();
+
+            const inputs = screen.getAllByTestId('custom-input');
+            fireEvent.change(inputs[0], { target: { value: 'Cached Event' } });
+
+            const categorySelect = screen.getByRole('combobox');
+            fireEvent.change(categorySelect, { target: { value: '1' } });
+
+            const saveButton = screen.getByText('Save & Continue');
+            fireEvent.click(saveButton);
+
+            await waitFor(() => {
+                const cached = localStorage.getItem('event:123');
+                expect(cached).toBeTruthy();
+
+                const lastEvent = localStorage.getItem('event:last');
+                expect(lastEvent).toBeTruthy();
+            });
+        });
+
+        it('should cache event data when loading in edit mode', async () => {
+            const mockEventData = {
+                eventName: 'Cached Event',
+                categoryId: 1,
+                venueName: 'Hall',
+                startDateTime: '2025-10-20T19:00:00+07:00',
+                endDateTime: '2025-10-20T22:00:00+07:00',
+            };
+
+            vi.mocked(api.get).mockResolvedValue({ data: mockEventData });
+
+            renderComponent('789');
+
+            await waitFor(() => {
+                const cached = localStorage.getItem('event:789');
+                expect(cached).toBeTruthy();
+            });
+        });
+    });
+});
