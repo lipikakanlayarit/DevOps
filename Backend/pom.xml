@@ -13,6 +13,7 @@
         <spring.boot.version>3.3.3</spring.boot.version>
         <flyway.version>10.17.0</flyway.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <lombok.version>1.18.32</lombok.version>
     </properties>
 
     <dependencyManagement>
@@ -93,7 +94,7 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.32</version>
+            <version>${lombok.version}</version>
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
@@ -119,8 +120,21 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
+                    <!-- ใช้ release 17 ก็ได้ แต่เพิ่ม -parameters เพื่อให้ Spring อ่านชื่อพารามิเตอร์ได้ -->
                     <release>17</release>
                     <encoding>${project.build.sourceEncoding}</encoding>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+
+                    <!-- แนะนำ: บอก annotation processor ของ Lombok ให้ชัด (กันบางเครื่องไม่ gen) -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
 
@@ -131,7 +145,9 @@
                 <version>${spring.boot.version}</version>
                 <executions>
                     <execution>
-                        <goals><goal>repackage</goal></goals>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

@@ -10,6 +10,12 @@ public class EventMapper {
     // === Entity -> DTO ===
     public static EventResponse toDto(EventsNam ev) {
         if (ev == null) return null;
+
+        // ใช้ cover_updated_at เป็น updatedAt ถ้ามี ไม่งั้น fallback เป็น startDatetime
+        Instant updatedAt = ev.getCover_updated_at() != null
+                ? ev.getCover_updated_at()
+                : ev.getStartDatetime();
+
         return EventResponse.builder()
                 .id(ev.getId())
                 .eventName(nz(ev.getEventName()))
@@ -21,6 +27,7 @@ public class EventMapper {
                 .venueAddress(nz(ev.getVenueAddress()))
                 .maxCapacity(ev.getMaxCapacity())
                 .status(nz(ev.getStatus()))
+                .updatedAt(updatedAt)    // ✅ เพิ่มตรงนี้
                 .build();
     }
 
@@ -36,7 +43,7 @@ public class EventMapper {
         target.setVenueName(req.getVenueName());
         target.setVenueAddress(req.getVenueAddress());
         target.setMaxCapacity(req.getMaxCapacity());
-        // เปลี่ยน default เดิม DRAFT -> PENDING
+        // ค่าเริ่มต้น: PENDING
         target.setStatus("PENDING");
         return target;
     }
@@ -45,14 +52,14 @@ public class EventMapper {
     public static EventsNam applyUpdate(EventsNam target, EventUpdateRequest req) {
         if (target == null) return null;
 
-        if (req.getEventName() != null)    target.setEventName(req.getEventName());
-        if (req.getDescription() != null)  target.setDescription(req.getDescription());
-        if (req.getCategoryId() != null)   target.setCategoryId(req.getCategoryId());
+        if (req.getEventName() != null)     target.setEventName(req.getEventName());
+        if (req.getDescription() != null)   target.setDescription(req.getDescription());
+        if (req.getCategoryId() != null)    target.setCategoryId(req.getCategoryId());
         if (req.getStartDateTime() != null) target.setStartDatetime(req.getStartDateTime());
         if (req.getEndDateTime() != null)   target.setEndDatetime(req.getEndDateTime());
-        if (req.getVenueName() != null)    target.setVenueName(req.getVenueName());
-        if (req.getVenueAddress() != null) target.setVenueAddress(req.getVenueAddress());
-        if (req.getMaxCapacity() != null)  target.setMaxCapacity(req.getMaxCapacity());
+        if (req.getVenueName() != null)     target.setVenueName(req.getVenueName());
+        if (req.getVenueAddress() != null)  target.setVenueAddress(req.getVenueAddress());
+        if (req.getMaxCapacity() != null)   target.setMaxCapacity(req.getMaxCapacity());
         // ไม่ให้แก้ status ผ่าน Update request นี้
         return target;
     }

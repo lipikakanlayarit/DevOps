@@ -1,16 +1,20 @@
 package com.example.devops.controller;
 
-import com.example.devops.model.User;
+import com.example.devops.dto.EventMapper;
+import com.example.devops.model.EventsNam;
 import com.example.devops.model.Organizer;
-import com.example.devops.repo.UserRepository;
+import com.example.devops.model.User;
+import com.example.devops.repo.EventsNamRepository;
 import com.example.devops.repo.OrganizerRepo;
-import org.springframework.http.ResponseEntity;
+import com.example.devops.repo.UserRepository;
+import jakarta.transaction.Transactional;
+import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.Duration;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -20,10 +24,14 @@ public class AdminController {
 
     private final UserRepository userRepo;
     private final OrganizerRepo organizerRepo;
+    private final EventsNamRepository eventsRepo;
 
-    public AdminController(UserRepository userRepo, OrganizerRepo organizerRepo) {
+    public AdminController(UserRepository userRepo,
+                           OrganizerRepo organizerRepo,
+                           EventsNamRepository eventsRepo) {
         this.userRepo = userRepo;
         this.organizerRepo = organizerRepo;
+        this.eventsRepo = eventsRepo;
     }
 
     /* ==================== USER MANAGEMENT ==================== */
@@ -47,7 +55,7 @@ public class AdminController {
     }
 
     @GetMapping("/users/{id}")
-    public ResponseEntity<?> getUserById(@PathVariable Long id) {
+    public ResponseEntity<?> getUserById(@PathVariable("id") Long id) {
         var userOpt = userRepo.findById(id);
         if (userOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "User not found"));
@@ -66,7 +74,8 @@ public class AdminController {
     }
 
     @PatchMapping("/users/{id}/role")
-    public ResponseEntity<?> changeUserRole(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> changeUserRole(@PathVariable("id") Long id,
+                                            @RequestBody Map<String, String> body) {
         String newRole = body.get("role");
         if (newRole == null || newRole.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Role is required"));
@@ -80,9 +89,8 @@ public class AdminController {
         User user = userOpt.get();
         String upperRole = newRole.toUpperCase();
 
-        // Validate role
-        if (!List.of("USER", "ADMIN", "MODERATOR").contains(upperRole)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid role. Use: USER, ADMIN, or MODERATOR"));
+        if (!List.of("USER", "ADMIN", "MODERATOR", "ORGANIZER").contains(upperRole)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid role. Use: USER, ORGANIZER, ADMIN, MODERATOR"));
         }
 
         user.setRole(upperRole);
@@ -91,7 +99,7 @@ public class AdminController {
     }
 
     @DeleteMapping("/users/{id}")
-    public ResponseEntity<?> deleteUser(@PathVariable Long id) {
+    public ResponseEntity<?> deleteUser(@PathVariable("id") Long id) {
         var userOpt = userRepo.findById(id);
         if (userOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "User not found"));
@@ -123,7 +131,7 @@ public class AdminController {
     }
 
     @GetMapping("/organizers/{id}")
-    public ResponseEntity<?> getOrganizerById(@PathVariable Long id) {
+    public ResponseEntity<?> getOrganizerById(@PathVariable("id") Long id) {
         var orgOpt = organizerRepo.findById(id);
         if (orgOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Organizer not found"));
@@ -144,7 +152,7 @@ public class AdminController {
     }
 
     @PatchMapping("/organizers/{id}/verify")
-    public ResponseEntity<?> verifyOrganizer(@PathVariable Long id) {
+    public ResponseEntity<?> verifyOrganizer(@PathVariable("id") Long id) {
         var orgOpt = organizerRepo.findById(id);
         if (orgOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Organizer not found"));
@@ -156,7 +164,7 @@ public class AdminController {
     }
 
     @PatchMapping("/organizers/{id}/reject")
-    public ResponseEntity<?> rejectOrganizer(@PathVariable Long id) {
+    public ResponseEntity<?> rejectOrganizer(@PathVariable("id") Long id) {
         var orgOpt = organizerRepo.findById(id);
         if (orgOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Organizer not found"));
@@ -168,7 +176,8 @@ public class AdminController {
     }
 
     @PatchMapping("/organizers/{id}/status")
-    public ResponseEntity<?> updateOrganizerStatus(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> updateOrganizerStatus(@PathVariable("id") Long id,
+                                                   @RequestBody Map<String, String> body) {
         String status = body.get("status");
         if (status == null || status.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Status is required"));
@@ -181,7 +190,7 @@ public class AdminController {
 
         String upperStatus = status.toUpperCase();
         if (!List.of("PENDING", "VERIFIED", "REJECTED", "SUSPENDED").contains(upperStatus)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid status. Use: PENDING, VERIFIED, REJECTED, or SUSPENDED"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid status. Use: PENDING, VERIFIED, REJECTED, SUSPENDED"));
         }
 
         Organizer org = orgOpt.get();
@@ -191,7 +200,7 @@ public class AdminController {
     }
 
     @DeleteMapping("/organizers/{id}")
-    public ResponseEntity<?> deleteOrganizer(@PathVariable Long id) {
+    public ResponseEntity<?> deleteOrganizer(@PathVariable("id") Long id) {
         var orgOpt = organizerRepo.findById(id);
         if (orgOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Organizer not found"));
@@ -208,13 +217,13 @@ public class AdminController {
         long totalOrganizers = organizerRepo.count();
 
         List<Organizer> orgs = organizerRepo.findAll();
-        long pendingOrganizers = orgs.stream().filter(o -> "PENDING".equals(o.getVerificationStatus())).count();
-        long verifiedOrganizers = orgs.stream().filter(o -> "VERIFIED".equals(o.getVerificationStatus())).count();
-        long rejectedOrganizers = orgs.stream().filter(o -> "REJECTED".equals(o.getVerificationStatus())).count();
+        long pendingOrganizers = orgs.stream().filter(o -> "PENDING".equalsIgnoreCase(o.getVerificationStatus())).count();
+        long verifiedOrganizers = orgs.stream().filter(o -> "VERIFIED".equalsIgnoreCase(o.getVerificationStatus())).count();
+        long rejectedOrganizers = orgs.stream().filter(o -> "REJECTED".equalsIgnoreCase(o.getVerificationStatus())).count();
 
         List<User> users = userRepo.findAll();
-        long adminCount = users.stream().filter(u -> "ADMIN".equals(u.getRole())).count();
-        long regularUsers = users.stream().filter(u -> "USER".equals(u.getRole())).count();
+        long adminCount = users.stream().filter(u -> "ADMIN".equalsIgnoreCase(u.getRole())).count();
+        long regularUsers = users.stream().filter(u -> "USER".equalsIgnoreCase(u.getRole())).count();
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalUsers", totalUsers);
@@ -226,5 +235,92 @@ public class AdminController {
         stats.put("rejectedOrganizers", rejectedOrganizers);
 
         return ResponseEntity.ok(stats);
+    }
+
+    /* ****************** EVENT MODERATION ****************** */
+
+    // ดึงอีเวนต์ตามสถานะ
+    @GetMapping("/events")
+    public ResponseEntity<?> listEventsByStatus(@RequestParam(name = "status") String status) {
+        String st = (status == null ? "PENDING" : status.toUpperCase(Locale.ROOT));
+        if (!List.of("PENDING","APPROVED","REJECTED","PUBLISHED").contains(st)) {
+            return ResponseEntity.badRequest().body(Map.of("message","invalid status"));
+        }
+        var list = eventsRepo.findAllByStatus(st);
+        var body = list.stream().map(EventMapper::toDto).toList();
+        return ResponseEntity.ok(body);
+    }
+
+    // อนุมัติ
+    @PostMapping("/events/{id}/approve")
+    @Transactional
+    public ResponseEntity<?> approve(@PathVariable("id") Long id,
+                                     @RequestBody(required = false) Map<String, Object> body,
+                                     Authentication auth) {
+        Integer adminId = extractAdminId(auth);
+        String review = body == null ? null : Objects.toString(body.getOrDefault("review", null), null);
+        int n = eventsRepo.approve(id, review, adminId);
+        if (n == 0) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","event not found"));
+        return ResponseEntity.ok(Map.of("message","approved","eventId", id));
+    }
+
+    // ปฏิเสธ (ต้องมีเหตุผล)
+    @PostMapping("/events/{id}/reject")
+    @Transactional
+    public ResponseEntity<?> reject(@PathVariable("id") Long id,
+                                    @RequestBody Map<String, Object> body,
+                                    Authentication auth) {
+        String review = body == null ? null : Objects.toString(body.get("review"), null);
+        if (review == null || review.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message","review is required for rejection"));
+        }
+        Integer adminId = extractAdminId(auth);
+        int n = eventsRepo.reject(id, review, adminId);
+        if (n == 0) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","event not found"));
+        return ResponseEntity.ok(Map.of("message","rejected","eventId", id));
+    }
+
+    // ดูเหตุผล
+    @GetMapping("/events/{id}/review")
+    public ResponseEntity<?> getReview(@PathVariable("id") Long id) {
+        var opt = eventsRepo.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","event not found"));
+        var e = opt.get();
+        Map<String,Object> m = new HashMap<>();
+        m.put("eventId", e.getId());
+        m.put("status", e.getStatus());
+        m.put("review", e.getReview());
+        m.put("reviewedAt", e.getReviewed_at());
+        m.put("reviewedBy", e.getReviewed_by());
+        return ResponseEntity.ok(m);
+    }
+
+    /* ==================== EVENT COVER IMAGE (NEW) ==================== */
+
+    @GetMapping("/events/{id}/cover")
+    public ResponseEntity<byte[]> getEventCover(@PathVariable("id") Long id) {
+        var opt = eventsRepo.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+        var e = opt.get();
+        byte[] bytes = e.getCover_image();
+        if (bytes == null || bytes.length == 0) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                e.getCover_image_type() != null ? e.getCover_image_type() : "image/png"));
+        headers.setCacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic());
+
+        return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
+    }
+
+    /* ==================== UTIL ==================== */
+
+    private Integer extractAdminId(Authentication auth) {
+        // TODO: map จาก JWT/principal ของจริง
+        return 1;
     }
 }

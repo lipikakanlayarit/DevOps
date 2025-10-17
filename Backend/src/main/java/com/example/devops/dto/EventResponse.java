@@ -16,4 +16,5 @@ public class EventResponse {
     private String venueAddress;
     private Integer maxCapacity;
     private String status;
+    private Instant updatedAt;
 }
