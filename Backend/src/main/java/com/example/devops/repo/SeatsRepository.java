@@ -14,7 +14,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         JOIN seat_rows r ON r.row_id = s.row_id
         JOIN seat_zones z ON z.zone_id = r.zone_id
         WHERE z.event_id = :eventId
-        ORDER BY r.row_label, s.seat_number
+        ORDER BY s.seat_id
         """, nativeQuery = true)
     List<Seats> findAllSeatsByEventId(@Param("eventId") Long eventId);
 
@@ -28,4 +28,15 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         )
         """, nativeQuery = true)
     void deleteByEventId(@Param("eventId") Long eventId);
+
+    /** หา "จำนวนที่นั่งต่อแถว" สูงสุด (ใช้เป็น column count) ของโซน */
+    @Query(value = """
+        SELECT COALESCE(MAX(cnt), 0) FROM (
+            SELECT COUNT(*) AS cnt
+            FROM seats
+            WHERE row_id IN (SELECT row_id FROM seat_rows WHERE zone_id = :zoneId)
+            GROUP BY row_id
+        ) AS t
+        """, nativeQuery = true)
+    Integer findMaxSeatsPerRowByZoneId(@Param("zoneId") Long zoneId);
 }

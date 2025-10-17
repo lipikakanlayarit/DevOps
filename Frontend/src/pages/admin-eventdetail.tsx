@@ -87,7 +87,7 @@ type OrganizerDetail = {
 };
 
 /* ==============================
-   Mock types for zones & reservations
+   Types for zones & reservations
    ============================== */
 type TicketZone = {
     zone: string;
@@ -177,7 +177,9 @@ const PaginationControls = ({
                             className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span className="sr-only">Previous</span>
-                            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
                         </button>
 
                         {/* first + dots */}
@@ -190,35 +192,30 @@ const PaginationControls = ({
                                     1
                                 </button>
                                 {visiblePages[0] > 2 && (
-                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                    ...
-                  </span>
+                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>
                                 )}
                             </>
                         )}
 
                         {/* numbers */}
-                        {showPageNumbers && visiblePages.map((n) => (
-                            <button
-                                key={n}
-                                onClick={() => onPageChange(n)}
-                                className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                                    currentPage === n
-                                        ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600"
-                                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
-                                }`}
-                            >
-                                {n}
-                            </button>
-                        ))}
+                        {showPageNumbers &&
+                            visiblePages.map((n) => (
+                                <button
+                                    key={n}
+                                    onClick={() => onPageChange(n)}
+                                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                                        currentPage === n ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600" : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                                    }`}
+                                >
+                                    {n}
+                                </button>
+                            ))}
 
                         {/* dots + last */}
                         {visiblePages[visiblePages.length - 1] < totalPages && (
                             <>
                                 {visiblePages[visiblePages.length - 1] < totalPages - 1 && (
-                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                    ...
-                  </span>
+                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>
                                 )}
                                 <button
                                     onClick={() => onPageChange(totalPages)}
@@ -235,7 +232,9 @@ const PaginationControls = ({
                             className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span className="sr-only">Next</span>
-                            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                            </svg>
                         </button>
                     </nav>
                 </div>
@@ -471,11 +470,11 @@ export default function AdminEventdetail() {
     const [tzPage, setTzPage] = useState(1);
     const [resvPage, setResvPage] = useState(1);
 
-    // Mock data
+    // data
     const [ticketZones, setTicketZones] = useState<TicketZone[]>([]);
     const [reservations, setReservations] = useState<Reservation[]>([]);
 
-    // Load event detail + mock zones/reservations
+    // Load event detail + zones(real) + reservations(mock)
     useEffect(() => {
         if (!id) return;
         (async () => {
@@ -502,19 +501,36 @@ export default function AdminEventdetail() {
                 };
                 setItem(ui);
 
-                // mock zones จาก capacity
-                const capacity = ev.maxCapacity ?? 300;
-                const mockZoneCount = Math.max(6, Math.min(20, Math.ceil(capacity / 50)));
-                const zones: TicketZone[] = Array.from({ length: mockZoneCount }).map((_, i) => ({
-                    zone: i % 3 === 0 ? "VIP zone" : i % 3 === 1 ? "zone A" : "Standard zone",
-                    row: 12,
-                    column: 6,
-                    sale: `${50 - (i % 10)}/${30 + (i % 10)}`,
-                    price: "Price/ticket",
-                }));
+                // ===== Ticket Zones (จริง) =====
+                let zones: TicketZone[] = [];
+                try {
+                    const z = await api.get(`/admin/events/${id}/zones`);
+                    zones = (z.data ?? []).map((it: any) => ({
+                        zone: String(it.zone ?? "-"),
+                        row: Number(it.row ?? 0),
+                        column: Number(it.column ?? 0),
+                        price: it.price != null ? String(it.price) : "Price/ticket",
+                        sale: String(it.sale ?? "0/0"), // sale ยังเป็น mock ฝั่ง backend
+                    }));
+                } catch (err) {
+                    console.warn("load zones failed, fallback to mock:", err);
+                }
+
+                // Fallback mock ถ้า API ว่าง/ล้มเหลว
+                if (!zones.length) {
+                    const capacity = ev.maxCapacity ?? 300;
+                    const mockZoneCount = Math.max(6, Math.min(20, Math.ceil(capacity / 50)));
+                    zones = Array.from({ length: mockZoneCount }).map((_, i) => ({
+                        zone: i % 3 === 0 ? "VIP zone" : i % 3 === 1 ? "zone A" : "Standard zone",
+                        row: 12,
+                        column: 6,
+                        sale: `${50 - (i % 10)}/${30 + (i % 10)}`,
+                        price: "Price/ticket",
+                    }));
+                }
                 setTicketZones(zones);
 
-                // mock reservations
+                // ===== Reservations (mock) =====
                 const resvs: Reservation[] = Array.from({ length: 18 }).map((_, i) => {
                     const sold = i % 3 !== 1;
                     const seatNo = 12 + i;
@@ -549,7 +565,9 @@ export default function AdminEventdetail() {
         return ticketZones.slice(start, start + TICKETZONE_PAGE_SIZE);
     }, [tzPage, ticketZones]);
 
-    useEffect(() => { setTzPage(1); }, [ticketZones]);
+    useEffect(() => {
+        setTzPage(1);
+    }, [ticketZones]);
 
     // reservations filter + pagination
     const filteredReservations = useMemo(() => {
@@ -572,7 +590,9 @@ export default function AdminEventdetail() {
         return filteredReservations.slice(start, start + RESV_PAGE_SIZE);
     }, [filteredReservations, resvPage]);
 
-    useEffect(() => { setResvPage(1); }, [query, resvFilter]);
+    useEffect(() => {
+        setResvPage(1);
+    }, [query, resvFilter]);
 
     // Seat stats (mock)
     const seatStats = useMemo(() => {
@@ -582,7 +602,8 @@ export default function AdminEventdetail() {
         return { available, reserved, sold };
     }, [reservations, item?.capacity]);
 
-    const resvFilterOptions = [
+    // ✅ ใช้งานจริง (แก้ TS6133)
+    const RESV_FILTER_OPTIONS: { label: string; value: ResvFilter }[] = [
         { label: "All", value: "all" },
         { label: "Reserved", value: "reserved" },
         { label: "Sold", value: "sold" },
@@ -742,7 +763,7 @@ export default function AdminEventdetail() {
 
                         <div className="flex items-center gap-3">
                             <CategoryRadio
-                                options={resvFilterOptions}
+                                options={RESV_FILTER_OPTIONS}
                                 value={resvFilter}
                                 onChange={(val) => setResvFilter(val as ResvFilter)}
                             />
