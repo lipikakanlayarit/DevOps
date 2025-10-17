@@ -73,34 +73,24 @@ CREATE TABLE IF NOT EXISTS events_nam (
     venue_name VARCHAR(200),
     venue_address TEXT,
     max_capacity INT,
-    status VARCHAR(50),               -- จะตั้ง DEFAULT ด้านล่าง (idempotent)
+    status VARCHAR(50),               -- ตั้ง DEFAULT ด้านล่าง
+-- cover
     cover_image BYTEA,
     cover_image_type VARCHAR(100),
     cover_updated_at TIMESTAMPTZ
     );
 
--- ตั้งค่า DEFAULT ให้ status = 'PENDING' (idempotent)
+-- ตั้งค่า DEFAULT ให้ status = 'PENDING' + normalize ค่าที่ว่าง
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='events_nam' AND column_name='status'
-  ) THEN
-    -- column มีอยู่แล้วด้านบน
-    NULL;
-END IF;
-
-  -- ตั้ง DEFAULT
 EXECUTE 'ALTER TABLE events_nam ALTER COLUMN status SET DEFAULT ''PENDING''';
 EXCEPTION WHEN others THEN
-  -- เผื่อ ALTER ซ้ำไม่เป็นไร
   NULL;
 END$$;
 
--- เติมค่าให้แถวเดิมที่ยัง status เป็น NULL
 UPDATE events_nam SET status = 'PENDING' WHERE status IS NULL;
 
--- (ทางเลือก) บังคับค่าให้ถูกต้องด้วย CHECK constraint
+-- อนุญาตค่าที่ใช้จริงในโปรเจกต์ (รวม PUBLISHED เผื่ออนาคต)
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -113,13 +103,13 @@ ALTER TABLE events_nam
 END IF;
 END$$;
 
--- เผื่อฐานเดิมยังไม่มีคอลัมน์รูป
+-- cover fields (idempotent)
 ALTER TABLE events_nam
     ADD COLUMN IF NOT EXISTS cover_image BYTEA,
     ADD COLUMN IF NOT EXISTS cover_image_type VARCHAR(100),
     ADD COLUMN IF NOT EXISTS cover_updated_at TIMESTAMPTZ;
 
--- Generated columns (อ่านข้อมูลเบา ๆ)
+-- generated columns
 ALTER TABLE events_nam
     ADD COLUMN IF NOT EXISTS cover_image_bytes INT
     GENERATED ALWAYS AS (octet_length(cover_image)) STORED,
@@ -129,6 +119,15 @@ ALTER TABLE events_nam
     ELSE encode(digest(cover_image, 'sha1'), 'hex')
     END
     ) STORED;
+
+-- ===== NEW: columns for admin review =====
+ALTER TABLE events_nam
+    ADD COLUMN IF NOT EXISTS review TEXT,
+    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS reviewed_by INT REFERENCES admin_users(admin_id);
+
+-- ===== Indexes =====
+CREATE INDEX IF NOT EXISTS idx_events_status ON events_nam(status);
 
 -- ===================
 -- TICKET TYPES
@@ -144,14 +143,12 @@ CREATE TABLE IF NOT EXISTS ticket_types (
     sale_start_datetime TIMESTAMPTZ,
     sale_end_datetime TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
-    -- Advanced Setting (ต่อออเดอร์)
     min_per_order INT,
     max_per_order INT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
--- เผื่อฐานเดิมยังไม่มีคอลัมน์เหล่านี้
 ALTER TABLE ticket_types
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -347,8 +344,7 @@ INSERT INTO users (email, username, password_hash, first_name, last_name, phone_
 VALUES
     ('alice@example.com','alice123', crypt('password123', gen_salt('bf', 10)),'Alice','Wong','0812345678','1234567890123','USER'),
     ('admin@example.com','admin', crypt('password123', gen_salt('bf', 10)),'Admin','User','0812345678','1234567890123','ADMIN'),
-    ('organizer@example.com','organizer', crypt('password123', gen_salt('bf', 10)),'Organizer','User','0812345678','1234567890123','ORGANIZER'),
-    ('bob@example.com','bob456', crypt('password123', gen_salt('bf', 10)),'Bob','Tan','0823456789','9876543210123','USER')
+    ('organizer@example.com','organizer', crypt('password123', gen_salt('bf', 10)),'Organizer','User','0822222222','1234567890124','ORGANIZER')
     ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO organizers (email, username, password_hash, first_name, last_name, phone_number, address, company_name, tax_id, verification_status)
@@ -367,7 +363,7 @@ INSERT INTO categories (category_name, description) VALUES
                                                         ('Exhibition','Outdoor and cultural Exhibition')
     ON CONFLICT DO NOTHING;
 
--- Seed events → ให้เป็น PENDING ตามกติกา
+-- Seed events → เป็น PENDING
 INSERT INTO events_nam (
     organizer_id, event_name, description, category_id,
     start_datetime, end_datetime, venue_name, venue_address,

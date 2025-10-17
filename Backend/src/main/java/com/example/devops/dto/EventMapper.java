@@ -1,4 +1,3 @@
-// src/main/java/com/example/devops/dto/EventMapper.java
 package com.example.devops.dto;
 
 import com.example.devops.model.EventsNam;
@@ -10,17 +9,26 @@ public class EventMapper {
     // === Entity -> DTO ===
     public static EventResponse toDto(EventsNam ev) {
         if (ev == null) return null;
+
+        // cover_updated_at ถ้ามี ใช้เป็น updatedAt ไม่งั้น fallback startDatetime
+        Instant updatedAt = ev.getCover_updated_at() != null
+                ? ev.getCover_updated_at()
+                : ev.getStartDatetime();
+
         return EventResponse.builder()
                 .id(ev.getId())
+                .organizerId(ev.getOrganizerId())            // ✅ map organizerId
+                // organizerName จะเติมใน Controller (bulk) เพื่อเลี่ยง N+1
                 .eventName(nz(ev.getEventName()))
                 .description(nz(ev.getDescription()))
                 .categoryId(ev.getCategoryId())
                 .startDateTime(ev.getStartDatetime())
-                .endDateTime(ev.getEndDatetime())
+                .endDateTime(ev.getEndDatetime())            // ✅ ชื่อเมธอดถูกต้อง
                 .venueName(nz(ev.getVenueName()))
                 .venueAddress(nz(ev.getVenueAddress()))
                 .maxCapacity(ev.getMaxCapacity())
                 .status(nz(ev.getStatus()))
+                .updatedAt(updatedAt)
                 .build();
     }
 
@@ -32,11 +40,10 @@ public class EventMapper {
         target.setDescription(req.getDescription());
         target.setCategoryId(req.getCategoryId());
         target.setStartDatetime(req.getStartDateTime());
-        target.setEndDatetime(req.getEndDateTime());
+        target.setEndDatetime(req.getEndDateTime());         // ✅ ชื่อเมธอดถูกต้อง
         target.setVenueName(req.getVenueName());
         target.setVenueAddress(req.getVenueAddress());
         target.setMaxCapacity(req.getMaxCapacity());
-        // เปลี่ยน default เดิม DRAFT -> PENDING
         target.setStatus("PENDING");
         return target;
     }
@@ -45,21 +52,20 @@ public class EventMapper {
     public static EventsNam applyUpdate(EventsNam target, EventUpdateRequest req) {
         if (target == null) return null;
 
-        if (req.getEventName() != null)    target.setEventName(req.getEventName());
-        if (req.getDescription() != null)  target.setDescription(req.getDescription());
-        if (req.getCategoryId() != null)   target.setCategoryId(req.getCategoryId());
+        if (req.getEventName() != null)     target.setEventName(req.getEventName());
+        if (req.getDescription() != null)   target.setDescription(req.getDescription());
+        if (req.getCategoryId() != null)    target.setCategoryId(req.getCategoryId());
         if (req.getStartDateTime() != null) target.setStartDatetime(req.getStartDateTime());
-        if (req.getEndDateTime() != null)   target.setEndDatetime(req.getEndDateTime());
-        if (req.getVenueName() != null)    target.setVenueName(req.getVenueName());
-        if (req.getVenueAddress() != null) target.setVenueAddress(req.getVenueAddress());
-        if (req.getMaxCapacity() != null)  target.setMaxCapacity(req.getMaxCapacity());
-        // ไม่ให้แก้ status ผ่าน Update request นี้
+        if (req.getEndDateTime() != null)   target.setEndDatetime(req.getEndDateTime()); // ✅
+        if (req.getVenueName() != null)     target.setVenueName(req.getVenueName());
+        if (req.getVenueAddress() != null)  target.setVenueAddress(req.getVenueAddress());
+        if (req.getMaxCapacity() != null)   target.setMaxCapacity(req.getMaxCapacity());
         return target;
     }
 
     private static String nz(String s) { return s == null ? "" : s; }
 
-    // (optional) เผื่อไว้ถ้ามี string ISO-8601
+    // (optional) parser สำหรับ string ISO-8601
     @SuppressWarnings("unused")
     private static Instant parseOffsetToInstant(String s) {
         try {

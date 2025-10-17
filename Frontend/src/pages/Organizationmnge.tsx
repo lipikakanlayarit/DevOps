@@ -1,4 +1,5 @@
-// src/pages/Organizationmnge.tsx
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Plus } from "lucide-react";
@@ -14,7 +15,7 @@ type Order = "newest" | "oldest";
 type EventItem = {
     id: number | string;
     title: string;
-    category: CategoryName;
+    category: CategoryName | string;
     status: "PENDING" | "APPROVED" | "REJECTED" | string;
     updatedAt?: string;
     sortTs: number;
@@ -23,16 +24,17 @@ type EventItem = {
 
 function StatusBadge({ status }: { status: string }) {
     const s = (status || "").toUpperCase();
-    const { bg, text, label } =
+    const style =
         s === "APPROVED"
-            ? { bg: "bg-green-100", text: "text-green-800", label: "Approved" }
+            ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
             : s === "REJECTED"
-                ? { bg: "bg-red-100", text: "text-red-800", label: "Rejected" }
-                : { bg: "bg-amber-100", text: "text-amber-800", label: "Pending" };
-
+                ? "bg-rose-100 text-rose-700 ring-rose-200"
+                : "bg-amber-100 text-amber-800 ring-amber-200"; // PENDING
+    const label =
+        s === "APPROVED" ? "Approved" : s === "REJECTED" ? "Rejected" : "Pending";
     return (
         <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${bg} ${text}`}
+            className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium ring-1 ${style}`}
         >
       {label}
     </span>
@@ -43,6 +45,16 @@ export default function Organizationmnge() {
     const location = useLocation() as any;
     const [flash, setFlash] = useState<string | null>(location.state?.flash ?? null);
 
+    // filters
+    const [query, setQuery] = useState("");
+    const [category, setCategory] = useState<CategoryName | "all">("all");
+    const [order, setOrder] = useState<Order>("newest");
+
+    // data
+    const [events, setEvents] = useState<EventItem[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState<boolean>(true);
+
     useEffect(() => {
         if (location.state?.flash) {
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -51,17 +63,13 @@ export default function Organizationmnge() {
         return () => clearTimeout(t);
     }, [location.state]);
 
-    const [events, setEvents] = useState<EventItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [category, setCategory] = useState<"all" | "concert" | "seminar" | "exhibition">("all");
-    const [order, setOrder] = useState<Order>("newest");
-
-    const mapCategory = (raw: any): CategoryName => {
-        const id = raw?.categoryId ?? raw?.category_id ?? raw?.categoryid ?? raw?.category ?? null;
+    // ===== helpers =====
+    const mapCategory = (raw: any): CategoryName | string => {
+        const id = raw?.categoryId ?? raw?.category_id ?? raw?.category ?? null;
         if (typeof id === "string") {
             const low = id.toLowerCase();
             if (low === "concert" || low === "seminar" || low === "exhibition") return low as CategoryName;
+            return id;
         }
         const n = Number(id);
         switch (n) {
@@ -76,70 +84,52 @@ export default function Organizationmnge() {
         }
     };
 
-    const pickSortTs = (ev: any): { ts: number; pretty?: string } => {
-        const candidates = [
-            ev.updatedAt,
-            ev.updated_at,
-            ev.updated_at_utc,
-            ev.createdAt,
-            ev.created_at,
-            ev.startDateTime,
-            ev.startDatetime,
-            ev.start_datetime,
-        ].filter(Boolean) as string[];
+    // ===== load data =====
+    const loadEvents = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            // baseURL = "/api" แล้ว → ใช้ "/events/mine" เท่านั้น
+            const res = await api.get("/events/mine");
+            const data = Array.isArray(res.data) ? res.data : [];
 
-        for (const s of candidates) {
-            const t = Date.parse(s);
-            if (!Number.isNaN(t)) return { ts: t, pretty: new Date(t).toISOString() };
+            const mapped: EventItem[] = data.map((ev: any, idx: number) => {
+                const t = ev.startDateTime ?? ev.updatedAt ?? ev.createdAt;
+                const ts = t ? Date.parse(t) : Date.now();
+                return {
+                    id: ev.id ?? ev.eventId ?? idx,
+                    title: ev.eventName ?? ev.name ?? "Untitled Event",
+                    category: mapCategory(ev),
+                    status: String(ev.status ?? "PENDING").toUpperCase(),
+                    updatedAt: t,
+                    sortTs: Number.isFinite(ts) ? ts : Date.now(),
+                    sortTiebreaker: Number.isFinite(Number(ev.id ?? ev.eventId))
+                        ? Number(ev.id ?? ev.eventId)
+                        : idx,
+                };
+            });
+
+            setEvents(mapped);
+        } catch (e: any) {
+            console.error("[Organization] fetch mine failed:", e);
+            setEvents([]);
+            setError(e?.response?.data?.message || e.message || "โหลดข้อมูลอีเวนต์ไม่สำเร็จ");
+        } finally {
+            setLoading(false);
         }
-        return { ts: 0, pretty: undefined };
     };
 
     useEffect(() => {
-        async function fetchEvents() {
-            try {
-                setLoading(true);
-                const res = await api.get("/events/mine");
-                const data = Array.isArray(res.data) ? res.data : [];
-                const normalized: EventItem[] = data.map((ev: any) => {
-                    const id = ev.id ?? ev.eventId ?? ev.event_id ?? String(Math.random());
-                    const title = ev.eventName ?? ev.event_name ?? ev.name ?? "Untitled Event";
-                    const categoryName = mapCategory(ev);
-                    const { ts, pretty } = pickSortTs(ev);
-                    const tie = Number(ev.id ?? ev.eventId ?? ev.event_id);
-                    const sortTiebreaker = Number.isFinite(tie) ? tie : 0;
-
-                    // รับ status จาก backend ถ้าไม่มีให้เป็น PENDING
-                    const status = (ev.status ?? "PENDING").toString().toUpperCase();
-
-                    return {
-                        id,
-                        title,
-                        category: categoryName,
-                        status,
-                        updatedAt: pretty,
-                        sortTs: ts,
-                        sortTiebreaker,
-                    };
-                });
-                setEvents(normalized);
-            } catch (err) {
-                console.error("[Organization] Failed to fetch events:", err);
-                setEvents([]);
-            } finally {
-                setLoading(false);
-            }
-        }
-        fetchEvents();
+        void loadEvents();
     }, []);
 
-    const hasEvents = events.length > 0;
-
+    // ===== derived list =====
     const filtered = useMemo(() => {
         let list = [...events];
-        if (category !== "all") list = list.filter((e) => e.category === category);
-        if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
+        if (category !== "all")
+            list = list.filter((e) => (e.category as string).toLowerCase() === category);
+        if (query.trim()) {
+            const q = query.toLowerCase();
             list = list.filter((e) => e.title.toLowerCase().includes(q));
         }
         list.sort((a, b) => {
@@ -152,59 +142,9 @@ export default function Organizationmnge() {
             }
         });
         return list;
-    }, [events, category, searchQuery, order]);
+    }, [events, category, query, order]);
 
-    if (loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-[#DBDBDB]">
-                <p className="text-gray-700 text-lg">Loading events...</p>
-            </div>
-        );
-    }
-
-    if (!hasEvents) {
-        return (
-            <div className="bg-[#DBDBDB] min-h-screen flex flex-col">
-                {flash && (
-                    <div className="mx-auto mt-6 w-full max-w-[1200px] px-4">
-                        <div className="mb-4 rounded-md bg-green-100 text-green-900 px-4 py-3 shadow">
-                            {flash}
-                        </div>
-                    </div>
-                )}
-
-                <div className="mt-6 flex justify-end mr-4 sm:mr-6">
-                    <CategoryRadio
-                        options={[
-                            { label: "All", value: "all" },
-                            { label: "Concert", value: "concert" },
-                            { label: "Seminar", value: "seminar" },
-                            { label: "Exhibition", value: "exhibition" },
-                        ]}
-                        value={category}
-                        onChange={(v) => setCategory(v as any)}
-                    />
-                </div>
-
-                <div className="flex flex-col sm:flex-row justify-end items-center gap-4 mt-4 mr-4 sm:mr-6 px-4 sm:px-0">
-                    <Ordertoggle value={order} onChange={setOrder} />
-                    <div className="w-full sm:w-96">
-                        <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search events..." />
-                    </div>
-                </div>
-
-                <main className="flex-1 flex justify-center items-center px-4">
-                    <div className="text-center w-full max-w-sm">
-                        <PrimaryButton to="/eventdetail" className="w-full sm:w-auto">
-                            <Plus className="h-5 w-5 mr-3" />
-                            Create Event
-                        </PrimaryButton>
-                    </div>
-                </main>
-            </div>
-        );
-    }
-
+    // ===== UI =====
     return (
         <div className="bg-[#DBDBDB] min-h-screen">
             <div className="mx-auto max-w-[1200px] px-4 pb-10">
@@ -226,48 +166,61 @@ export default function Organizationmnge() {
                                 { label: "Exhibition", value: "exhibition" },
                             ]}
                             value={category}
-                            onChange={(v) => setCategory(v as any)}
+                            onChange={(v) => setCategory(v as CategoryName | "all")}
                         />
 
                         <div className="flex items-center gap-3">
                             <Ordertoggle value={order} onChange={setOrder} />
                             <div className="w-[320px]">
-                                <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search events..." />
+                                <SearchBar value={query} onChange={setQuery} placeholder="Search events..." />
                             </div>
+                            {/* ✅ เหลือเฉพาะปุ่ม CREATE EVENT ขวาบน */}
                             <PrimaryButton to="/eventdetail" className="whitespace-nowrap">
                                 <Plus className="h-5 w-5 mr-2" />
-                                Create Event
+                                CREATE EVENT
                             </PrimaryButton>
                         </div>
                     </div>
                 </div>
 
-                {/* ตารางอีเวนต์ */}
-                <div className="mt-6 rounded-xl bg-white shadow-sm overflow-hidden">
-                    <div className="grid grid-cols-[1fr_240px] items-center px-6 py-4 border-b border-gray-200">
-                        <div className="text-lg font-semibold text-gray-900">Events</div>
-                        <div className="text-lg font-semibold text-gray-900 text-right">Status / Action</div>
+                {/* ตาราง/การ์ดอีเวนต์ */}
+                {error && (
+                    <div className="mt-6 rounded-md bg-red-100 text-red-800 px-4 py-3 border border-red-300">
+                        {error}
                     </div>
+                )}
 
-                    {filtered.map((ev) => (
-                        <div
-                            key={ev.id}
-                            className="grid grid-cols-[1fr_240px] items-center px-6 py-8 border-b last:border-b-0 border-gray-200"
-                        >
-                            <div className="text-[18px] text-gray-900">{ev.title}</div>
-
-                            <div className="flex items-center justify-end gap-3">
-                                <StatusBadge status={ev.status} />
-                                <Link
-                                    to={`/eventdetail/${ev.id}`}
-                                    className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition"
-                                >
-                                    View
-                                </Link>
-                            </div>
+                {loading ? (
+                    <div className="text-gray-700 text-center py-10">Loading events...</div>
+                ) : filtered.length === 0 ? (
+                    <div className="text-gray-600 text-center py-10">ยังไม่มีอีเวนต์</div>
+                ) : (
+                    <div className="mt-6 rounded-xl bg-white shadow-sm overflow-hidden">
+                        <div className="grid grid-cols-[1fr_240px] items-center px-6 py-4 border-b border-gray-200">
+                            <div className="text-lg font-semibold text-gray-900">Events</div>
+                            <div className="text-lg font-semibold text-gray-900 text-right">Status / Action</div>
                         </div>
-                    ))}
-                </div>
+
+                        {filtered.map((ev) => (
+                            <div
+                                key={ev.id}
+                                className="grid grid-cols-[1fr_240px] items-center px-6 py-8 border-b last:border-b-0 border-gray-200"
+                            >
+                                <div className="text-[18px] text-gray-900">{ev.title}</div>
+
+                                <div className="flex items-center justify-end gap-3">
+                                    <StatusBadge status={ev.status} />
+                                    <Link
+                                        to={`/eventdetail/${ev.id}`}
+                                        className="text-gray-800 hover:text-black underline-offset-2 hover:underline transition"
+                                    >
+                                        View
+                                    </Link>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
