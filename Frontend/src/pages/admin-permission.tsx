@@ -425,9 +425,9 @@ function PermissionActionModal({
    Main Component
    ============================== */
 export default function AdminEventPermission() {
-    // Filters
+    // Filters (ตั้งค่าเริ่มต้นเป็น "all")
     const [query, setQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
     // List & UI
     const [items, setItems] = useState<EventRow[]>([]);
@@ -451,8 +451,9 @@ export default function AdminEventPermission() {
         { label: "Rejected", value: "rejected" },
     ];
 
+    // map สำหรับ backend
     const getBackendStatus = (st: StatusFilter) =>
-        st === "pending" ? "PENDING" : st === "approved" ? "APPROVED" : st === "rejected" ? "REJECTED" : "PENDING";
+        st === "pending" ? "PENDING" : st === "approved" ? "APPROVED" : st === "rejected" ? "REJECTED" : "ALL";
 
     const mapStatusToUi = (s?: string) => {
         const up = (s || "").toUpperCase();
@@ -465,7 +466,10 @@ export default function AdminEventPermission() {
         setLoading(true);
         setError(null);
         try {
-            const res = await api.get("/admin/events", { params: { status: getBackendStatus(st) } });
+            // ✅ ส่ง status ทุกกรณี: ALL/PENDING/APPROVED/REJECTED
+            const res = await api.get("/admin/events", {
+                params: { status: getBackendStatus(st) },
+            });
             const data: any[] = Array.isArray(res.data) ? res.data : [];
             const mapped: EventRow[] = data.map((it) => ({
                 id: it.id ?? it.eventId ?? it.event_id,
@@ -495,6 +499,7 @@ export default function AdminEventPermission() {
 
     const filteredEvents = useMemo(() => {
         let list = items;
+        // เมื่อเลือก all จะไม่กรองซ้ำ
         if (statusFilter !== "all") list = list.filter((e) => e.status === statusFilter);
         if (query.trim()) {
             const q = query.toLowerCase();
@@ -578,6 +583,7 @@ export default function AdminEventPermission() {
                 }
                 await api.post(`/admin/events/${id}/reject`, { review });
             }
+            // อัปเดตรายการในหน้า: ลบออก (หรือจะ reload ก็ได้)
             setItems((prev) => prev.filter((x) => x.id !== id));
             setActionModalOpen(false);
         } catch (e: any) {
@@ -595,11 +601,7 @@ export default function AdminEventPermission() {
                     <div className="flex items-center justify-between">
                         <h1 className="text-3xl font-bold text-gray-900">Event Permission</h1>
                         <div className="flex items-center gap-3">
-                            <CategoryRadio
-                                options={statusOptions}
-                                value={statusFilter}
-                                onChange={(val) => setStatusFilter(val as StatusFilter)}
-                            />
+                            <CategoryRadio options={statusOptions} value={statusFilter} onChange={(val) => setStatusFilter(val as StatusFilter)} />
                             <SearchBar value={query} onChange={setQuery} width="w-[300px] md:w-[360px]" height="h-11" placeholder="Search events..." />
                         </div>
                     </div>

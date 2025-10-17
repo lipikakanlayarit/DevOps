@@ -28,6 +28,14 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
         """, nativeQuery = true)
     List<EventsNam> findAllByStatus(@Param("status") String status);
 
+    // ✅ เพิ่มเมธอดนี้
+    @Query(value = """
+        SELECT e.*
+        FROM events_nam e
+        ORDER BY e.event_id DESC
+        """, nativeQuery = true)
+    List<EventsNam> findAllByOrderByEventIdDesc();
+
     @Modifying
     @Query(value = """
         UPDATE events_nam

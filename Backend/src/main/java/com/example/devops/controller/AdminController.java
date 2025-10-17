@@ -239,14 +239,23 @@ public class AdminController {
 
     /* ****************** EVENT MODERATION ****************** */
 
-    // ดึงอีเวนต์ตามสถานะ
+    // ดึงอีเวนต์ตามสถานะ (รองรับไม่ส่ง status = ALL)
     @GetMapping("/events")
-    public ResponseEntity<?> listEventsByStatus(@RequestParam(name = "status") String status) {
-        String st = (status == null ? "PENDING" : status.toUpperCase(Locale.ROOT));
-        if (!List.of("PENDING","APPROVED","REJECTED","PUBLISHED").contains(st)) {
-            return ResponseEntity.badRequest().body(Map.of("message","invalid status"));
+    public ResponseEntity<?> listEventsByStatus(
+            @RequestParam(name = "status", required = false, defaultValue = "ALL") String status
+    ) {
+        String st = (status == null ? "ALL" : status.toUpperCase(Locale.ROOT));
+        List<EventsNam> list;
+
+        if ("ALL".equals(st)) {
+            list = eventsRepo.findAllByOrderByEventIdDesc();
+        } else {
+            if (!List.of("PENDING", "APPROVED", "REJECTED", "PUBLISHED").contains(st)) {
+                return ResponseEntity.badRequest().body(Map.of("message", "invalid status"));
+            }
+            list = eventsRepo.findAllByStatus(st);
         }
-        var list = eventsRepo.findAllByStatus(st);
+
         var body = list.stream().map(EventMapper::toDto).toList();
         return ResponseEntity.ok(body);
     }
