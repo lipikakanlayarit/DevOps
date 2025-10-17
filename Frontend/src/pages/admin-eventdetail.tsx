@@ -38,24 +38,23 @@ const categoryLabel = (id?: number | null) => {
 };
 
 /* ==============================
-   Types (ตาม EventResponse backend)
+   Types
    ============================== */
 type EventResponse = {
     id: number;
     organizerId?: number;
     organizerName?: string;
-
     eventName: string;
     description?: string;
     categoryId?: number;
-
     startDateTime?: string;
     endDateTime?: string;
+    salesStartDateTime?: string;
+    salesEndDateTime?: string;
     venueName?: string;
     venueAddress?: string;
     maxCapacity?: number;
     status?: string;
-
     updatedAt?: string;
 };
 
@@ -67,6 +66,8 @@ type UiEvent = {
     organizerId?: number;
     showStart?: string;
     showEnd?: string;
+    saleStart?: string;
+    saleEnd?: string;
     location?: string;
     address?: string;
     posterUrl: string;
@@ -76,7 +77,6 @@ type UiEvent = {
     updatedAt?: string;
 };
 
-/* Organizer detail shape (จาก /admin/organizers/{id}) */
 type OrganizerDetail = {
     id: number;
     companyName: string;
@@ -86,9 +86,6 @@ type OrganizerDetail = {
     username?: string;
 };
 
-/* ==============================
-   Types for zones & reservations
-   ============================== */
 type TicketZone = {
     zone: string;
     row: number;
@@ -108,6 +105,7 @@ type Reservation = {
 };
 
 type ResvFilter = "all" | "reserved" | "sold";
+
 const isSold = (r: Reservation) => r.status === "COMPLETE";
 const isReserved = (r: Reservation) => !isSold(r);
 
@@ -178,11 +176,14 @@ const PaginationControls = ({
                         >
                             <span className="sr-only">Previous</span>
                             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                                <path
+                                    fillRule="evenodd"
+                                    d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                    clipRule="evenodd"
+                                />
                             </svg>
                         </button>
 
-                        {/* first + dots */}
                         {visiblePages[0] > 1 && (
                             <>
                                 <button
@@ -192,30 +193,34 @@ const PaginationControls = ({
                                     1
                                 </button>
                                 {visiblePages[0] > 2 && (
-                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>
+                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                        ...
+                                    </span>
                                 )}
                             </>
                         )}
 
-                        {/* numbers */}
                         {showPageNumbers &&
                             visiblePages.map((n) => (
                                 <button
                                     key={n}
                                     onClick={() => onPageChange(n)}
                                     className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                                        currentPage === n ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600" : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+                                        currentPage === n
+                                            ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600"
+                                            : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
                                     }`}
                                 >
                                     {n}
                                 </button>
                             ))}
 
-                        {/* dots + last */}
                         {visiblePages[visiblePages.length - 1] < totalPages && (
                             <>
                                 {visiblePages[visiblePages.length - 1] < totalPages - 1 && (
-                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>
+                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                        ...
+                                    </span>
                                 )}
                                 <button
                                     onClick={() => onPageChange(totalPages)}
@@ -233,7 +238,11 @@ const PaginationControls = ({
                         >
                             <span className="sr-only">Next</span>
                             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                                <path
+                                    fillRule="evenodd"
+                                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                    clipRule="evenodd"
+                                />
                             </svg>
                         </button>
                     </nav>
@@ -258,7 +267,6 @@ function OrganizerDetailModal({
     const [org, setOrg] = useState<OrganizerDetail | null>(null);
     const [loading, setLoading] = useState(false);
 
-    // ปิดด้วย ESC
     useEffect(() => {
         if (!open) return;
         const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -266,7 +274,6 @@ function OrganizerDetailModal({
         return () => window.removeEventListener("keydown", onKey);
     }, [open, onClose]);
 
-    // ดึงข้อมูลผู้จัดเมื่อเปิดโมดอล
     useEffect(() => {
         if (!open || !organizerId) {
             setOrg(null);
@@ -422,12 +429,25 @@ function DetailModal({
                                         <Info label="Show Start" value={fmtDateTime(event.showStart)} />
                                         <Info label="Show End" value={fmtDateTime(event.showEnd)} />
                                     </div>
-                                    <Info label="Location" value={event.location} />
-                                    {event.address && <Info label="Address" value={event.address} />}
+
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <Info
+                                            label="Sale Period"
+                                            value={
+                                                event.saleStart
+                                                    ? event.saleEnd && event.saleEnd !== event.saleStart
+                                                        ? `${fmtDateTime(event.saleStart)} → ${fmtDateTime(event.saleEnd)}`
+                                                        : fmtDateTime(event.saleStart)
+                                                    : "-"
+                                            }
+                                        />
+                                        <Info label="Location" value={event.location} />
+                                        {event.address && <Info label="Address" value={event.address} />}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="bg-white rounded-xl p-6 shadow-sm border">
+                            <div className="mt-6 bg-white rounded-xl p-6 shadow-sm border">
                                 <h4 className="text-lg font-bold text-gray-900 mb-3">Event Description</h4>
                                 <p className="text-gray-700 leading-relaxed">{event.description || "-"}</p>
                             </div>
@@ -447,34 +467,28 @@ function DetailModal({
    Page
    ============================== */
 export default function AdminEventdetail() {
-    // /admin/eventdetail?id=123
     const { search } = useLocation();
     const id = useMemo(() => new URLSearchParams(search).get("id") ?? "", [search]);
 
-    // Event state
     const [item, setItem] = useState<UiEvent | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Modals
     const [openDetail, setOpenDetail] = useState(false);
     const [openOrganizerDetail, setOpenOrganizerDetail] = useState(false);
 
-    // reservations toolbar state
     const [query, setQuery] = useState("");
     const [resvFilter, setResvFilter] = useState<ResvFilter>("all");
 
-    // pagination state
     const TICKETZONE_PAGE_SIZE = 5;
     const RESV_PAGE_SIZE = 10;
 
     const [tzPage, setTzPage] = useState(1);
     const [resvPage, setResvPage] = useState(1);
 
-    // data
     const [ticketZones, setTicketZones] = useState<TicketZone[]>([]);
     const [reservations, setReservations] = useState<Reservation[]>([]);
 
-    // Load event detail + zones(real) + reservations(mock)
+    // Load event detail
     useEffect(() => {
         if (!id) return;
         (async () => {
@@ -491,6 +505,8 @@ export default function AdminEventdetail() {
                     organizerId: ev.organizerId,
                     showStart: ev.startDateTime,
                     showEnd: ev.endDateTime,
+                    saleStart: ev.salesStartDateTime,
+                    saleEnd: ev.salesEndDateTime,
                     location: ev.venueName ?? "-",
                     address: ev.venueAddress ?? "",
                     posterUrl: coverPath(ev.id ?? id, ev.updatedAt),
@@ -501,7 +517,7 @@ export default function AdminEventdetail() {
                 };
                 setItem(ui);
 
-                // ===== Ticket Zones (จริง) =====
+                // Load zones
                 let zones: TicketZone[] = [];
                 try {
                     const z = await api.get(`/admin/events/${id}/zones`);
@@ -510,13 +526,12 @@ export default function AdminEventdetail() {
                         row: Number(it.row ?? 0),
                         column: Number(it.column ?? 0),
                         price: it.price != null ? String(it.price) : "Price/ticket",
-                        sale: String(it.sale ?? "0/0"), // sale ยังเป็น mock ฝั่ง backend
+                        sale: String(it.sale ?? "0/0"),
                     }));
                 } catch (err) {
                     console.warn("load zones failed, fallback to mock:", err);
                 }
 
-                // Fallback mock ถ้า API ว่าง/ล้มเหลว
                 if (!zones.length) {
                     const capacity = ev.maxCapacity ?? 300;
                     const mockZoneCount = Math.max(6, Math.min(20, Math.ceil(capacity / 50)));
@@ -530,7 +545,7 @@ export default function AdminEventdetail() {
                 }
                 setTicketZones(zones);
 
-                // ===== Reservations (mock) =====
+                // Mock reservations
                 const resvs: Reservation[] = Array.from({ length: 18 }).map((_, i) => {
                     const sold = i % 3 !== 1;
                     const seatNo = 12 + i;
@@ -558,7 +573,7 @@ export default function AdminEventdetail() {
         })();
     }, [id]);
 
-    // zones pagination
+    // Zones pagination
     const tzTotalPages = Math.max(1, Math.ceil(ticketZones.length / TICKETZONE_PAGE_SIZE));
     const tzPageItems = useMemo(() => {
         const start = (tzPage - 1) * TICKETZONE_PAGE_SIZE;
@@ -569,7 +584,7 @@ export default function AdminEventdetail() {
         setTzPage(1);
     }, [ticketZones]);
 
-    // reservations filter + pagination
+    // Reservations filter + pagination
     const filteredReservations = useMemo(() => {
         let list = reservations;
         if (resvFilter === "sold") list = list.filter(isSold);
@@ -594,20 +609,13 @@ export default function AdminEventdetail() {
         setResvPage(1);
     }, [query, resvFilter]);
 
-    // Seat stats (mock)
+    // Seat stats
     const seatStats = useMemo(() => {
         const sold = reservations.filter(isSold).length;
         const reserved = reservations.length - sold;
         const available = Math.max(0, (item?.capacity ?? 0) - reservations.length);
         return { available, reserved, sold };
     }, [reservations, item?.capacity]);
-
-    // ✅ ใช้งานจริง (แก้ TS6133)
-    const RESV_FILTER_OPTIONS: { label: string; value: ResvFilter }[] = [
-        { label: "All", value: "all" },
-        { label: "Reserved", value: "reserved" },
-        { label: "Sold", value: "sold" },
-    ];
 
     return (
         <div className="bg-gray-100 min-h-screen">
@@ -626,9 +634,9 @@ export default function AdminEventdetail() {
                         </Link>
                         <ChevronRight className="mx-2 h-5 w-5 text-gray-500" />
                         <span className="truncate">
-              {item?.title ?? (loading ? "Loading..." : "Not found")}
+                            {item?.title ?? (loading ? "Loading..." : "Not found")}
                             {id ? ` (ID: ${id})` : ""}
-            </span>
+                        </span>
                     </div>
                 </div>
 
@@ -663,21 +671,45 @@ export default function AdminEventdetail() {
                                         <h1 className="text-2xl font-bold text-gray-800">{item.title}</h1>
 
                                         <div className="space-y-2 text-sm">
-                                            <div><span className="text-gray-500">Category:</span><span className="ml-2 text-gray-800">{item.category}</span></div>
-                                            <div><span className="text-gray-500">Organizer:</span><span className="ml-2 text-gray-800">{item.organizer}</span></div>
+                                            <div>
+                                                <span className="text-gray-500">Category:</span>
+                                                <span className="ml-2 text-gray-800">{item.category}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-500">Organizer:</span>
+                                                <span className="ml-2 text-gray-800">{item.organizer}</span>
+                                            </div>
                                             <div>
                                                 <span className="text-gray-500">Show Date:</span>
                                                 <span className="ml-2 text-gray-800">
-                          {item.showStart
-                              ? item.showEnd && item.showEnd !== item.showStart
-                                  ? `${fmtDateTime(item.showStart)} → ${fmtDateTime(item.showEnd)}`
-                                  : fmtDateTime(item.showStart)
-                              : "-"}
-                        </span>
+                                                    {item.showStart
+                                                        ? item.showEnd && item.showEnd !== item.showStart
+                                                            ? `${fmtDateTime(item.showStart)} → ${fmtDateTime(item.showEnd)}`
+                                                            : fmtDateTime(item.showStart)
+                                                        : "-"}
+                                                </span>
                                             </div>
-                                            <div><span className="text-gray-500">Location:</span><span className="ml-2 text-gray-800">{item.location}</span></div>
+
+                                            <div>
+                                                <span className="text-gray-500">Sale Period:</span>
+                                                <span className="ml-2 text-gray-800">
+                                                    {item.saleStart
+                                                        ? item.saleEnd && item.saleEnd !== item.saleStart
+                                                            ? `${fmtDateTime(item.saleStart)} → ${fmtDateTime(item.saleEnd)}`
+                                                            : fmtDateTime(item.saleStart)
+                                                        : "-"}
+                                                </span>
+                                            </div>
+
+                                            <div>
+                                                <span className="text-gray-500">Location:</span>
+                                                <span className="ml-2 text-gray-800">{item.location}</span>
+                                            </div>
                                             {item.capacity != null && (
-                                                <div><span className="text-gray-500">Capacity:</span><span className="ml-2 text-gray-800">{item.capacity}</span></div>
+                                                <div>
+                                                    <span className="text-gray-500">Capacity:</span>
+                                                    <span className="ml-2 text-gray-800">{item.capacity}</span>
+                                                </div>
                                             )}
                                         </div>
 
@@ -729,7 +761,9 @@ export default function AdminEventdetail() {
                                         ))}
                                         {tzPageItems.length === 0 && (
                                             <tr>
-                                                <td colSpan={5} className="py-6 px-4 text-center text-sm text-gray-500">No ticket zones.</td>
+                                                <td colSpan={5} className="py-6 px-4 text-center text-sm text-gray-500">
+                                                    No ticket zones.
+                                                </td>
                                             </tr>
                                         )}
                                         </tbody>
@@ -737,12 +771,7 @@ export default function AdminEventdetail() {
                                 </div>
                             </div>
                             <div className="bg-white rounded-b-lg shadow-sm">
-                                <PaginationControls
-                                    currentPage={tzPage}
-                                    totalPages={tzTotalPages}
-                                    onPageChange={setTzPage}
-                                    showPageNumbers
-                                />
+                                <PaginationControls currentPage={tzPage} totalPages={tzTotalPages} onPageChange={setTzPage} showPageNumbers />
                             </div>
                         </div>
                     </div>
@@ -763,7 +792,11 @@ export default function AdminEventdetail() {
 
                         <div className="flex items-center gap-3">
                             <CategoryRadio
-                                options={RESV_FILTER_OPTIONS}
+                                options={[
+                                    { label: "All", value: "all" },
+                                    { label: "Reserved", value: "reserved" },
+                                    { label: "Sold", value: "sold" }
+                                ]}
                                 value={resvFilter}
                                 onChange={(val) => setResvFilter(val as ResvFilter)}
                             />
@@ -802,7 +835,9 @@ export default function AdminEventdetail() {
                                     <tbody>
                                     {resvPageItems.map((r, i) => (
                                         <tr key={`${r.id}-${i}`} className="border-b border-gray-100 hover:bg-gray-50">
-                                            <td className="py-3 px-4"><input type="checkbox" className="rounded" /></td>
+                                            <td className="py-3 px-4">
+                                                <input type="checkbox" className="rounded" />
+                                            </td>
                                             <td className="py-3 px-4 text-gray-800 font-mono text-sm">{r.id}</td>
                                             <td className="py-3 px-4 text-gray-800">{r.date}</td>
                                             <td className="py-3 px-4 text-gray-800">{r.seatId}</td>
@@ -810,13 +845,13 @@ export default function AdminEventdetail() {
                                             <td className="py-3 px-4 text-gray-800">{r.user}</td>
                                             <td className="py-3 px-4 text-gray-800">{r.paymentMethod}</td>
                                             <td className="py-3 px-4">
-                          <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  r.status === "COMPLETE" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"
-                              }`}
-                          >
-                            {r.status === "COMPLETE" ? "SOLD" : "RESERVED"}
-                          </span>
+                                                <span
+                                                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                        r.status === "COMPLETE" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"
+                                                    }`}
+                                                >
+                                                    {r.status === "COMPLETE" ? "SOLD" : "RESERVED"}
+                                                </span>
                                             </td>
                                         </tr>
                                     ))}
@@ -833,12 +868,7 @@ export default function AdminEventdetail() {
                         </div>
 
                         <div className="bg-white rounded-b-lg shadow-sm">
-                            <PaginationControls
-                                currentPage={resvPage}
-                                totalPages={resvTotalPages}
-                                onPageChange={setResvPage}
-                                showPageNumbers
-                            />
+                            <PaginationControls currentPage={resvPage} totalPages={resvTotalPages} onPageChange={setResvPage} showPageNumbers />
                         </div>
                     </div>
                 </div>

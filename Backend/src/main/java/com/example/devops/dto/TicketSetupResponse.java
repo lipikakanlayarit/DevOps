@@ -2,6 +2,7 @@
 package com.example.devops.dto;
 
 import lombok.*;
+import java.time.Instant;
 import java.util.List;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -14,6 +15,10 @@ public class TicketSetupResponse {
     private Integer minPerOrder;
     private Integer maxPerOrder;
     private Boolean active;
+
+    // ---- Sales Period (prefill) ----
+    private Instant salesStartDatetime;
+    private Instant salesEndDatetime;
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
     public static class ZonePrice {

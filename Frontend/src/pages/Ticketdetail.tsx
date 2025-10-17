@@ -8,55 +8,93 @@ import { Plus, Calendar, Clock as ClockIcon, X } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 
-type ZoneItem = { id: number; seatRow: string; seatColumn: string; zone: string; price: string };
+type ZoneItem = {
+    id: number;
+    seatRow: string;
+    seatColumn: string;
+    zone: string;
+    price: string;
+};
 
 type TicketSetupDto = {
     seatRows: number;
     seatColumns: number;
     zones: { code: string; name: string; price?: number }[];
-    // Advanced Setting
     minPerOrder?: number;
     maxPerOrder?: number;
     active?: boolean;
+    salesStartDatetime?: string | null;
+    salesEndDatetime?: string | null;
 };
 
-const toNum = (v: string | number | null | undefined, fallback = 0) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : fallback;
+/**
+ * แปลง local date + time → UTC ISO string
+ * @param date - "YYYY-MM-DD" ในเขต local time
+ * @param time - "HH:mm" ในเขต local time
+ * @returns ISO8601 string ในรูปแบบ UTC (เช่น "2025-01-15T10:30:00.000Z")
+ */
+const toIsoUTC = (date: string, time: string): string | null => {
+    if (!date || !time) return null;
+
+    // รวม date + time เป็น local datetime string
+    const localDateTimeStr = `${date}T${time}:00`;
+
+    // สร้าง Date object ซึ่งจะ interpret เป็น local time
+    const localDate = new Date(localDateTimeStr);
+
+    // แปลงเป็น UTC ISO string
+    return localDate.toISOString();
+};
+
+/**
+ * แปลง UTC ISO string → local date และ time
+ * @param isoString - ISO8601 string (UTC)
+ * @returns { date: "YYYY-MM-DD", time: "HH:mm" } ในเขต local time
+ */
+const fromIsoUTCToLocal = (isoString: string): { date: string; time: string } => {
+    const d = new Date(isoString);
+
+    // ได้ local date/time โดยอัตโนมัติ
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+
+    return {
+        date: `${year}-${month}-${day}`,
+        time: `${hours}:${minutes}`
+    };
 };
 
 export default function TicketDetail() {
     const { eventId } = useParams<{ eventId?: string }>();
     const navigate = useNavigate();
 
-    // ต้องมี eventId เสมอ
     const eid = Number(eventId);
     const hasId = Number.isFinite(eid) && eid > 0;
 
-    // ใช้เช็คว่ามีข้อมูลเดิมไหม (ถ้ามี => ใช้ PUT)
     const [hasExisting, setHasExisting] = useState(false);
-
-    // header (optional): ดึงจาก localStorage ตาม id ที่อยู่ในพาธ
     const [cachedEvent, setCachedEvent] = useState<any>(null);
+
     useEffect(() => {
         if (!hasId) return;
         try {
             const raw = localStorage.getItem(`event:${eid}`);
             if (raw) setCachedEvent(JSON.parse(raw));
-        } catch {
-            /* ignore */
-        }
+        } catch { /* ignore */ }
     }, [hasId, eid]);
 
     // ---------- zones ----------
     const [zones, setZones] = useState<ZoneItem[]>([
         { id: 1, seatRow: "", seatColumn: "", zone: "", price: "" },
     ]);
+
     const addZone = () => {
-        setZones((prev) => [
+        setZones(prev => [
             ...prev,
             {
-                id: prev.length ? Math.max(...prev.map((z) => z.id)) + 1 : 1,
+                id: prev.length ? Math.max(...prev.map(z => z.id)) + 1 : 1,
                 seatRow: "",
                 seatColumn: "",
                 zone: "",
@@ -64,23 +102,29 @@ export default function TicketDetail() {
             },
         ]);
     };
-    const removeZone = (id: number) => setZones((prev) => prev.filter((z) => z.id !== id));
+
+    const removeZone = (id: number) =>
+        setZones(prev => prev.filter(z => z.id !== id));
+
     const setZoneField = (idx: number, field: keyof ZoneItem, value: string) => {
-        setZones((prev) => {
+        setZones(prev => {
             const next = [...prev];
             next[idx] = { ...next[idx], [field]: value };
             return next;
         });
     };
 
-    // ---------- Sales Period (UI only) ----------
-    const [sales, setSales] = useState({ startDate: "", startTime: "", endDate: "", endTime: "" });
+    // ---------- Sales Period ----------
+    const [sales, setSales] = useState({
+        startDate: "",
+        startTime: "",
+        endDate: "",
+        endTime: "",
+    });
 
-    // ---------- Advanced (จริงแล้ว ไม่ใช่ UI-only) ----------
+    // ---------- Advanced ----------
     const [limits, setLimits] = useState({ min: "1", max: "1" });
-    // ใช้ radio + default เป็น available เพื่อไม่ให้ active กลายเป็น undefined
     const [status, setStatus] = useState<"available" | "unavailable">("available");
-
     const [saving, setSaving] = useState(false);
 
     // ---------- Prefill ticket data ----------
@@ -90,7 +134,9 @@ export default function TicketDetail() {
 
         (async () => {
             try {
-                const { data } = await api.get<TicketSetupDto>(`/events/${eid}/tickets/setup`);
+                const { data } = await api.get<TicketSetupDto>(
+                    `/events/${eid}/tickets/setup`
+                );
                 if (ignore || !data) return;
 
                 setHasExisting(true);
@@ -104,21 +150,30 @@ export default function TicketDetail() {
                     zone: z.code || z.name || "",
                     price: z.price != null ? String(z.price) : "",
                 }));
+
                 setZones(
                     list.length
                         ? list
                         : [{ id: 1, seatRow: String(row || ""), seatColumn: String(col || ""), zone: "", price: "" }]
                 );
 
-                // Prefill Advanced Setting
-                setLimits((l) => ({
-                    ...l,
+                // Advanced
+                setLimits({
                     min: typeof data.minPerOrder === "number" ? String(data.minPerOrder) : "1",
                     max: typeof data.maxPerOrder === "number" ? String(data.maxPerOrder) : "1",
-                }));
+                });
                 setStatus(typeof data.active === "boolean" ? (data.active ? "available" : "unavailable") : "available");
+
+                // แปลง UTC → Local time สำหรับ prefill
+                if (data.salesStartDatetime) {
+                    const local = fromIsoUTCToLocal(data.salesStartDatetime);
+                    setSales(v => ({ ...v, startDate: local.date, startTime: local.time }));
+                }
+                if (data.salesEndDatetime) {
+                    const local = fromIsoUTCToLocal(data.salesEndDatetime);
+                    setSales(v => ({ ...v, endDate: local.date, endTime: local.time }));
+                }
             } catch {
-                // ไม่มีของเดิม → เริ่มใหม่
                 setHasExisting(false);
                 setZones([{ id: 1, seatRow: "", seatColumn: "", zone: "", price: "" }]);
                 setLimits({ min: "1", max: "1" });
@@ -126,9 +181,7 @@ export default function TicketDetail() {
             }
         })();
 
-        return () => {
-            ignore = true;
-        };
+        return () => { ignore = true; };
     }, [hasId, eid]);
 
     // ---------- Save / Update ----------
@@ -146,7 +199,7 @@ export default function TicketDetail() {
             if (!Number.isFinite(rowsN) || rowsN <= 0 || !Number.isFinite(colsN) || colsN <= 0) {
                 return alert("Seat Row/Seat Column ต้องเป็นตัวเลขและมากกว่า 0");
             }
-            if (zones.find((z) => !z.zone.trim())) {
+            if (zones.find(z => !z.zone.trim())) {
                 return alert("กรุณากรอกชื่อ Zone ให้ครบ");
             }
 
@@ -157,21 +210,33 @@ export default function TicketDetail() {
             if (!Number.isFinite(maxN) || maxN < 1) return alert("Maximum ticket ต้องเป็นเลขตั้งแต่ 1 ขึ้นไป");
             if (minN > maxN) return alert("Minimum ต้องไม่มากกว่า Maximum");
 
+            // Sales Period - แปลงจาก local → UTC
+            const salesStart = toIsoUTC(sales.startDate, sales.startTime);
+            const salesEnd = toIsoUTC(sales.endDate, sales.endTime);
+
+            if (!salesStart || !salesEnd) return alert("กรุณากำหนดช่วงเวลา Sales Period ให้ครบ");
+            if (new Date(salesStart) >= new Date(salesEnd)) {
+                return alert("Sales End ต้องมากกว่า Sales Start");
+            }
+
+            // payload
             const payload: TicketSetupDto = {
                 seatRows: rowsN,
                 seatColumns: colsN,
-                zones: zones.map((z) => ({
+                zones: zones.map(z => ({
                     code: z.zone.trim(),
                     name: z.zone.trim(),
-                    price: z.price ? toNum(z.price, 0) : undefined,
+                    price: z.price === "" ? undefined : Number(z.price)
                 })),
-                // ส่ง boolean ตายตัว ไม่มี undefined
                 minPerOrder: minN,
                 maxPerOrder: maxN,
-                active: status === "available" ? true : false,
+                active: status === "available",
+                salesStartDatetime: salesStart,
+                salesEndDatetime: salesEnd,
             };
 
             setSaving(true);
+
             if (hasExisting) {
                 await api.put(`/events/${eid}/tickets/setup`, payload);
             } else {
@@ -180,11 +245,14 @@ export default function TicketDetail() {
 
             navigate("/organizationmnge", {
                 replace: true,
-                state: { flash: "อัปเดต Ticket/Seat map เรียบร้อย ✅" },
+                state: { flash: "อัปเดต Ticket/Seat map และ Sales Period เรียบร้อย ✅" },
             });
         } catch (e: any) {
             const msg =
-                e?.response?.data?.message || e?.response?.data?.error || e?.message || "บันทึกไม่สำเร็จ";
+                e?.response?.data?.message ||
+                e?.response?.data?.error ||
+                e?.message ||
+                "บันทึกไม่สำเร็จ";
             console.error("SAVE_TICKET_ERROR:", e?.response || e);
             alert(msg);
         } finally {
@@ -257,9 +325,7 @@ export default function TicketDetail() {
 
                                         <div className="space-y-2">
                                             <label className="text-sm font-medium text-gray-700">
-                                                Seat Column {idx === 0 && (
-                                                <span className="text-xs text-gray-500">(ใช้เป็นค่ากลาง)</span>
-                                            )}
+                                                Seat Column {idx === 0 && <span className="text-xs text-gray-500">(ใช้เป็นค่ากลาง)</span>}
                                             </label>
                                             <Input
                                                 placeholder="เช่น 20"
@@ -303,7 +369,7 @@ export default function TicketDetail() {
                         </div>
                     </section>
 
-                    {/* Sales Period (UI เท่านั้น) */}
+                    {/* Sales Period */}
                     <section className="bg-white rounded-lg p-6 shadow-sm">
                         <h2 className="text-lg font-semibold text-gray-900">Sales Period</h2>
                         <p className="text-sm text-gray-600 mb-4">
@@ -455,8 +521,6 @@ export default function TicketDetail() {
 
                         <div className="mt-8 space-y-3">
                             <h3 className="text-base font-semibold text-gray-900">Ticket Status</h3>
-
-                            {/* ใช้ radio (เลือกได้ตัวเดียว) เพื่อให้ active ถูกส่งแน่นอน */}
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="radio"
@@ -467,7 +531,6 @@ export default function TicketDetail() {
                                 />
                                 <span className="text-sm text-gray-800">Available</span>
                             </label>
-
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="radio"

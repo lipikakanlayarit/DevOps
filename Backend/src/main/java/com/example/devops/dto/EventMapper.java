@@ -17,13 +17,16 @@ public class EventMapper {
 
         return EventResponse.builder()
                 .id(ev.getId())
-                .organizerId(ev.getOrganizerId())            // ✅ map organizerId
-                // organizerName จะเติมใน Controller (bulk) เพื่อเลี่ยง N+1
+                .organizerId(ev.getOrganizerId())
+                // organizerName จะเติมใน controller แบบ bulk เพื่อเลี่ยง N+1
                 .eventName(nz(ev.getEventName()))
                 .description(nz(ev.getDescription()))
                 .categoryId(ev.getCategoryId())
                 .startDateTime(ev.getStartDatetime())
-                .endDateTime(ev.getEndDatetime())            // ✅ ชื่อเมธอดถูกต้อง
+                .endDateTime(ev.getEndDatetime())
+                // 🆕 expose sales period
+                .salesStartDateTime(ev.getSalesStartDatetime())
+                .salesEndDateTime(ev.getSalesEndDatetime())
                 .venueName(nz(ev.getVenueName()))
                 .venueAddress(nz(ev.getVenueAddress()))
                 .maxCapacity(ev.getMaxCapacity())
@@ -40,11 +43,14 @@ public class EventMapper {
         target.setDescription(req.getDescription());
         target.setCategoryId(req.getCategoryId());
         target.setStartDatetime(req.getStartDateTime());
-        target.setEndDatetime(req.getEndDateTime());         // ✅ ชื่อเมธอดถูกต้อง
+        target.setEndDatetime(req.getEndDateTime());
+        // 🆕 allow set on create (ถ้าไม่ได้ส่งมาก็เป็น null)
+        target.setSalesStartDatetime(req.getSalesStartDateTime());
+        target.setSalesEndDatetime(req.getSalesEndDateTime());
         target.setVenueName(req.getVenueName());
         target.setVenueAddress(req.getVenueAddress());
         target.setMaxCapacity(req.getMaxCapacity());
-        target.setStatus("PENDING");
+        if (target.getStatus() == null) target.setStatus("PENDING");
         return target;
     }
 
@@ -52,14 +58,24 @@ public class EventMapper {
     public static EventsNam applyUpdate(EventsNam target, EventUpdateRequest req) {
         if (target == null) return null;
 
-        if (req.getEventName() != null)     target.setEventName(req.getEventName());
-        if (req.getDescription() != null)   target.setDescription(req.getDescription());
-        if (req.getCategoryId() != null)    target.setCategoryId(req.getCategoryId());
-        if (req.getStartDateTime() != null) target.setStartDatetime(req.getStartDateTime());
-        if (req.getEndDateTime() != null)   target.setEndDatetime(req.getEndDateTime()); // ✅
-        if (req.getVenueName() != null)     target.setVenueName(req.getVenueName());
-        if (req.getVenueAddress() != null)  target.setVenueAddress(req.getVenueAddress());
-        if (req.getMaxCapacity() != null)   target.setMaxCapacity(req.getMaxCapacity());
+        if (req.getEventName() != null)       target.setEventName(req.getEventName());
+        if (req.getDescription() != null)     target.setDescription(req.getDescription());
+        if (req.getCategoryId() != null)      target.setCategoryId(req.getCategoryId());
+        if (req.getStartDateTime() != null)   target.setStartDatetime(req.getStartDateTime());
+        if (req.getEndDateTime() != null)     target.setEndDatetime(req.getEndDateTime());
+        // 🆕 support sales period update (ทั้งแบบ *DateTime และ *Datetime)
+        Instant salesStart = req.getSalesStartDateTime() != null
+                ? req.getSalesStartDateTime()
+                : req.getSalesStartDatetime();
+        Instant salesEnd = req.getSalesEndDateTime() != null
+                ? req.getSalesEndDateTime()
+                : req.getSalesEndDatetime();
+        if (salesStart != null) target.setSalesStartDatetime(salesStart);
+        if (salesEnd != null)   target.setSalesEndDatetime(salesEnd);
+
+        if (req.getVenueName() != null)       target.setVenueName(req.getVenueName());
+        if (req.getVenueAddress() != null)    target.setVenueAddress(req.getVenueAddress());
+        if (req.getMaxCapacity() != null)     target.setMaxCapacity(req.getMaxCapacity());
         return target;
     }
 

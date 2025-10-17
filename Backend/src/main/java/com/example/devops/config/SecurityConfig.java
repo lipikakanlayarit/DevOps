@@ -9,7 +9,6 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -51,11 +50,16 @@ public class SecurityConfig {
                                 "/error"
                         ).permitAll()
 
+                        // เปิด API สาธารณะสำหรับ Landing Page (รูป/ลิสต์อีเวนต์)
+                        .requestMatchers("/api/public/**").permitAll()
+
                         // OPTIONS requests (CORS preflight)
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         // ===== Event endpoints =====
-                        .requestMatchers(HttpMethod.GET, "/api/events/**").permitAll() // ดึงข้อมูลอีเวนต์ได้ทุกคน
+                        // ดึงข้อมูลอีเวนต์ได้ทุกคน (อ่านอย่างเดียว)
+                        .requestMatchers(HttpMethod.GET, "/api/events/**").permitAll()
+                        // สร้าง/ตั้งค่า ticket สำหรับผู้มีสิทธิ์
                         .requestMatchers(HttpMethod.POST, "/api/events").hasAnyRole("ORGANIZER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/events/*/tickets/setup").hasAnyRole("ORGANIZER", "ADMIN")
 

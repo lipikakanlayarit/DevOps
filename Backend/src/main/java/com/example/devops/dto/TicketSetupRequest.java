@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.util.List;
 
 @Getter
@@ -18,17 +19,20 @@ public class TicketSetupRequest {
     private int seatColumns;  // ex. 20
 
     // อนุญาตหลายโซน (รองรับปุ่ม “+ Add Zone”)
-    private List<ZoneConfig> zones; // ex. [{code:"VIP", name:"VIP", rowStart:1, rowEnd:2, price:5000}, ...]
+    private List<ZoneConfig> zones; // [{code:"VIP", name:"VIP", rowStart:1, rowEnd:2, price:5000}, ...]
 
-    // (ออปชัน) ถ้าฟอร์มส่ง zone/price เดี่ยวๆ ก็ใส่ไว้เผื่อ
+    // (ออปชัน) รูปแบบเก่า: zone/price เดียว
     private String zone;
     private Double price;
 
-    // ---- Advanced Setting (global สำหรับอีเวนต์นี้) ----
-    // ใช้เป็นค่า default ตั้งให้ทุกรายการ ticket_types ที่ถูกสร้าง/รีเจน
+    // ---- Advanced Setting (global) ----
     private Integer minPerOrder;   // Minimum ticket per order
     private Integer maxPerOrder;   // Maximum ticket per order
     private Boolean active;        // true = Available, false = Unavailable
+
+    // ---- Sales Period (global) ----
+    private Instant salesStartDatetime; // ใช้กับ ticket_types.sale_start_datetime
+    private Instant salesEndDatetime;   // ใช้กับ ticket_types.sale_end_datetime
 
     @Getter @Setter
     @NoArgsConstructor @AllArgsConstructor
@@ -38,6 +42,6 @@ public class TicketSetupRequest {
         private Integer rowStart;  // 1-indexed เช่น VIP ครอบคลุมแถว 1..2 (A..B)
         private Integer rowEnd;
         private Double price;
-        private Long ticketTypeId; // ถ้ามีเชื่อม TicketTypes
+        private Long ticketTypeId; // ถ้ามีเชื่อม ticket_types เดิม
     }
 }

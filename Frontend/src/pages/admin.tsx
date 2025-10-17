@@ -1,3 +1,4 @@
+// src/pages/admin-eventmanager.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -23,21 +24,12 @@ type Event = {
     location?: string;
     status: ModerationStatus;
     category: string;
-    date?: string; // Show date
+    date?: string;
     saleSeat?: string;
     updatedAt?: string;
 };
 
 // ---------- Helpers ----------
-const fmtDate = (iso?: string) =>
-    iso
-        ? new Intl.DateTimeFormat("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-        }).format(new Date(iso))
-        : "-";
-
 const fmtDateTime = (iso?: string) =>
     iso
         ? new Intl.DateTimeFormat("en-GB", {
@@ -59,7 +51,6 @@ function useDebounced<T>(value: T, delay = 250) {
     return v;
 }
 
-// อยู่ในช่วงขายไหม
 function withinSaleWindow(start?: string, end?: string): boolean {
     if (!start || !end) return false;
     const now = Date.now();
@@ -68,7 +59,6 @@ function withinSaleWindow(start?: string, end?: string): boolean {
     return now >= s && now <= e;
 }
 
-// ช่วย map category id → label
 function categoryLabel(id?: number | null): string {
     if (id === 1) return "concert";
     if (id === 2) return "seminar";
@@ -112,20 +102,19 @@ export default function AdminEventManagementPage() {
                     const id =
                         it.id ?? it.eventId ?? it.event_id ?? it.eventsNamId ?? it.events_id;
 
-                    // ✅ รองรับชื่อจาก entity ของคุณ: startDatetime / endDatetime
+                    // ✅ ใช้คีย์ที่ถูกต้องตาม backend (salesStartDateTime / salesEndDateTime)
                     const start =
-                        it.saleStartDatetime ??
-                        it.saleStartDate ??
+                        it.salesStartDateTime ??
+                        it.sales_start_datetime ??
                         it.startDateTime ??
                         it.startDatetime;
 
                     const end =
-                        it.saleEndDatetime ??
-                        it.saleEndDate ??
+                        it.salesEndDateTime ??
+                        it.sales_end_datetime ??
                         it.endDateTime ??
                         it.endDatetime;
 
-                    // ✅ ใช้ startDatetime เป็น Show Date
                     const showDate =
                         it.showDateTime ??
                         it.eventDate ??
@@ -137,7 +126,8 @@ export default function AdminEventManagementPage() {
                     const saleSeat =
                         sold != null && total != null ? `${sold} / ${total}` : "—";
 
-                    const category = it.category ?? categoryLabel(it.categoryId ?? it.category_id);
+                    const category =
+                        it.category ?? categoryLabel(it.categoryId ?? it.category_id);
                     const eventName = it.eventName ?? it.name ?? "-";
                     const organizer = it.organizerName ?? it.organizer ?? "-";
                     const location = it.venueName ?? it.location ?? "-";
@@ -219,7 +209,9 @@ export default function AdminEventManagementPage() {
                 <div className="mx-auto max-w-7xl">
                     {/* Header */}
                     <div className="mb-6 flex items-center justify-between gap-4 relative">
-                        <h1 className="text-3xl font-bold text-gray-900">Event Management</h1>
+                        <h1 className="text-3xl font-bold text-gray-900">
+                            Event Management
+                        </h1>
                         <div className="relative">
                             <EventToolbar
                                 categories={categoryOptions}
@@ -320,7 +312,9 @@ export default function AdminEventManagementPage() {
                                         key={event.id}
                                         className="cursor-pointer transition-colors hover:bg-gray-50"
                                         onClick={() =>
-                                            navigate(`/admin/eventdetail?id=${event.id}`)
+                                            navigate(
+                                                `/admin/eventdetail?id=${event.id}`
+                                            )
                                         }
                                     >
                                         <td className="px-6 py-4">
@@ -351,8 +345,13 @@ export default function AdminEventManagementPage() {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="text-sm text-gray-900">
-                                                {fmtDate(event.startSaleDate)} →{" "}
-                                                {fmtDate(event.endSaleDate)}
+                                                {event.startSaleDate
+                                                    ? fmtDateTime(event.startSaleDate)
+                                                    : "-"}{" "}
+                                                →{" "}
+                                                {event.endSaleDate
+                                                    ? fmtDateTime(event.endSaleDate)
+                                                    : "-"}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
@@ -361,7 +360,11 @@ export default function AdminEventManagementPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <Badge className={statusBadgeClass(event.status)}>
+                                            <Badge
+                                                className={statusBadgeClass(
+                                                    event.status
+                                                )}
+                                            >
                                                 {event.status}
                                             </Badge>
                                         </td>

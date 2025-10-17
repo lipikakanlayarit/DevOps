@@ -1,36 +1,60 @@
 package com.example.devops.dto;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.time.Instant;
 
+/**
+ * DTO กลางสำหรับแสดง/ตอบกลับ Event (ใช้ทั้ง Admin และ Public)
+ * - ใช้ Lombok @Builder เพื่อรองรับการเรียกแบบ builder ใน EventMapper
+ * - ใส่ฟิลด์ salesStartDateTime/salesEndDateTime เผื่อแมปในอนาคต (จะมีเมธอดบน builder ให้พร้อม)
+ */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class EventResponse {
+
+    /* ====== Keys ====== */
     private Long id;
-
-    // === Organizer info ===
     private Long organizerId;
-    private String organizerName;
 
-    // ✅ เพิ่มฟิลด์ไว้ใช้ในหน้า admin-eventdetail (Organizer detail modal)
+    /* ====== Basics ====== */
+    private String eventName;
+    private String description;
+    private Long categoryId;          // ให้ตรงกับ entity: Long
+    private String categoryLabel;     // ถ้ามีการแปลง label ใน layer อื่น
+
+    /* ====== Times ====== */
+    private Instant startDateTime;    // entity.startDatetime
+    private Instant endDateTime;      // entity.endDatetime
+    private Instant salesStartDateTime; // entity.salesStartDatetime (สำรอง เผื่อใช้)
+    private Instant salesEndDateTime;   // entity.salesEndDatetime (สำรอง เผื่อใช้)
+    private Instant submittedDate;    // ถ้าไม่ได้ใช้ ปล่อย null ได้
+    private Instant updatedAt;        // ใช้จาก cover_updated_at หรืออื่นๆ ตาม mapper
+
+    /* ====== Venue / Capacity ====== */
+    private String venueName;
+    private String venueAddress;
+    private Integer maxCapacity;
+
+    /* ====== Status ====== */
+    private String status;            // PENDING / APPROVED / REJECTED / PUBLISHED
+
+    /* ====== Organizer (หน้า Admin อาจใช้) ====== */
+    private String organizerName;
+    private String organizerEmail;
     private String organizerCompany;
     private String organizerPhone;
     private String organizerAddress;
 
-    // === Event details ===
-    private String eventName;
-    private String description;
-    private Long categoryId;
-    private Instant startDateTime;   // ISO-8601
-    private Instant endDateTime;
-    private String venueName;
-    private String venueAddress;
-    private Integer maxCapacity;
-    private String status;
-
-    // ใช้สำหรับ sort/แสดง "submitted"
-    private Instant updatedAt;
+    /* ====== Review (หน้า Admin อาจใช้) ====== */
+    private String review;
+    private Instant reviewedAt;
+    private String reviewedBy;
 }
