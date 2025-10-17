@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import EventDashboard from "../pages/EventDashboard";
+import EventDashboard from "../pages/Eventdashboard";
 
 // mock ส่วนประกอบภายนอก (Sidebar และ Input)
 vi.mock("@/components/sidebarorg", () => ({
