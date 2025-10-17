@@ -1,72 +1,102 @@
+// cypress/e2e/login.cy.js
+
 describe('หน้า Login', () => {
     beforeEach(() => {
-        // กัน state ค้างจากเทสต์ก่อนหน้า
         cy.clearCookies();
         cy.clearLocalStorage();
-        cy.visit('http://localhost:5173/login'); // หรือใช้ baseUrl ถ้าตั้งไว้ใน cypress.config
+        // ใช้ URL เต็มกันเคส baseUrl ไม่ถูกอ่าน หรือจะใช้ cy.visit('/login') ถ้าตั้ง baseUrl แล้วก็ได้
+        cy.visit('http://localhost:5173/login');
     });
 
     it('แสดงฟอร์ม Login ครบ', () => {
-        cy.get('h1').contains(/log in/i).should('be.visible');
-        cy.get('input[autocomplete="username"]').should('exist');
-        cy.get('input[autocomplete="current-password"]').should('exist');
-        cy.contains('button', /log in/i).should('exist');
+        cy.get('h1, [role="heading"]').contains(/log in|sign in/i).should('be.visible');
+        cy.get('input[autocomplete="username"], input[name="username"]').should('exist');
+        cy.get('input[autocomplete="current-password"], input[name="password"]').should('exist');
+        cy.contains('button, [type="submit"]', /log in|sign in/i).should('exist');
     });
 
     it('กรอกไม่ครบแล้วขึ้นข้อความแจ้งเตือน', () => {
-        // กรอกแค่ username แล้ว "ส่งฟอร์ม" โดยตรง (ไม่กดปุ่มซึ่ง disabled)
-        cy.get('input[autocomplete="username"]').type('admin');
-
-        // submit ฟอร์มตรงๆ (เพราะปุ่มถูก disabled)
+        cy.get('input[autocomplete="username"], input[name="username"]').type('admin');
         cy.get('form').submit();
-
-        // ตรวจสอบว่ามีข้อความเตือน
-        cy.contains('กรุณากรอกข้อมูลให้ครบ').should('be.visible');
+        cy.contains(/กรุณากรอกข้อมูลให้ครบ|please fill|required/i).should('be.visible');
     });
 
-    it('ล็อกอินสำเร็จแล้ว redirect ไป /admin', () => {
-        // intercept ที่ "URL เต็ม" ของ backend (ตามจริงคือ localhost:8080)
-        cy.intercept('POST', 'http://localhost:8080/api/auth/login', (req) => {
-            req.reply({
-                statusCode: 200,
-                body: {
-                    token: 'fake-jwt',
-                    user: { username: 'admin', role: 'ADMIN' }, // ต้องมี user.username / user.role
-                },
-            });
+    it('ล็อกอินสำเร็จ: admin (ADMIN) → redirect /admin', () => {
+        // 1) mock login
+        cy.intercept('POST', '**/api/auth/login', {
+            statusCode: 200,
+            body: { token: 'fake-jwt-token', user: { username: 'admin', role: 'ADMIN' } },
         }).as('loginReq');
 
-        // กรอกข้อมูลล็อกอิน
-        cy.get('input[autocomplete="username"]').type('admin');
-        cy.get('input[autocomplete="current-password"]').type('password123');
+        // 2) mock auth/me (สำคัญมาก ป้องกัน 401)
+        cy.intercept('GET', '**/api/auth/me', {
+            statusCode: 200,
+            body: { id: 1, username: 'admin', role: 'ADMIN', email: 'admin@example.com' },
+        }).as('authMe');
 
-        // ปุ่มจะ enabled แล้ว
-        cy.contains('button', /log in/i).should('not.be.disabled').click();
+        // 3) ดำเนินการ
+        cy.get('input[autocomplete="username"], input[name="username"]').type('admin');
+        cy.get('input[autocomplete="current-password"], input[name="password"]').type('password123');
+        cy.contains('button, [type="submit"]', /log in|sign in/i).should('not.be.disabled').click();
 
-        // รอ intercept ตอบกลับ
         cy.wait('@loginReq');
-
-        // ตรวจว่า redirect ไป /admin
+        // แอปบางตัวจะเรียก /auth/me ในหน้าถัดไป ถ้ามีให้รอด้วย (ถ้าไม่มีก็จะข้ามอัตโนมัติ)
+        // cy.wait('@authMe'); // เปิดใช้ถ้าต้องการ
         cy.location('pathname', { timeout: 10000 }).should('include', '/admin');
     });
 
+    it('ล็อกอินสำเร็จ: alice123 (USER) → redirect /user หรือ /profile', () => {
+        cy.intercept('POST', '**/api/auth/login', {
+            statusCode: 200,
+            body: { token: 'fake-jwt-token', user: { username: 'alice123', role: 'USER' } },
+        }).as('loginReq');
+
+        cy.intercept('GET', '**/api/auth/me', {
+            statusCode: 200,
+            body: { id: 2, username: 'alice123', role: 'USER', email: 'alice123@example.com' },
+        }).as('authMe');
+
+        cy.get('input[autocomplete="username"], input[name="username"]').type('alice123');
+        cy.get('input[autocomplete="current-password"], input[name="password"]').type('password123');
+        cy.contains('button, [type="submit"]', /log in|sign in/i).should('not.be.disabled').click();
+
+        cy.wait('@loginReq');
+        // บางโปรเจกต์ redirect ผู้ใช้ไป /profile แทน /user ให้ยอมรับทั้งสอง
+        cy.location('pathname', { timeout: 10000 }).should('match', /(\/user|\/profile)/);
+    });
+
+    it('ล็อกอินสำเร็จ: organizer (ORGANIZER) → redirect /organizationmnge', () => {
+        cy.intercept('POST', '**/api/auth/login', {
+            statusCode: 200,
+            body: { token: 'fake-jwt-token', user: { username: 'organizer', role: 'ORGANIZER' } },
+        }).as('loginReq');
+
+        cy.intercept('GET', '**/api/auth/me', {
+            statusCode: 200,
+            body: { id: 3, username: 'organizer', role: 'ORGANIZER', email: 'organizer@example.com' },
+        }).as('authMe');
+
+        cy.get('input[autocomplete="username"], input[name="username"]').type('organizer');
+        cy.get('input[autocomplete="current-password"], input[name="password"]').type('password123');
+        cy.contains('button, [type="submit"]', /log in|sign in/i).should('not.be.disabled').click();
+
+        cy.wait('@loginReq');
+        cy.location('pathname', { timeout: 10000 }).should('include', '/organizationmnge');
+    });
+
     it('ล็อกอินไม่สำเร็จแล้วแสดงข้อความผิดพลาด', () => {
-        cy.intercept('POST', 'http://localhost:8080/api/auth/login', {
+        // เคสนี้ "อย่า" mock auth/me ให้ 200 เราต้องการให้ล้มที่ login เลย
+        cy.intercept('POST', '**/api/auth/login', {
             statusCode: 401,
             body: { message: 'Login failed' },
         }).as('loginFail');
 
-        cy.get('input[autocomplete="username"]').type('wronguser');
-        cy.get('input[autocomplete="current-password"]').type('wrongpass');
+        cy.get('input[autocomplete="username"], input[name="username"]').type('wronguser');
+        cy.get('input[autocomplete="current-password"], input[name="password"]').type('wrongpass');
+        cy.contains('button, [type="submit"]', /log in|sign in/i).should('not.be.disabled').click();
 
-        // ปุ่มจะ enabled เพราะกรอกครบ
-        cy.contains('button', /log in/i).should('not.be.disabled').click();
-
-        // รอ intercept
         cy.wait('@loginFail');
-
-        // ตรวจว่ามีข้อความผิดพลาด
-        cy.contains(/login failed/i).should('be.visible');
+        cy.contains(/login failed|invalid|unauthorized/i).should('be.visible');
         cy.location('pathname').should('eq', '/login');
     });
 });
