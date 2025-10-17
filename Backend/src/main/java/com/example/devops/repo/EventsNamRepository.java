@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -28,7 +29,6 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
         """, nativeQuery = true)
     List<EventsNam> findAllByStatus(@Param("status") String status);
 
-    // ✅ เพิ่มเมธอดนี้
     @Query(value = """
         SELECT e.*
         FROM events_nam e
@@ -36,7 +36,9 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
         """, nativeQuery = true)
     List<EventsNam> findAllByOrderByEventIdDesc();
 
-    @Modifying
+    /** ✅ อนุมัติอีเวนต์ */
+    @Transactional
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
         UPDATE events_nam
            SET status = 'APPROVED',
@@ -49,7 +51,9 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
                 @Param("review") String review,
                 @Param("adminId") Integer adminId);
 
-    @Modifying
+    /** ✅ ปฏิเสธอีเวนต์ */
+    @Transactional
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
         UPDATE events_nam
            SET status = 'REJECTED',
