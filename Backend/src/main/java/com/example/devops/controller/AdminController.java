@@ -56,7 +56,7 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("users", data, "total", data.size()));
     }
 
-    /* ============== ORGANIZERS (ย่อ) ============== */
+    /* ============== ORGANIZERS (list + detail) ============== */
 
     @GetMapping("/organizers")
     public ResponseEntity<?> getAllOrganizers() {
@@ -73,7 +73,27 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("organizers", data, "total", data.size()));
     }
 
-    /* ============== EVENTS (Permission List) ============== */
+    /** ✅ Organizer detail สำหรับหน้า admin-eventdetail (Organizer detail modal) */
+    @GetMapping("/organizers/{id}")
+    public ResponseEntity<?> getOrganizerById(@PathVariable("id") Long id) {
+        return organizerRepo.findById(id)
+                .<ResponseEntity<?>>map(o -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", o.getId());
+                    m.put("companyName", ns(o.getCompanyName()));
+                    m.put("phoneNumber", ns(o.getPhoneNumber()));  // <- ต้องมี field นี้ใน entity
+                    m.put("address", ns(o.getAddress()));          // <- ต้องมี field นี้ใน entity
+                    m.put("email", ns(o.getEmail()));
+                    m.put("username", ns(o.getUsername()));
+                    m.put("firstName", ns(o.getFirstName()));
+                    m.put("lastName", ns(o.getLastName()));
+                    m.put("verificationStatus", ns(o.getVerificationStatus()));
+                    return ResponseEntity.ok(m);
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","organizer not found")));
+    }
+
+    /* ============== EVENTS (Permission/List + detail) ============== */
 
     @GetMapping("/events")
     public ResponseEntity<?> listEventsByStatus(
@@ -90,7 +110,7 @@ public class AdminController {
             list = eventsRepo.findAllByStatus(st);
         }
 
-        // 1) map entity -> DTO (ใส่ organizerId มาแล้ว)
+        // 1) map entity -> DTO
         List<EventResponse> body = list.stream().map(EventMapper::toDto).toList();
 
         // 2) เติม organizerName แบบ bulk
@@ -118,6 +138,34 @@ public class AdminController {
 
         return ResponseEntity.ok(body);
     }
+
+    /** ✅ GET event เดี่ยว (ใช้หน้า admin-eventdetail) */
+    @GetMapping("/events/{id}")
+    public ResponseEntity<EventResponse> getEventById(@PathVariable Long id) {
+        return eventsRepo.findById(id)
+                .map(ev -> {
+                    var dto = EventMapper.toDto(ev); // มี organizerId แล้ว
+                    if (dto.getOrganizerId() != null) {
+                        organizerRepo.findById(dto.getOrganizerId()).ifPresent(o -> {
+                            String company  = o.getCompanyName() == null ? "" : o.getCompanyName();
+                            String username = o.getUsername()    == null ? "" : o.getUsername();
+
+                            // ชื่อสำหรับแสดง (ใช้ company ถ้ามี ไม่งั้น fallback เป็น username)
+                            dto.setOrganizerName(company.isBlank() ? username : company);
+
+                            // ✅ เติมข้อมูลให้ modal
+                            dto.setOrganizerCompany(company.isBlank() ? username : company);
+                            dto.setOrganizerPhone(o.getPhoneNumber());
+                            dto.setOrganizerAddress(o.getAddress());
+                        });
+                    }
+                    return ResponseEntity.ok(dto);
+                })
+                // ❗️อย่า .body(Map.of(...)) เพราะ method นี้ต้องคืน EventResponse
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+    }
+
+
 
     @PostMapping("/events/{id}/approve")
     @Transactional
