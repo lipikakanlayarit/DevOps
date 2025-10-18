@@ -141,7 +141,7 @@ public class TicketSetupService {
             for (TicketSetupRequest.ZoneConfig z : req.getZones()) {
                 // seat_zones
                 SeatZones zone = new SeatZones();
-                zoneพไเ.setEvent_id(eventId);
+                zone.setEvent_id(eventId);
                 zone.setZone_name(z.getName());
                 zone.setDescription(z.getCode());
                 zone.setSort_order(z.getRowStart() != null ? z.getRowStart() : 1);

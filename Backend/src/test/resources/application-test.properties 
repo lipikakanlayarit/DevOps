@@ -1,0 +1,14 @@
+#  ใช้ H2 Database ในหน่วยความจำ (in-memory)
+spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+spring.datasource.driver-class-name=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+
+# ให้ Hibernate สร้างและลบตารางใหม่ทุกครั้งตอนรันเทส
+spring.jpa.hibernate.ddl-auto=create-drop
+
+#  แสดง SQL ใน console
+spring.jpa.show-sql=true
+
+#  ปิดการเชื่อมต่อ DB จริง (เช่น PostgreSQL) ถ้ามีใน main
+spring.datasource.initialization-mode=never
