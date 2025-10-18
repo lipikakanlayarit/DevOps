@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    # ค่านี้จะถูก Testcontainers Override เวลารันจริง
+    url: jdbc:postgresql://localhost:5432/test
+    username: test
+    password: test
+  jpa:
+    hibernate:
+      ddl-auto: create-drop   # ให้ Hibernate สร้าง/ล้างตารางเองในเทสต์
+    properties:
+      hibernate.format_sql: true
+      hibernate.jdbc.lob.non_contextual_creation: true
+  flyway:
+    enabled: false            # ปิด Flyway ในโปรไฟล์ test
+
+# ✅ กำหนด JWT secret ให้เป็นสตริงธรรมดา (ยาวอย่างน้อย 32 ตัวอักษร)
+app:
+  jwt:
+    secret: test-secret-key-should-be-32-chars-min
+    expiration: 86400000      # อายุ 1 วัน (มิลลิวินาที)
+
+logging:
+  level:
+    org.hibernate.SQL: info
+    org.springframework.test.context: info
