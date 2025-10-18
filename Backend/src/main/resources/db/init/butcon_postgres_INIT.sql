@@ -126,8 +126,14 @@ ALTER TABLE events_nam
     ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS reviewed_by INT REFERENCES admin_users(admin_id);
 
+-- ===== NEW: Sales period on events (ใช้กับ Landing Page) =====
+ALTER TABLE events_nam
+    ADD COLUMN IF NOT EXISTS sales_start_datetime TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS sales_end_datetime   TIMESTAMPTZ;
+
 -- ===== Indexes =====
 CREATE INDEX IF NOT EXISTS idx_events_status ON events_nam(status);
+CREATE INDEX IF NOT EXISTS idx_events_sales_window ON events_nam (sales_start_datetime, sales_end_datetime);
 
 -- ===================
 -- TICKET TYPES
@@ -313,10 +319,67 @@ CREATE INDEX IF NOT EXISTS idx_seat_zones_event_id ON seat_zones(event_id);
 CREATE INDEX IF NOT EXISTS idx_seat_rows_zone_id   ON seat_rows(zone_id);
 CREATE INDEX IF NOT EXISTS idx_seats_row_id        ON seats(row_id);
 
--- ===================
--- VIEW: อ่าน events เบา ๆ
--- ===================
-CREATE OR REPLACE VIEW events_nam_pretty AS
+-- =========================================================
+--  VIEWS for Landing Page (idempotent)
+-- =========================================================
+
+-- A) อีเวนต์ที่ "กำลังขายตอนนี้"
+CREATE OR REPLACE VIEW public_events_on_sale AS
+SELECT e.*
+FROM events_nam e
+WHERE UPPER(e.status) = 'APPROVED'
+  AND (
+    (
+        e.sales_start_datetime IS NOT NULL
+            AND e.sales_end_datetime IS NOT NULL
+            AND e.sales_start_datetime <= NOW()
+            AND e.sales_end_datetime  >= NOW()
+        )
+        OR EXISTS (
+        SELECT 1
+        FROM ticket_types t
+        WHERE t.event_id = e.event_id
+          AND COALESCE(t.is_active, TRUE) = TRUE
+          AND (t.sale_start_datetime IS NULL OR t.sale_start_datetime <= NOW())
+          AND (t.sale_end_datetime   IS NULL OR t.sale_end_datetime   >= NOW())
+          AND COALESCE(t.quantity_available, 0) > COALESCE(t.quantity_sold, 0)
+    )
+    );
+
+GRANT SELECT ON public_events_on_sale TO PUBLIC;
+
+-- B) อีเวนต์ที่ "กำลังจะเริ่มขาย"
+CREATE OR REPLACE VIEW public_events_upcoming AS
+WITH tt_min AS (
+  SELECT event_id, MIN(sale_start_datetime) AS min_sale_start
+  FROM ticket_types
+  WHERE COALESCE(is_active, TRUE) = TRUE
+  GROUP BY event_id
+)
+SELECT e.*
+FROM events_nam e
+         LEFT JOIN tt_min m ON m.event_id = e.event_id
+WHERE UPPER(e.status) = 'APPROVED'
+  AND (
+    (e.sales_start_datetime IS NOT NULL AND e.sales_start_datetime > NOW())
+        OR (e.sales_start_datetime IS NULL AND m.min_sale_start IS NOT NULL AND m.min_sale_start > NOW())
+    )
+ORDER BY COALESCE(e.sales_start_datetime, m.min_sale_start), e.event_id;
+
+GRANT SELECT ON public_events_upcoming TO PUBLIC;
+
+-- C) VIEW อ่านง่าย (มีคอลัมน์ช่วงขาย) — ใช้ DROP + CREATE กัน column rename error
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.views
+    WHERE table_schema = 'public' AND table_name = 'events_nam_pretty'
+  ) THEN
+DROP VIEW public.events_nam_pretty;
+END IF;
+END$$;
+
+CREATE VIEW public.events_nam_pretty AS
 SELECT
     event_id,
     organizer_id,
@@ -325,6 +388,8 @@ SELECT
     category_id,
     start_datetime,
     end_datetime,
+    sales_start_datetime,
+    sales_end_datetime,
     venue_name,
     venue_address,
     max_capacity,
@@ -335,7 +400,7 @@ SELECT
     cover_image_sha1
 FROM events_nam;
 
-GRANT SELECT ON events_nam_pretty TO PUBLIC;
+GRANT SELECT ON public.events_nam_pretty TO PUBLIC;
 
 -- ===================
 -- SEED DATA
@@ -363,7 +428,7 @@ INSERT INTO categories (category_name, description) VALUES
                                                         ('Exhibition','Outdoor and cultural Exhibition')
     ON CONFLICT DO NOTHING;
 
--- Seed events → เป็น PENDING
+-- Seed events → ตั้งต้น PENDING
 INSERT INTO events_nam (
     organizer_id, event_name, description, category_id,
     start_datetime, end_datetime, venue_name, venue_address,
@@ -412,6 +477,25 @@ VALUES
     ('sess_user1',1,NOW(),NOW() + INTERVAL '1 day',TRUE,'192.168.1.11','Mozilla/5.0'),
     ('sess_user2',2,NOW(),NOW() + INTERVAL '1 day',TRUE,'192.168.1.12','Chrome/120.0')
     ON CONFLICT DO NOTHING;
+
+-- ===================
+-- SEED TWEAKS FOR LANDING PAGE (make sure we have onSale & upcoming)
+-- ===================
+-- 1) BUTCON Music Fest 2025 → APPROVED + onSale now→30d (ไม่ทับถ้าเคยอนุมัติแล้ว)
+UPDATE events_nam
+SET status = 'APPROVED',
+    sales_start_datetime = COALESCE(sales_start_datetime, NOW() - INTERVAL '1 day'),
+    sales_end_datetime   = COALESCE(sales_end_datetime,   NOW() + INTERVAL '30 days')
+WHERE event_name = 'BUTCON Music Fest 2025'
+  AND (status IS NULL OR UPPER(status) = 'PENDING');
+
+-- 2) Startup Seminar 2025 → APPROVED + upcoming in 2d (ไม่ทับถ้าเคยอนุมัติแล้ว)
+UPDATE events_nam
+SET status = 'APPROVED',
+    sales_start_datetime = COALESCE(sales_start_datetime, NOW() + INTERVAL '2 days'),
+    sales_end_datetime   = COALESCE(sales_end_datetime,   NOW() + INTERVAL '40 days')
+WHERE event_name = 'Startup Seminar 2025'
+  AND (status IS NULL OR UPPER(status) = 'PENDING');
 
 -- =========================================================
 -- End of file

@@ -41,6 +41,14 @@ public class EventsNam {
     @Column(name = "end_datetime")
     private Instant endDatetime;
 
+    /* ======================== 🆕 ฟิลด์ช่วงเวลาขายบัตร ======================== */
+    @Column(name = "sales_start_datetime")
+    private Instant salesStartDatetime;
+
+    @Column(name = "sales_end_datetime")
+    private Instant salesEndDatetime;
+    /* ======================================================================== */
+
     @Column(name = "venue_name", length = 200)
     private String venueName;
 
@@ -65,7 +73,7 @@ public class EventsNam {
     @Column(name = "cover_updated_at")
     private Instant cover_updated_at;
 
-    // -------- Admin review fields (ใหม่) --------
+    // -------- Admin review fields --------
     @Column(name = "review")
     private String review;
 

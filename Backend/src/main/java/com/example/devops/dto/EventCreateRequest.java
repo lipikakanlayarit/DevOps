@@ -1,20 +1,42 @@
-// EventCreateRequest.java
 package com.example.devops.dto;
 
 import lombok.*;
 import jakarta.validation.constraints.*;
 import java.time.Instant;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+/**
+ * DTO สำหรับสร้างอีเวนต์ใหม่ (Organizer ใช้ตอน Create)
+ * รองรับ Sales Period ด้วย (salesStartDateTime / salesEndDateTime)
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class EventCreateRequest {
-    @NotBlank private String eventName;
+
+    @NotBlank
+    private String eventName;
+
     private String description;
+
     private Long categoryId;
 
-    @NotNull private Instant startDateTime; // รับ ISO-8601 (มี offset) → map เป็น Instant
-    @NotNull private Instant endDateTime;
+    @NotNull
+    private Instant startDateTime; // ISO-8601 (มี offset)
 
-    @NotBlank private String venueName;
+    @NotNull
+    private Instant endDateTime;
+
+    // ✅ เพิ่มฟิลด์ Sales Period
+    private Instant salesStartDateTime;
+
+    private Instant salesEndDateTime;
+
+    @NotBlank
+    private String venueName;
+
     private String venueAddress;
+
     private Integer maxCapacity;
 }

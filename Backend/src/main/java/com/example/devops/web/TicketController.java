@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -24,7 +25,7 @@ public class TicketController {
     private final TicketSetupService ticketSetupService;
 
     /**
-     * PREFILL: ดึงผังที่นั่ง/โซน/ราคาปัจจุบันของอีเวนต์
+     * PREFILL: ดึงผังที่นั่ง/โซน/ราคา/Advanced/SalesPeriod ปัจจุบันของอีเวนต์
      * ถ้ายังไม่เคยตั้งค่า จะคืน 200 + โครงว่าง (ไม่ 404)
      */
     @GetMapping("/setup")
@@ -36,15 +37,22 @@ public class TicketController {
                             .seatRows(0)
                             .seatColumns(0)
                             .zones(List.of())
+                            .minPerOrder(null)
+                            .maxPerOrder(null)
+                            .active(null)
+                            .salesStartDatetime(null)
+                            .salesEndDatetime(null)
                             .build()
             );
         }
 
-        // Map → DTO
-        int seatRows = (Integer) m.getOrDefault("seatRows", 0);
-        int seatColumns = (Integer) m.getOrDefault("seatColumns", 0);
+        // ปลอดภัยกับ type มากขึ้น (รองรับ Integer/Long)
+        int seatRows = toInt(m.get("seatRows"), 0);
+        int seatColumns = toInt(m.get("seatColumns"), 0);
+
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> zoneMaps = (List<Map<String, Object>>) m.getOrDefault("zones", List.of());
+        List<Map<String, Object>> zoneMaps =
+                (List<Map<String, Object>>) m.getOrDefault("zones", List.of());
 
         List<TicketSetupResponse.ZonePrice> zones = zoneMaps.stream()
                 .map(z -> TicketSetupResponse.ZonePrice.builder()
@@ -54,17 +62,29 @@ public class TicketController {
                         .build())
                 .toList();
 
+        Integer minPerOrder = (Integer) m.getOrDefault("minPerOrder", null);
+        Integer maxPerOrder = (Integer) m.getOrDefault("maxPerOrder", null);
+        Boolean active = (Boolean) m.getOrDefault("active", null);
+        Instant salesStart = (Instant) m.getOrDefault("salesStartDatetime", null);
+        Instant salesEnd   = (Instant) m.getOrDefault("salesEndDatetime", null);
+
         return ResponseEntity.ok(
                 TicketSetupResponse.builder()
                         .seatRows(seatRows)
                         .seatColumns(seatColumns)
                         .zones(zones)
+                        .minPerOrder(minPerOrder)
+                        .maxPerOrder(maxPerOrder)
+                        .active(active)
+                        .salesStartDatetime(salesStart)
+                        .salesEndDatetime(salesEnd)
                         .build()
         );
     }
 
     /**
      * CREATE/REGENERATE: ลบของเก่าและสร้างผังใหม่ตาม payload
+     * (รองรับ Advanced + Sales Period ใน payload)
      */
     @PostMapping("/setup")
     public ResponseEntity<?> setupTickets(@PathVariable("eventId") Long eventId,
@@ -78,7 +98,7 @@ public class TicketController {
     }
 
     /**
-     * UPDATE: (ตอนนี้ใช้วิธี regenerate ทั้งชุดเหมือน POST)
+     * UPDATE: ตอนนี้ทำแบบ regenerate ทั้งชุดเหมือน POST
      */
     @PutMapping("/setup")
     public ResponseEntity<?> updateTickets(@PathVariable("eventId") Long eventId,
@@ -106,5 +126,11 @@ public class TicketController {
     public ResponseEntity<?> getZones(@PathVariable("eventId") Long eventId) {
         List<SeatZones> zones = ticketSetupService.getZones(eventId);
         return ResponseEntity.ok(zones);
+    }
+
+    // -------- helpers --------
+    private static int toInt(Object v, int def) {
+        if (v instanceof Number n) return n.intValue();
+        return def;
     }
 }

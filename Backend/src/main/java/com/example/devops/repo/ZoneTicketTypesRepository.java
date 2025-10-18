@@ -26,9 +26,7 @@ public interface ZoneTicketTypesRepository extends JpaRepository<ZoneTicketTypes
         """, nativeQuery = true)
     void deleteByEventId(@Param("eventId") Long eventId);
 
-    // ---------- เมธอดที่เติมใหม่ ----------
-
-    /** ดึง ticket_type_id ทั้งหมดของโซนหนึ่ง ๆ */
+    /** ✅ ticket_type_id ทั้งหมดของโซน */
     @Query(value = """
         SELECT ztt.ticket_type_id
         FROM zone_ticket_types ztt
@@ -36,7 +34,7 @@ public interface ZoneTicketTypesRepository extends JpaRepository<ZoneTicketTypes
         """, nativeQuery = true)
     List<Long> findTicketTypeIdsByZoneId(@Param("zoneId") Long zoneId);
 
-    /** ดึงราคาตั๋วอันแรกของโซนหนึ่ง ๆ (ถ้า schema ของคุณเก็บราคาในตาราง ticket_types) */
+    /** ✅ ราคาแรก (อิง ticket_types) */
     @Query(value = """
         SELECT t.price
         FROM ticket_types t
@@ -47,7 +45,6 @@ public interface ZoneTicketTypesRepository extends JpaRepository<ZoneTicketTypes
         """, nativeQuery = true)
     BigDecimal findFirstPriceByZoneId(@Param("zoneId") Long zoneId);
 
-    /** เอาไว้เรียกดู mapping ทั้งหมดของโซนเดียว */
     @Query(value = """
         SELECT ztt.* FROM zone_ticket_types ztt
         WHERE ztt.zone_id = :zoneId

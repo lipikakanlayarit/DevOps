@@ -27,7 +27,7 @@ import static com.example.devops.dto.EventMapper.toEntity;
 
 @RestController
 @RequestMapping("/api/events")
-@CrossOrigin(origins = {"http://localhost:5173"}, allowCredentials = "true")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"}, allowCredentials = "true")
 public class EventController {
 
     private final EventsNamRepository eventsRepository;
@@ -54,12 +54,10 @@ public class EventController {
         }
 
         EventsNam ev = toEntity(new EventsNam(), req, organizerOpt.get().getId());
-        // เปลี่ยน fallback เป็น PENDING
         if (ev.getStatus() == null) ev.setStatus("PENDING");
 
         EventsNam saved = eventsRepository.save(ev);
-        EventResponse body = toDto(saved);
-        return ResponseEntity.ok(body);
+        return ResponseEntity.ok(toDto(saved));
     }
 
     // ------------------ READ ------------------
@@ -82,6 +80,7 @@ public class EventController {
 
         return eventsRepository.findById(id)
                 .<ResponseEntity<?>>map(ev -> {
+                    // อัปเดตด้วย mapper (รองรับ salesStart/End)
                     EventsNam updated = applyUpdate(ev, req);
                     EventsNam saved = eventsRepository.save(updated);
                     return ResponseEntity.ok(toDto(saved));

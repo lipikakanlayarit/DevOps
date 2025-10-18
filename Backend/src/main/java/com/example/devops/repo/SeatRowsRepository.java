@@ -23,4 +23,8 @@ public interface SeatRowsRepository extends JpaRepository<SeatRows, Long> {
         WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id = :eventId)
         """, nativeQuery = true)
     void deleteByEventId(@Param("eventId") Long eventId);
+
+    /** นับจำนวนแถวทั้งหมดของโซน */
+    @Query(value = "SELECT COUNT(*) FROM seat_rows WHERE zone_id = :zoneId", nativeQuery = true)
+    int countByZoneId(@Param("zoneId") Long zoneId);
 }
