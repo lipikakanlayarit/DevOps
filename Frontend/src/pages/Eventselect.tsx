@@ -1,853 +1,722 @@
-"use client"
+// src/pages/Eventselect.tsx
+"use client";
 
-import { Calendar, Clock, MapPin, Ticket } from "lucide-react"
-import { useState, useEffect } from "react"
-import Footer from "@/components/Footer"
+import { Calendar, Clock, MapPin, Ticket } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import Footer from "@/components/Footer";
+import SeatMap from "@/components/SeatMap";
+import type { Zone } from "@/components/SeatMap";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { api } from "@/lib/api";
 
+/* ==============================
+   Types (ให้ตรงกับ BE)
+   ============================== */
+type EventDetail = {
+    id: number;
+    eventName: string;
+    categoryId?: number;
+    startDatetime?: string;
+    endDatetime?: string;
+    description?: string;
+    updatedAt?: string | null;
+    coverUpdatedAt?: string | null;
+    venueName?: string | null;
+    venueAddress?: string | null;
+    maxCapacity?: number | null;
+    status?: string | null;
+    salesStartDatetime?: string | null;
+    salesEndDatetime?: string | null;
+};
+
+type SetupZone = {
+    id?: number | string;
+    name?: string;
+    code?: string;
+    price?: number | null;
+    rows?: number;
+    cols?: number;
+    occupiedSeats?: Array<{ r: number; c: number }>;
+    /** ✅ สำคัญ: แม็พกับ ticket_types.ticket_type_id */
+    ticketTypeId?: number | null;
+};
+
+type SetupResponse = {
+    seatRows: number;
+    seatColumns: number;
+    zones: SetupZone[];
+    minPerOrder?: number | null;
+    maxPerOrder?: number | null;
+    active?: boolean | null;
+    salesStartDatetime?: string | null;
+    salesEndDatetime?: string | null;
+};
+
+/** Zone ที่ใช้ใน UI: เพิ่ม ticketTypeId เข้ามาจาก BE */
+type UIZone = Zone & { ticketTypeId?: number | null };
+
+type PickedSeat = {
+    zoneId: Zone["id"];
+    row: number;
+    col: number;
+    zoneName: string;
+    price: number;
+    ticketTypeId?: number | null;
+};
+
+/* ==============================
+   Helpers
+   ============================== */
+const fmtDateTime = (iso?: string) =>
+    iso
+        ? new Intl.DateTimeFormat("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).format(new Date(iso))
+        : "-";
+
+/** ✅ ให้ <img> โหลดผ่าน proxy/baseURL ได้ทั้ง dev/prod */
+const API_PREFIX =
+    ((api as any)?.defaults?.baseURL as string | undefined)?.replace(/\/+$/, "") || "/api";
+
+const coverPath = (id: number | string, updatedAt?: string | null) =>
+    `${API_PREFIX}/public/events/${id}/cover${
+        updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ""
+    }`;
+
+function useQuery() {
+    const { search } = useLocation();
+    return useMemo(() => new URLSearchParams(search), [search]);
+}
+
+/* ==============================
+   Component
+   ============================== */
 export default function Eventselect() {
-  const [showDetails, setShowDetails] = useState(false)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [selectedSeats, setSelectedSeats] = useState<{ row: string; seat: number; zone: string; price: number }[]>([])
+    const params = useParams();
+    const query = useQuery();
+    const navigate = useNavigate();
 
-  const seatRows = ["A", "B", "C", "D", "E", "F", "G", "H"]
-  const seatsPerRow = 20
-  const seatZones = {
-    vip: { rows: ["A", "B"], price: 5000 },
-    standard: { rows: ["C", "D", "E", "F", "G", "H"], price: 1500 },
-  }
+    // รองรับทั้ง /eventselect/:eventId และ /eventselect?eventId=...
+    const eventId = params.eventId ?? query.get("eventId") ?? undefined;
 
-  const occupiedSeats = new Set([
-    // Row A - all occupied (like in reference image)
-    "A-1",
-    "A-2",
-    "A-3",
-    "A-4",
-    "A-5",
-    "A-6",
-    "A-7",
-    "A-8",
-    "A-9",
-    "A-10",
-    "A-11",
-    // "A-12",
-    // "A-13",
-    // "A-14",
-    // "A-15",
-    // "A-16",
-    "A-17",
-    "A-18",
-    "A-19",
-    "A-20",
-    // Row B - some occupied
-    "B-4",
-    "B-5",
-    "B-6",
-    "B-8",
-    "B-9",
-    "B-10",
-    "B-12",
-    "B-13",
-    "B-14",
-    "B-16",
-    "B-17",
-    "B-18",
-    "B-19",
-    "B-20",
-    // Row C - scattered occupied
-    "C-1",
-    "C-3",
-    "C-5",
-    "C-6",
-    "C-7",
-    "C-9",
-    "C-12",
-    "C-15",
-    "C-17",
-    "C-18",
-    "C-19",
-    "C-20",
-    // Row D - some occupied
-    "D-4",
-    "D-6",
-    "D-7",
-    "D-8",
-    "D-10",
-    "D-13",
-    "D-15",
-    "D-16",
-    "D-17",
-    "D-19",
-    "D-20",
-    // Row E - scattered occupied
-    "E-2",
-    "E-3",
-    "E-4",
-    "E-5",
-    "E-6",
-    "E-9",
-    "E-12",
-    "E-17",
-    "E-19",
-    "E-20",
-    // Row F - some occupied (like reference)
-    "F-7",
-    "F-12",
-    // Row G - scattered occupied
-    "G-6",
-    "G-7",
-    "G-9",
-    "G-12",
-    "G-14",
-    "G-15",
-    "G-17",
-    "G-18",
-    // Row H - some occupied
-    "H-2",
-    "H-3",
-    "H-4",
-    "H-5",
-    "H-6",
-    "H-8",
-    "H-12",
-    "H-13",
-    "H-14",
-    "H-15",
-    "H-17",
-    "H-19",
-  ])
+    const [showDetails, setShowDetails] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const getSeatZone = (row: string) => {
-    if (seatZones.vip.rows.includes(row)) return { zone: "VIP", price: seatZones.vip.price }
-    return { zone: "STANDARD", price: seatZones.standard.price }
-  }
+    const [event, setEvent] = useState<EventDetail | null>(null);
+    const [zones, setZones] = useState<UIZone[]>([]);
+    const [setupTimes, setSetupTimes] = useState<{
+        salesStartDatetime?: string | null;
+        salesEndDatetime?: string | null;
+    }>({});
 
-  const isSeatOccupied = (row: string, seat: number) => {
-    return occupiedSeats.has(`${row}-${seat}`)
-  }
+    const [submitting, setSubmitting] = useState(false);
 
-  const scrollToDateSelection = () => {
-    const element = document.getElementById("date-selection")
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" })
-    }
-  }
+    // โหลดข้อมูลจริง
+    useEffect(() => {
+        if (!eventId) return;
+        let cancelled = false;
 
-  useEffect(() => {
-    if (selectedDate) {
-      const element = document.getElementById("seat-map-section")
-      if (element) {
-        setTimeout(() => {
-          element.scrollIntoView({ behavior: "smooth" })
-        }, 100)
-      }
-    }
-  }, [selectedDate])
+        (async () => {
+            try {
+                const evRes = await api.get<EventDetail>(`/public/events/${eventId}`);
+                const setupRes = await api.get<SetupResponse>(`/public/events/${eventId}/tickets/setup`);
+                if (cancelled) return;
 
-  const handleDateClick = (date: string) => {
-    if (selectedDate === date) {
-      // If clicking the same date, hide the seat map
-      setSelectedDate(null)
-    } else {
-      // If clicking a different date, show that date's seat map
-      setSelectedDate(date)
-    }
-    setSelectedSeats([]) // Reset seat selection when changing date
-  }
+                const ev = evRes.data;
+                const setup = setupRes.data;
 
-  const handleSeatClick = (row: string, seat: number) => {
-    if (isSeatOccupied(row, seat)) return
+                setEvent(ev);
+                setSetupTimes({
+                    salesStartDatetime: setup?.salesStartDatetime ?? null,
+                    salesEndDatetime: setup?.salesEndDatetime ?? null,
+                });
 
-    const { zone, price } = getSeatZone(row)
-    const seatInfo = { row, seat, zone, price }
+                const mapped: UIZone[] = (setup?.zones ?? []).map((z: SetupZone, idx: number) => ({
+                    id: z.id ?? z.name ?? z.code ?? idx,
+                    name: z.name ?? z.code ?? `ZONE-${idx + 1}`,
+                    rows: z.rows ?? setup.seatRows ?? 0,
+                    cols: z.cols ?? setup.seatColumns ?? 0,
+                    price: z.price ?? null,
+                    occupied: z.occupiedSeats ?? [],
+                    ticketTypeId: z.ticketTypeId ?? null,
+                }));
+                setZones(mapped);
+            } catch (err) {
+                console.error("Failed to load event/setup:", err);
+            }
+        })();
 
-    setSelectedSeats((prevSeats) => {
-      const existingSeatIndex = prevSeats.findIndex((s) => s.row === row && s.seat === seat)
+        return () => {
+            cancelled = true;
+        };
+    }, [eventId]);
 
-      if (existingSeatIndex >= 0) {
-        return prevSeats.filter((_, index) => index !== existingSeatIndex)
-      } else {
-        return [...prevSeats, seatInfo]
-      }
-    })
-  }
+    const coverUrl = useMemo(() => {
+        if (!event) return null;
+        return coverPath(event.id, event.coverUpdatedAt ?? event.updatedAt ?? null);
+    }, [event]);
 
-  const generateReserveId = () => {
-    return Math.random().toString().slice(2, 17).padStart(15, "0")
-  }
+    const scrollToDateSelection = () => {
+        const element = document.getElementById("date-selection");
+        if (element) element.scrollIntoView({ behavior: "smooth" });
+    };
 
-  const isSeatSelected = (row: string, seat: number) => {
-    return selectedSeats.some((s) => s.row === row && s.seat === seat)
-  }
+    useEffect(() => {
+        if (selectedDate) {
+            const el = document.getElementById("seat-map-section");
+            if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 100);
+        }
+    }, [selectedDate]);
 
-  const getTotalPrice = () => {
-    return selectedSeats.reduce((total, seat) => total + seat.price, 0)
-  }
+    const handleDateClick = (date: string) => {
+        setSelectedDate((prev) => (prev === date ? null : date));
+    };
 
-  return (
-    <div className="min-h-screen text-white" style={{ background: "var(--black, #000000)" }}>
-      {/* Hero Section */}
-      <section className="relative px-6 py-16" style={{ background: "var(--black, #1D1D1D)" }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Event Poster */}
-            <div className="relative">
-              <img
-                src="/src/assets/poster.png"
-                alt="Robert Baltazar Trio Concert Poster"
-                className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
-                onError={(e) => {
-                  console.log("failed to load:", e.currentTarget.src)
-                  e.currentTarget.style.display = "none"
-                }}
-                onLoad={() => console.log("Image loaded successfully")}
-              />
-            </div>
+    // ที่ผู้ใช้เลือก
+    const [selectedSeats, setSelectedSeats] = useState<PickedSeat[]>([]);
 
-            {/* Event Details */}
-            <div className="space-y-6">
-              <div className="text-sm" style={{ color: "var(--gray-1, #C3C3C3)" }}>
-                2024.03.22
-              </div>
+    const onPickSeat = (zoneId: Zone["id"], r: number, c: number) => {
+        const zone = zones.find((z) => z.id === zoneId);
+        if (!zone) return;
 
-              <h1
-                className="text-4xl lg:text-6xl font-bold leading-tight"
-                style={{
-                  color: "var(--red, #FA3A2B)",
-                  fontFamily: '"Roboto Flex", sans-serif',
-                  fontWeight: "800",
-                }}
-              >
-                ROBERT
-                <br />
-                BALTAZAR TRIO
-              </h1>
+        // บังคับให้ใน 1 ออเดอร์เป็น ticket type เดียวกัน
+        const currentTt = selectedSeats[0]?.ticketTypeId ?? zone.ticketTypeId ?? null;
+        const nextTt = zone.ticketTypeId ?? null;
+        if (selectedSeats.length > 0 && currentTt !== nextTt) {
+            alert("กรุณาเลือกที่นั่งที่อยู่ในประเภทบัตรเดียวกันเท่านั้น");
+            return;
+        }
 
-              <div className="grid gap-4">
-                {/* Show Date */}
-                <div className="flex items-start gap-3">
-                  <Calendar className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
-                  <div>
-                    <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
-                      Show Date
-                    </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>Saturday, March 22</div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>Sunday, March 23</div>
-                  </div>
-                </div>
+        const price = zone.price ?? 0;
+        setSelectedSeats((prev) => {
+            const i = prev.findIndex((s) => s.zoneId === zoneId && s.row === r && s.col === c);
+            if (i >= 0) return prev.filter((_, idx) => idx !== i);
+            return [...prev, { zoneId, row: r, col: c, zoneName: zone.name, price, ticketTypeId: zone.ticketTypeId ?? null }];
+        });
+    };
 
-                {/* Sale Opening Date */}
-                <div className="flex items-start gap-3">
-                  <Clock className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
-                  <div>
-                    <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
-                      Sale Opening Date
-                    </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>Saturday, August 16, 2025, 10:00 AM</div>
-                  </div>
-                </div>
+    const getTotalPrice = () => selectedSeats.reduce((t, s) => t + (s.price || 0), 0);
+    const rowLabel = (r: number) => String.fromCharCode("A".charCodeAt(0) + r);
 
-                {/* Venue */}
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
-                  <div>
-                    <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
-                      MCC HALL, 3rd Floor,
-                    </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>The Mall Lifestore Bangkapi</div>
-                  </div>
-                </div>
+    // ไปหน้าชำระเงิน: ยิง create reservation แล้ว navigate
+    const handleGoToPayment = async () => {
+        if (!eventId || selectedSeats.length === 0) return;
 
-                {/* Ticket Prices */}
-                <div className="flex items-start gap-3">
-                  <Ticket className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
-                  <div>
-                    <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
-                      Ticket Prices
-                    </div>
-                    <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
-                      ฿ 500 / ฿ 600 / ฿ 800 / ฿ 1,500 / ฿ 3,500
-                      <br />/ ฿ 3,000 / ฿ 2,000 / ฿ 1,500
-                    </div>
-                  </div>
-                </div>
-              </div>
+        // ✅ ticketTypeId ต้องมีตาม schema reserved.ticket_type_id
+        const ticketTypeId = selectedSeats[0]?.ticketTypeId ?? null;
+        if (!ticketTypeId) {
+            alert("ไม่พบประเภทบัตร (ticketTypeId) ของที่นั่งที่เลือก");
+            return;
+        }
 
-              {/* Action Buttons */}
-              <div className="flex gap-4 pt-4">
-                <button
-                  onClick={scrollToDateSelection}
-                  className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90"
-                  style={{
-                    background: "var(--red, #FA3A2B)",
-                    color: "var(--white, #FFFFFF)",
-                    border: "none",
-                    borderRadius: "10px",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                  }}
-                >
-                  Get Ticket
-                </button>
-                <button
-                  onClick={() => setShowDetails(!showDetails)}
-                  className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90"
-                  style={{
-                    background: "var(--near-black-2, #1A1919)",
-                    color: "var(--white, #FFFFFF)",
-                    border: `1px solid var(--gray-1, #C3C3C3)`,
-                    borderRadius: "10px",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                  }}
-                >
-                  {showDetails ? "Hide Detail" : "View Detail"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+        setSubmitting(true);
+        try {
+            const payload = {
+                eventId: Number(eventId),
+                ticketTypeId, // ✅ สำคัญ
+                quantity: selectedSeats.length,
+                totalAmount: getTotalPrice(),
+                seats: selectedSeats.map((s) => ({
+                    zoneId: s.zoneId,
+                    rowIndex: s.row,
+                    colIndex: s.col,
+                    zoneName: s.zoneName,
+                    price: s.price ?? 0,
+                    rowLabel: rowLabel(s.row),
+                    seatNumber: s.col + 1,
+                    ticketTypeId: s.ticketTypeId ?? ticketTypeId,
+                })),
+                notes: "Created from Eventselect UI",
+            };
 
-      {/* Detail Section */}
-      {showDetails && (
-        <section className="px-6 py-8" style={{ background: "#DBDBDB" }}>
-          <div className="max-w-4xl mx-auto">
-            <p
-              className="text-center leading-relaxed"
-              style={{
-                color: "#000000",
-                fontFamily: '"Roboto Flex", sans-serif',
-                fontSize: "16px",
-                lineHeight: "1.6",
-                textAlign: "justify",
-                marginBottom: "32px",
-              }}
-            >
-              Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the
-              industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and
-              scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into
-              electronic typesetting, remaining essentially unchanged. Lorem Ipsum is simply dummy text of the printing
-              and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s,
-              when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has
-              survived not only five centuries, but also the leap into electronic typesetting, remaining essentially
-              unchanged.
-            </p>
-          </div>
-        </section>
-      )}
+            const { data } = await api.post(`/public/reservations`, payload, {
+                headers: { "Content-Type": "application/json" },
+            });
 
-      {/* Event Cards Section */}
-      <section id="date-selection" className="px-6 py-8" style={{ background: "#DBDBDB" }}>
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* March 22 Event */}
-          {(!selectedDate || selectedDate === "march22") && (
-            <div
-              className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-              style={{
-                background: selectedDate === "march22" ? "var(--red, #FA3A2B)" : "var(--white, #FFFFFF)",
-                borderRadius: "var(--card-radius, 8px)",
-                boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
-              }}
-              onClick={() => handleDateClick("march22")}
-            >
-              <div className="flex">
-                <div
-                  className="p-6 flex flex-col items-center justify-center min-w-[120px]"
-                  style={{
-                    background: "var(--near-black-3, #1D1D1D)",
-                    color: "var(--white, #FFFFFF)",
-                  }}
-                >
-                  <div className="text-sm">Sat</div>
-                  <div className="text-3xl font-bold">22</div>
-                  <div className="text-sm">Mar</div>
-                  <div
-                    className="text-xs mt-2 px-2 py-1 rounded"
-                    style={{
-                      background: "var(--black, #000000)",
-                    }}
-                  >
-                    6 P.M.
-                  </div>
-                </div>
-                <div className="flex-1 p-6 flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="text-2xl font-bold mb-2"
-                      style={{
-                        color: selectedDate === "march22" ? "var(--white, #FFFFFF)" : "var(--red, #FA3A2B)",
-                        fontFamily: '"Roboto Flex", sans-serif',
-                        fontWeight: "800",
-                      }}
-                    >
-                      ROBERT BALTAZAR TRIO
-                    </h3>
-                    <div
-                      className="flex items-center gap-2"
-                      style={{
-                        color: selectedDate === "march22" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      <MapPin className="w-4 h-4" />
-                      <span>MCC HALL, 3rd Floor,</span>
-                    </div>
-                    <div
-                      style={{
-                        color: selectedDate === "march22" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      The Mall Lifestore Bangkapi
-                    </div>
-                  </div>
-                  <div
-                    className="w-24 h-24 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
-                    style={{ background: "var(--gray-1, #C3C3C3)" }}
-                  >
-                    <img
-                      src="/src/assets/poster.png"
-                      alt="Robert Baltazar Trio Concert Poster"
-                      className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
-                      onError={(e) => {
-                        console.log("failed to load:", e.currentTarget.src)
-                        e.currentTarget.style.display = "none"
-                      }}
-                      onLoad={() => console.log("Image loaded successfully")}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* March 23 Event */}
-          {(!selectedDate || selectedDate === "march23") && (
-            <div
-              className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
-              style={{
-                background: selectedDate === "march23" ? "var(--red, #FA3A2B)" : "var(--white, #FFFFFF)",
-                borderRadius: "var(--card-radius, 8px)",
-                boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
-              }}
-              onClick={() => handleDateClick("march23")}
-            >
-              <div className="flex">
-                <div
-                  className="p-6 flex flex-col items-center justify-center min-w-[120px]"
-                  style={{
-                    background: "var(--near-black-3, #1D1D1D)",
-                    color: "var(--white, #FFFFFF)",
-                  }}
-                >
-                  <div className="text-sm">Sun</div>
-                  <div className="text-3xl font-bold">23</div>
-                  <div className="text-sm">Mar</div>
-                  <div
-                    className="text-xs mt-2 px-2 py-1 rounded"
-                    style={{
-                      background: "var(--black, #000000)",
-                    }}
-                  >
-                    5 P.M.
-                  </div>
-                </div>
-                <div className="flex-1 p-6 flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="text-2xl font-bold mb-2"
-                      style={{
-                        color: selectedDate === "march23" ? "var(--white, #FFFFFF)" : "var(--red, #FA3A2B)",
-                        fontFamily: '"Roboto Flex", sans-serif',
-                        fontWeight: "800",
-                      }}
-                    >
-                      ROBERT BALTAZAR TRIO
-                    </h3>
-                    <div
-                      className="flex items-center gap-2"
-                      style={{
-                        color: selectedDate === "march23" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      <MapPin className="w-4 h-4" />
-                      <span>MCC HALL, 3rd Floor,</span>
-                    </div>
-                    <div
-                      style={{
-                        color: selectedDate === "march23" ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
-                      }}
-                    >
-                      The Mall Lifestore Bangkapi
-                    </div>
-                  </div>
-                  <div
-                    className="w-24 h-24 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
-                    style={{ background: "var(--gray-1, #C3C3C3)" }}
-                  >
-                    <img
-                      src="/src/assets/poster.png"
-                      alt="Robert Baltazar Trio Concert Poster"
-                      className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
-                      onError={(e) => {
-                        console.log("failed to load:", e.currentTarget.src)
-                        e.currentTarget.style.display = "none"
-                      }}
-                      onLoad={() => console.log("Image loaded successfully")}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {selectedDate && (
-            <div id="seat-map-section" className="mt-8 space-y-6">
-              {/* Seat Map */}
-              <div
-                className="p-8"
-                style={{
-                  background: "var(--white, #FFFFFF)",
-                  borderRadius: "var(--card-radius, 8px)",
-                  boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
-                }}
-              >
-                <div className="space-y-4">
-                  {/* Stage */}
-                  <div
-                    className="w-full h-12 flex items-center justify-center text-white font-bold text-lg mb-8 mx-auto max-w-2xl"
-                    style={{ background: "var(--near-black-3, #1D1D1D)", borderRadius: "8px" }}
-                  >
-                    STAGE
-                  </div>
+            const reservedId = data?.reservedId ?? data?.id ?? data?.reserved_id;
+            if (!reservedId) {
+                alert("Reservation created but id is missing");
+                return;
+            }
+            navigate(`/payment/${reservedId}`);
+        } catch (err: any) {
+            console.error("CREATE_RESERVATION_FAILED", err);
+            const msg =
+                err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                err?.message ||
+                "Internal Server Error";
+            alert(msg);
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-                  {/* Seat Grid */}
-                  <div className="space-y-1 max-w-4xl mx-auto">
-                    {seatRows.map((rowLetter) => (
-                      <div key={rowLetter} className="flex items-center justify-center gap-1">
-                        {/* Left row label */}
-                        <div className="w-8 text-center font-bold text-gray-700 text-sm">{rowLetter}</div>
+    // การ์ดวันที่: ถ้ายังไม่มีตารางหลายรอบ ใช้ startDatetime เป็นรอบเดียว
+    const dateCards: Array<{ key: string; labelDay: string; day: string; month: string; time: string }> = useMemo(() => {
+        const d = event?.startDatetime ? new Date(event.startDatetime) : null;
+        if (!d) return [{ key: "show", labelDay: "Show", day: "-", month: "-", time: "-" }];
 
-                        {/* Seats */}
-                        <div className="flex gap-1">
-                          {Array.from({ length: seatsPerRow }, (_, seatIndex) => {
-                            const seatNumber = seatIndex + 1
-                            const { zone } = getSeatZone(rowLetter)
-                            const isSelected = isSeatSelected(rowLetter, seatNumber)
-                            const isOccupied = isSeatOccupied(rowLetter, seatNumber)
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        return [
+            {
+                key: "show",
+                labelDay: dayNames[d.getDay()],
+                day: d.getDate().toString(),
+                month: monthNames[d.getMonth()],
+                time: `${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`,
+            },
+        ];
+    }, [event?.startDatetime]);
 
-                            return (
-                              <button
-                                key={seatNumber}
-                                onClick={() => handleSeatClick(rowLetter, seatNumber)}
-                                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all relative ${!isOccupied ? "hover:scale-110" : ""}`}
-                                style={{
-                                  background: isSelected
-                                    ? "var(--red, #FA3A2B)"
-                                    : isOccupied
-                                      ? "#2D2D2D" // Dark for occupied seats
-                                      : zone === "VIP"
-                                        ? "#f9f654ff" // For VIP
-                                        : "rgba(201, 255, 184, 1)", // For Standard seats
-                                  color: isSelected ? "white" : isOccupied ? "#4CAF50" : "#2D2D2D",
-                                  border: `2px solid ${isOccupied ? "#2D2D2D" : "#E0E0E0"}`,
-                                  cursor: isOccupied ? "not-allowed" : "pointer",
-                                  fontSize: "10px",
-                                  fontWeight: "bold",
-                                }}
-                                disabled={isOccupied}
-                                title={
-                                  isOccupied
-                                    ? `${rowLetter}${seatNumber} (Occupied)`
-                                    : `${rowLetter}${seatNumber} (${zone})`
-                                }
-                              >
-                                {isOccupied ? "✕" : seatNumber}
-                              </button>
-                            )
-                          })}
-                        </div>
-
-                        {/* Right row label */}
-                        <div className="w-8 text-center font-bold text-gray-700 text-sm">{rowLetter}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Legend */}
-                  <div className="flex justify-center gap-4 mt-6 pt-4 border-t flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                        style={{ background: "#F4D03F", color: "#2D2D2D", border: "2px solid #E0E0E0" }}
-                      >
-                        1
-                      </div>
-                      <span className="text-sm text-gray-700">Available</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                        style={{ background: "#2D2D2D", color: "#4CAF50", border: "2px solid #2D2D2D" }}
-                      >
-                        ✕
-                      </div>
-                      <span className="text-sm text-gray-700">Occupied</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                        style={{ background: "var(--red, #FA3A2B)", color: "white" }}
-                      >
-                        1
-                      </div>
-                      <span className="text-sm text-gray-700">Selected</span>
-                    </div>
-                  </div>
-
-                  {/* Zone Pricing */}
-                  <div className="flex justify-center gap-6 mt-4 text-sm text-gray-600">
-                    <span>VIP (A-B): ฿5,000</span>
-                    <span>Standard (C-H): ฿1,500</span>
-                  </div>
-
-                  {/* Selected seats summary */}
-                  {selectedSeats.length > 0 && (
-                    <div className="flex justify-center mt-4">
-                      <div className="bg-gray-100 px-4 py-2 rounded-lg">
-                        <span className="text-sm text-gray-700">
-                          Selected: {selectedSeats.length} seat{selectedSeats.length > 1 ? "s" : ""} | Total: ฿
-                          {getTotalPrice().toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedSeats.length > 0 && (
-                <div className="flex justify-center">
-                  <div
-                    className="p-6 w-full max-w-4xl"
-                    style={{
-                      background: "var(--white, #FFFFFF)",
-                      borderRadius: "var(--card-radius, 8px)",
-                      boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
-                      border: "2px solid var(--red, #FA3A2B)",
-                    }}
-                  >
-                    {selectedSeats.length === 1 ? (
-                      // Single ticket display
-                      <div className="flex items-start gap-4">
-                        {/* Concert Image */}
-                        <div className="w-20 h-20 flex-shrink-0">
-                          <img
-                            src="/src/assets/poster.png"
-                            alt="Robert Baltazar Trio Concert Poster"
-                            className="w-full h-full object-cover rounded-lg shadow"
-                            onError={(e) => {
-                              console.log("failed to load:", e.currentTarget.src)
-                              e.currentTarget.style.display = "none"
-                            }}
-                            onLoad={() => console.log("Image loaded successfully")}
-                          />
-                        </div>
-                        {/* Details */}
-                        <div className="flex-1 space-y-3">
-                          <div>
-                            <div className="text-sm font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
-                              Reserve ID
-                            </div>
-                            <div className="text-lg font-mono" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                              {generateReserveId()}
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="text-lg font-bold" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                              ROBERT BALTAZAR TRIO
-                            </div>
-                            <div className="flex items-center gap-1 text-sm" style={{ color: "var(--gray-1, #666)" }}>
-                              <MapPin className="w-3 h-3" />
-                              <span>MCC HALL, 3rd Floor</span>
-                            </div>
-                            <div className="text-sm" style={{ color: "var(--gray-1, #666)" }}>
-                              The Mall Lifestore Bangkapi
-                            </div>
-                            <div
-                              className="flex items-center gap-1 text-sm mt-1"
-                              style={{ color: "var(--gray-1, #666)" }}
-                            >
-                              <Calendar className="w-3 h-3" />
-                              <span>{selectedDate === "march22" ? "Saturday, March 22" : "Sunday, March 23"}</span>
-                            </div>
-                          </div>
-
-                          {/* Seat Details Grid */}
-                          <div className="grid grid-cols-4 gap-2 pt-2 border-t">
-                            <div className="text-center">
-                              <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                ZONE
-                              </div>
-                              <div className="font-bold text-lg" style={{ color: "var(--red, #FA3A2B)" }}>
-                                {selectedSeats[0].zone}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                ROW
-                              </div>
-                              <div className="font-bold text-lg" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                {selectedSeats[0].row}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                SEAT
-                              </div>
-                              <div className="font-bold text-lg" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                {selectedSeats[0].seat}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                PRICE
-                              </div>
-                              <div className="font-bold text-lg" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                ฿{selectedSeats[0].price.toLocaleString()}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Payment Button */}
-                          <button
-                            className="w-full mt-4 px-6 py-3 rounded-full font-semibold transition-all hover:opacity-90"
-                            style={{
-                              background: "var(--red, #FA3A2B)",
-                              color: "var(--white, #FFFFFF)",
-                              border: "none",
-                              borderRadius: "25px",
-                              fontWeight: "600",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Go to Payment
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      // Multiple tickets display
-                      <div className="space-y-6">
-                        {/* Header */}
-                        <div className="text-center border-b pb-4">
-                          <div className="text-sm font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
-                            Multiple Tickets Reserved
-                          </div>
-                          <div className="text-2xl font-bold mt-2" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                            ROBERT BALTAZAR TRIO
-                          </div>
-                          <div
-                            className="flex items-center justify-center gap-1 text-sm mt-1"
-                            style={{ color: "var(--gray-1, #666)" }}
-                          >
-                            <Calendar className="w-3 h-3" />
-                            <span>{selectedDate === "march22" ? "Saturday, March 22" : "Sunday, March 23"}</span>
-                          </div>
-                        </div>
-
-                        {/* Tickets Grid */}
-                        <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-                          {selectedSeats.map((seat, index) => (
-                            <div
-                              key={`${seat.row}-${seat.seat}`}
-                              className="border rounded-lg p-4"
-                              style={{ borderColor: "var(--red, #FA3A2B)" }}
-                            >
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className="w-12 h-12 flex-shrink-0">
-                                  <img
-                                    src="/src/assets/poster.png"
-                                    alt="Robert Baltazar Trio Concert Poster"
-                                    className="w-full h-full object-cover rounded-lg shadow"
+    return (
+        <div className="min-h-screen text-white" style={{ background: "var(--black, #000000)" }}>
+            {/* Hero Section */}
+            <section className="relative px-6 py-16" style={{ background: "var(--black, #1D1D1D)" }}>
+                <div className="max-w-6xl mx-auto">
+                    <div className="grid lg:grid-cols-2 gap-12 items-center">
+                        {/* Event Poster */}
+                        <div className="relative">
+                            {coverUrl ? (
+                                <img
+                                    src={coverUrl}
+                                    alt="Event Poster"
+                                    className="w-full max-w-md mx-auto rounded-lg shadow-2xl"
                                     onError={(e) => {
-                                      console.log("failed to load:", e.currentTarget.src)
-                                      e.currentTarget.style.display = "none"
+                                        e.currentTarget.style.display = "none";
                                     }}
-                                    onLoad={() => console.log("Image loaded successfully")}
-                                  />
-                                </div>
-                                <div>
-                                  <div className="text-xs font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
-                                    Ticket #{index + 1}
-                                  </div>
-                                  <div className="text-sm font-mono" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                    {generateReserveId()}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-3 gap-2 text-center">
-                                <div>
-                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                    ZONE
-                                  </div>
-                                  <div className="font-bold text-sm" style={{ color: "var(--red, #FA3A2B)" }}>
-                                    {seat.zone}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                    SEAT
-                                  </div>
-                                  <div className="font-bold text-sm" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                    {seat.row}
-                                    {seat.seat}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>
-                                    PRICE
-                                  </div>
-                                  <div className="font-bold text-sm" style={{ color: "var(--near-black-1, #100F0F)" }}>
-                                    ฿{seat.price.toLocaleString()}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                                />
+                            ) : (
+                                <div className="w-full max-w-md mx-auto rounded-lg shadow-2xl bg-gray-700 aspect-[3/4]" />
+                            )}
                         </div>
 
-                        {/* Total and Payment */}
-                        <div className="border-t pt-4">
-                          <div className="flex justify-between items-center mb-4">
+                        {/* Event Details */}
+                        <div className="space-y-6">
+                            <div className="text-sm" style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                                {fmtDateTime(event?.startDatetime)}
+                            </div>
+
+                            <h1
+                                className="text-4xl lg:text-6xl font-bold leading-tight"
+                                style={{ color: "var(--red, #FA3A2B)", fontFamily: '"Roboto Flex", sans-serif', fontWeight: 800 }}
+                            >
+                                {event?.eventName ?? "Event Title"}
+                            </h1>
+
+                            <div className="grid gap-4">
+                                {/* Show Date */}
+                                <div className="flex items-start gap-3">
+                                    <Calendar className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
+                                    <div>
+                                        <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
+                                            Show Date
+                                        </div>
+                                        <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                                            {fmtDateTime(event?.startDatetime)} — {fmtDateTime(event?.endDatetime)}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Sale Opening Date */}
+                                <div className="flex items-start gap-3">
+                                    <Clock className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
+                                    <div>
+                                        <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
+                                            Sale Opening Date
+                                        </div>
+                                        <div style={{ color: "var(--gray-1, #C3C3C3)" }}>{fmtDateTime(setupTimes.salesStartDatetime ?? undefined)}</div>
+                                    </div>
+                                </div>
+
+                                {/* Venue */}
+                                <div className="flex items-start gap-3">
+                                    <MapPin className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
+                                    <div>
+                                        <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
+                                            {event?.venueName || "-"}
+                                        </div>
+                                        <div style={{ color: "var(--gray-1, #C3C3C3)" }}>{event?.venueAddress || ""}</div>
+                                    </div>
+                                </div>
+
+                                {/* Ticket Prices */}
+                                <div className="flex items-start gap-3">
+                                    <Ticket className="w-5 h-5 mt-1 flex-shrink-0" style={{ color: "var(--red, #FA3A2B)" }} />
+                                    <div>
+                                        <div className="font-semibold" style={{ color: "var(--white, #FFFFFF)" }}>
+                                            Ticket Prices
+                                        </div>
+                                        <div style={{ color: "var(--gray-1, #C3C3C3)" }}>
+                                            {zones.length > 0
+                                                ? zones
+                                                    .map((z) => (typeof z.price === "number" ? `฿ ${z.price.toLocaleString()} (${z.name})` : `(${z.name})`))
+                                                    .join(" / ")
+                                                : "-"}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex gap-4 pt-4">
+                                <button
+                                    onClick={scrollToDateSelection}
+                                    className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90"
+                                    style={{
+                                        background: "var(--red, #FA3A2B)",
+                                        color: "var(--white, #FFFFFF)",
+                                        border: "none",
+                                        borderRadius: "10px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    Get Ticket
+                                </button>
+                                <button
+                                    onClick={() => setShowDetails(!showDetails)}
+                                    className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90"
+                                    style={{
+                                        background: "var(--near-black-2, #1A1919)",
+                                        color: "var(--white, #FFFFFF)",
+                                        border: `1px solid var(--gray-1, #C3C3C3)`,
+                                        borderRadius: "10px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    {showDetails ? "Hide Detail" : "View Detail"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Detail Section */}
+            {showDetails && (
+                <section className="px-6 py-8" style={{ background: "#DBDBDB" }}>
+                    <div className="max-w-4xl mx-auto">
+                        <p
+                            className="text-center leading-relaxed"
+                            style={{
+                                color: "#000000",
+                                fontFamily: '"Roboto Flex", sans-serif',
+                                fontSize: "16px",
+                                lineHeight: "1.6",
+                                textAlign: "justify",
+                                marginBottom: "32px",
+                            }}
+                        >
+                            {event?.description || "No description."}
+                        </p>
+                    </div>
+                </section>
+            )}
+
+            {/* Date cards + Seat map */}
+            <section id="date-selection" className="px-6 py-8" style={{ background: "#DBDBDB" }}>
+                <div className="max-w-4xl mx-auto space-y-6">
+                    {dateCards.map((d) => (
+                        <div
+                            key={d.key}
+                            className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
+                            style={{
+                                background: selectedDate === d.key ? "var(--red, #FA3A2B)" : "var(--white, #FFFFFF)",
+                                borderRadius: "var(--card-radius, 8px)",
+                                boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
+                            }}
+                            onClick={() => handleDateClick(d.key)}
+                        >
+                            <div className="flex">
+                                <div
+                                    className="p-6 flex flex-col items-center justify-center min-w-[120px]"
+                                    style={{ background: "var(--near-black-3, #1D1D1D)", color: "var(--white, #FFFFFF)" }}
+                                >
+                                    <div className="text-sm">{d.labelDay}</div>
+                                    <div className="text-3xl font-bold">{d.day}</div>
+                                    <div className="text-sm">{d.month}</div>
+                                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ background: "var(--black, #000000)" }}>
+                                        {d.time}
+                                    </div>
+                                </div>
+                                <div className="flex-1 p-6 flex items-center justify-between">
+                                    <div>
+                                        <h3
+                                            className="text-2xl font-bold mb-2"
+                                            style={{
+                                                color: selectedDate === d.key ? "var(--white, #FFFFFF)" : "var(--red, #FA3A2B)",
+                                                fontFamily: '"Roboto Flex", sans-serif',
+                                                fontWeight: 800,
+                                            }}
+                                        >
+                                            {event?.eventName ?? "Event Title"}
+                                        </h3>
+                                        <div
+                                            className="flex items-center gap-2"
+                                            style={{
+                                                color: selectedDate === d.key ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)",
+                                            }}
+                                        >
+                                            <MapPin className="w-4 h-4" />
+                                            <span>{event?.venueName || "-"}</span>
+                                        </div>
+                                        <div style={{ color: selectedDate === d.key ? "var(--white, #FFFFFF)" : "var(--near-black-1, #100F0F)" }}>
+                                            {event?.venueAddress || ""}
+                                        </div>
+                                    </div>
+                                    <div
+                                        className="w-24 h-24 rounded overflow-hidden flex-shrink-0 flex items-center justify-center"
+                                        style={{ background: "var(--gray-1, #C3C3C3)" }}
+                                    >
+                                        {coverUrl ? (
+                                            <img
+                                                src={coverUrl}
+                                                alt="Event Poster"
+                                                className="w-full h-full object-cover rounded"
+                                                onError={(e) => {
+                                                    e.currentTarget.style.display = "none";
+                                                }}
+                                            />
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    {selectedDate && (
+                        <div id="seat-map-section" className="mt-8 space-y-6">
+                            <div
+                                className="p-8"
+                                style={{
+                                    background: "var(--white, #FFFFFF)",
+                                    borderRadius: "var(--card-radius, 8px)",
+                                    boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
+                                }}
+                            >
+                                <div
+                                    className="w-full h-12 flex items-center justify-center text-white font-bold text-lg mb-8 mx-auto max-w-2xl"
+                                    style={{ background: "var(--near-black-3, #1D1D1D)", borderRadius: "8px" }}
+                                >
+                                    STAGE
+                                </div>
+
+                                {/* Seat map จาก DB */}
+                                <SeatMap zones={zones} onPick={onPickSeat} />
+
+                                {/* Legend */}
+                                <div className="flex justify-center gap-4 mt-6 pt-4 border-t flex-wrap">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full bg-gray-200 border" />
+                                        <span className="text-sm text-gray-700">Available</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full bg-gray-400" />
+                                        <span className="text-sm text-gray-700">Occupied</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full" style={{ background: "var(--red, #FA3A2B)" }} />
+                                        <span className="text-sm text-gray-700">Selected</span>
+                                    </div>
+                                </div>
+
+                                {/* Pricing */}
+                                {zones.length > 0 && (
+                                    <div className="flex justify-center gap-4 mt-4 text-sm text-gray-600 flex-wrap">
+                                        {zones.map((z) => (
+                                            <span key={String(z.id)}>
+                        {z.name}: {typeof z.price === "number" ? `฿${z.price.toLocaleString()}` : "-"}
+                      </span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Summary */}
+                                {selectedSeats.length > 0 && (
+                                    <div className="flex justify-center mt-4">
+                                        <div className="bg-gray-100 px-4 py-2 rounded-lg">
+                      <span className="text-sm text-gray-700">
+                        Selected: {selectedSeats.length} seat{selectedSeats.length > 1 ? "s" : ""} | Total: ฿
+                          {getTotalPrice().toLocaleString()}
+                      </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Ticket summary panel */}
+                            {selectedSeats.length > 0 && (
+                                <div className="flex justify-center">
+                                    <div
+                                        className="p-6 w-full max-w-4xl"
+                                        style={{
+                                            background: "var(--white, #FFFFFF)",
+                                            borderRadius: "var(--card-radius, 8px)",
+                                            boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
+                                            border: "2px solid var(--red, #FA3A2B)",
+                                        }}
+                                    >
+                                        {selectedSeats.length === 1 ? (
+                                            <div className="flex items-start gap-4">
+                                                <div className="w-20 h-20 flex-shrink-0 bg-gray-200 rounded-lg" />
+                                                <div className="flex-1 space-y-3">
+                                                    <div>
+                                                        <div className="text-sm font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
+                                                            Reserve
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">ระบบจะสร้างรายการจองให้อัตโนมัติเมื่อกดชำระเงิน</div>
+                                                    </div>
+
+                                                    <div>
+                                                        <div className="text-lg font-bold" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                            {event?.eventName ?? "Event Title"}
+                                                        </div>
+                                                        <div className="flex items-center gap-1 text-sm" style={{ color: "var(--gray-1, #666)" }}>
+                                                            <MapPin className="w-3 h-3" />
+                                                            <span>{event?.venueName || "-"}</span>
+                                                        </div>
+                                                        <div className="text-sm" style={{ color: "var(--gray-1, #666)" }}>{event?.venueAddress || ""}</div>
+                                                        <div className="flex items-center gap-1 text-sm mt-1" style={{ color: "var(--gray-1, #666)" }}>
+                                                            <Calendar className="w-3 h-3" />
+                                                            <span>{fmtDateTime(event?.startDatetime)}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-4 gap-2 pt-2 border-t">
+                                                        <div className="text-center">
+                                                            <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>ZONE</div>
+                                                            <div className="font-bold text-lg" style={{ color: "var(--red, #FA3A2B)" }}>
+                                                                {selectedSeats[0].zoneName}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>ROW</div>
+                                                            <div className="font-bold text-lg" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                                {rowLabel(selectedSeats[0].row)}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>SEAT</div>
+                                                            <div className="font-bold text-lg" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                                {selectedSeats[0].col + 1}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>PRICE</div>
+                                                            <div className="font-bold text-lg" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                                ฿{(selectedSeats[0].price || 0).toLocaleString()}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <button
+                                                        disabled={submitting}
+                                                        onClick={handleGoToPayment}
+                                                        className="w-full mt-4 px-6 py-3 rounded-full font-semibold transition-all hover:opacity-90 disabled:opacity-60"
+                                                        style={{
+                                                            background: "var(--red, #FA3A2B)",
+                                                            color: "var(--white, #FFFFFF)",
+                                                            border: "none",
+                                                            borderRadius: "25px",
+                                                            fontWeight: 600,
+                                                            cursor: "pointer",
+                                                        }}
+                                                    >
+                                                        {submitting ? "Processing..." : "Go to Payment"}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-6">
+                                                <div className="text-center border-b pb-4">
+                                                    <div className="text-sm font-semibold" style={{ color: "var(--red, #FA3A2B)" }}>
+                                                        Multiple Tickets Reserved
+                                                    </div>
+                                                    <div className="text-2xl font-bold mt-2" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                        {event?.eventName ?? "Event Title"}
+                                                    </div>
+                                                    <div className="flex items-center justify-center gap-1 text-sm mt-1" style={{ color: "var(--gray-1, #666)" }}>
+                                                        <Calendar className="w-3 h-3" />
+                                                        <span>{fmtDateTime(event?.startDatetime)}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+                                                    {selectedSeats.map((s) => (
+                                                        <div
+                                                            key={`${s.zoneId}-${s.row}-${s.col}`}
+                                                            className="border rounded-lg p-4"
+                                                            style={{ borderColor: "var(--red, #FA3A2B)" }}
+                                                        >
+                                                            <div className="grid grid-cols-3 gap-2 text-center">
+                                                                <div>
+                                                                    <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>ZONE</div>
+                                                                    <div className="font-bold text-sm" style={{ color: "var(--red, #FA3A2B)" }}>
+                                                                        {s.zoneName}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>SEAT</div>
+                                                                    <div className="font-bold text-sm" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                                        {rowLabel(s.row)}
+                                                                        {s.col + 1}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-xs" style={{ color: "var(--gray-1, #666)" }}>PRICE</div>
+                                                                    <div className="font-bold text-sm" style={{ color: "var(--near-black-1, #100F0F)" }}>
+                                                                        ฿{(s.price || 0).toLocaleString()}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="border-t pt-4">
+                                                    <div className="flex justify-between items-center mb-4">
                             <span className="text-lg font-semibold" style={{ color: "var(--near-black-1, #100F0F)" }}>
                               Total ({selectedSeats.length} tickets):
                             </span>
-                            <span className="text-2xl font-bold" style={{ color: "var(--red, #FA3A2B)" }}>
+                                                        <span className="text-2xl font-bold" style={{ color: "var(--red, #FA3A2B)" }}>
                               ฿{getTotalPrice().toLocaleString()}
                             </span>
-                          </div>
-                          <button
-                            className="w-full px-6 py-3 rounded-full font-semibold transition-all hover:opacity-90"
-                            style={{
-                              background: "var(--red, #FA3A2B)",
-                              color: "var(--white, #FFFFFF)",
-                              border: "none",
-                              borderRadius: "25px",
-                              fontWeight: "600",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Go to Payment - {selectedSeats.length} Tickets
-                          </button>
+                                                    </div>
+                                                    <button
+                                                        disabled={submitting}
+                                                        onClick={handleGoToPayment}
+                                                        className="w-full px-6 py-3 rounded-full font-semibold transition-all hover:opacity-90 disabled:opacity-60"
+                                                        style={{
+                                                            background: "var(--red, #FA3A2B)",
+                                                            color: "var(--white, #FFFFFF)",
+                                                            border: "none",
+                                                            borderRadius: "25px",
+                                                            fontWeight: 600,
+                                                            cursor: "pointer",
+                                                        }}
+                                                    >
+                                                        {submitting ? "Processing..." : `Go to Payment - ${selectedSeats.length} Tickets`}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                      </div>
                     )}
-                  </div>
                 </div>
-              )}
-            </div>
-          )}
+            </section>
+
+            <Footer />
         </div>
-      </section>
-      {/* Footer Section */}
-      <Footer />
-    </div>
-  )
+    );
 }

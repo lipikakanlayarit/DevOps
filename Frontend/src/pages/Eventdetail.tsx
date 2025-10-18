@@ -16,9 +16,12 @@ type DateTimeEntry = {
     endTime: string;
 };
 
+/** แปลงวันที่/เวลา (local) -> ISO ที่ฝั่งเซิร์ฟเวอร์เก็บ (สมมติ +07:00) */
 function toUTC(dateStr: string, timeStr: string) {
     return new Date(`${dateStr}T${timeStr}:00+07:00`).toISOString();
 }
+
+/** แปลง ISO -> ส่วนประกอบสำหรับ input date/time (local) */
 function isoToLocalParts(iso?: string) {
     if (!iso) return { date: "", time: "" };
     try {
@@ -28,7 +31,9 @@ function isoToLocalParts(iso?: string) {
             date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
             time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
         };
-    } catch { return { date: "", time: "" }; }
+    } catch {
+        return { date: "", time: "" };
+    }
 }
 
 export default function EventDetails() {
@@ -55,6 +60,7 @@ export default function EventDetails() {
     const [imgError, setImgError] = useState<string | null>(null);
 
     const pickFile = () => fileInputRef.current?.click();
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -74,6 +80,7 @@ export default function EventDetails() {
         setCoverFile(file);
         setCoverPreview(URL.createObjectURL(file));
     };
+
     const clearImageLocalOnly = () => {
         setCoverFile(null);
         if (coverPreview) URL.revokeObjectURL(coverPreview);
@@ -87,7 +94,7 @@ export default function EventDetails() {
         try {
             await api.delete(`/events/${eventId}/cover`);
             clearImageLocalOnly();
-            // เคลียร์ preview ให้ไม่โชว์รูปเดิม
+            // ลบแคช preview จากเซิร์ฟเวอร์ (เผื่อก่อนหน้านี้ preload)
             setCoverPreview(null);
         } catch (e: any) {
             alert(e?.response?.data?.error || "ลบรูปไม่สำเร็จ");
@@ -101,19 +108,22 @@ export default function EventDetails() {
     // ---------- Prefill when edit ----------
     useEffect(() => {
         if (!isEdit) {
+            // ให้ผู้ใช้เห็นตัวอย่างเวลาเริ่ม/จบเริ่มต้น (อาทิตย์หน้า)
             const now = new Date();
             const next = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
             const pad = (n: number) => String(n).padStart(2, "0");
             const yyyy = next.getFullYear();
             const mm = pad(next.getMonth() + 1);
             const dd = pad(next.getDate());
-            setDateTimeEntries([{
-                id: 1,
-                startDate: `${yyyy}-${mm}-${dd}`,
-                startTime: "19:00",
-                endDate: `${yyyy}-${mm}-${dd}`,
-                endTime: "22:00",
-            }]);
+            setDateTimeEntries([
+                {
+                    id: 1,
+                    startDate: `${yyyy}-${mm}-${dd}`,
+                    startTime: "19:00",
+                    endDate: `${yyyy}-${mm}-${dd}`,
+                    endTime: "22:00",
+                },
+            ]);
             return;
         }
 
@@ -128,8 +138,10 @@ export default function EventDetails() {
                 const desc = data.description ?? "";
                 const catId = data.categoryId ?? data.category_id ?? "";
                 const venueName = data.venueName ?? data.venue_name ?? "";
-                const startIso = data.startDateTime ?? data.startDatetime ?? data.start_datetime;
-                const endIso = data.endDateTime ?? data.endDatetime ?? data.end_datetime;
+                const startIso =
+                    data.startDateTime ?? data.startDatetime ?? data.start_datetime;
+                const endIso =
+                    data.endDateTime ?? data.endDatetime ?? data.end_datetime;
 
                 const s = isoToLocalParts(startIso);
                 const e = isoToLocalParts(endIso);
@@ -138,10 +150,14 @@ export default function EventDetails() {
                     eventName: name,
                     description: desc,
                     category: catId ? String(catId) : "",
-                    locationType: venueName && venueName !== "To be announced" ? "venue" : "announced",
-                    locationName: venueName && venueName !== "To be announced" ? venueName : "",
+                    locationType:
+                        venueName && venueName !== "To be announced" ? "venue" : "announced",
+                    locationName:
+                        venueName && venueName !== "To be announced" ? venueName : "",
                 });
-                setDateTimeEntries([{ id: 1, startDate: s.date, startTime: s.time, endDate: e.date, endTime: e.time }]);
+                setDateTimeEntries([
+                    { id: 1, startDate: s.date, startTime: s.time, endDate: e.date, endTime: e.time },
+                ]);
 
                 // ✅ preload รูปจาก backend (cache-busting)
                 setCoverPreview(`/api/events/${eventId}/cover?ts=${Date.now()}`);
@@ -162,7 +178,10 @@ export default function EventDetails() {
                 setLoading(false);
             }
         })();
-        return () => { ignore = true; };
+
+        return () => {
+            ignore = true;
+        };
     }, [isEdit, eventId]);
 
     // ---------- Save ----------
@@ -183,19 +202,26 @@ export default function EventDetails() {
             description: eventData.description || "",
             startDateTime: toUTC(first.startDate, first.startTime),
             endDateTime: toUTC(first.endDate, first.endTime),
-            venueName: eventData.locationType === "venue" ? eventData.locationName.trim() : "To be announced",
+            venueName:
+                eventData.locationType === "venue"
+                    ? eventData.locationName.trim()
+                    : "To be announced",
             venueAddress: "",
             maxCapacity: null as number | null,
             categoryId: Number(eventData.category),
+            // ถ้าต้องการรองรับช่วงขายบัตรในอนาคต: salesStartDateTime, salesEndDateTime
         };
 
         setSaving(true);
         try {
             let newId = Number(eventId);
+
             if (isEdit) {
                 await api.put(`/events/${eventId}`, payload);
             } else {
-                const { data: res } = await api.post(`/events`, payload, { headers: { "Content-Type": "application/json" } });
+                const { data: res } = await api.post(`/events`, payload, {
+                    headers: { "Content-Type": "application/json" },
+                });
                 newId = res?.event_id ?? res?.id;
                 if (!newId) throw new Error("ไม่พบ event_id หรือ id ในผลลัพธ์ของ backend");
             }
@@ -211,13 +237,20 @@ export default function EventDetails() {
 
             const cached = { id: newId, ...payload, savedAt: new Date().toISOString() };
             localStorage.setItem(`event:${newId}`, JSON.stringify(cached));
-            localStorage.setItem(`event:last`, JSON.stringify({ id: newId, name: payload.eventName }));
+            localStorage.setItem(
+                `event:last`,
+                JSON.stringify({ id: newId, name: payload.eventName }),
+            );
 
             alert(isEdit ? "อัปเดตอีเวนต์สำเร็จ!" : "สร้างอีเวนต์สำเร็จ!");
             navigate(`/ticketdetail/${newId}`, { replace: true });
         } catch (err: any) {
             console.error(err);
-            alert(err?.response?.data?.error || err?.response?.data?.message || "บันทึกไม่สำเร็จ");
+            alert(
+                err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                "บันทึกไม่สำเร็จ",
+            );
         } finally {
             setSaving(false);
         }
@@ -234,21 +267,30 @@ export default function EventDetails() {
                             {isEdit ? "Edit Event" : "Event Details"}
                         </h1>
                         {isEdit && (
-                            <Link to={`/ticketdetail/${eventId}`} className="text-sm underline text-blue-600 hover:text-blue-800">
+                            <Link
+                                to={`/ticketdetail/${eventId}`}
+                                className="text-sm underline text-blue-600 hover:text-blue-800"
+                            >
                                 ไป Ticket Details ของอีเวนต์นี้
                             </Link>
                         )}
                     </div>
 
                     {loading ? (
-                        <div className="bg-white p-6 rounded-lg shadow-sm">กำลังโหลดข้อมูลอีเวนต์...</div>
+                        <div className="bg-white p-6 rounded-lg shadow-sm">
+                            กำลังโหลดข้อมูลอีเวนต์...
+                        </div>
                     ) : (
                         <>
                             {/* Event Details */}
                             <div className="bg-white rounded-lg p-6 shadow-sm">
                                 <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Event Details</h2>
-                                    <p className="text-sm text-gray-600">Add all of your event details.</p>
+                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">
+                                        Event Details
+                                    </h2>
+                                    <p className="text-sm text-gray-600">
+                                        Add all of your event details.
+                                    </p>
                                 </div>
 
                                 <div className="space-y-6">
@@ -260,7 +302,9 @@ export default function EventDetails() {
                                         <Input
                                             placeholder="Name of your project"
                                             value={eventData.eventName}
-                                            onChange={(e) => setEventData({ ...eventData, eventName: e.target.value })}
+                                            onChange={(e) =>
+                                                setEventData({ ...eventData, eventName: e.target.value })
+                                            }
                                         />
                                     </div>
 
@@ -272,7 +316,9 @@ export default function EventDetails() {
                                         <div className="relative">
                                             <select
                                                 value={eventData.category}
-                                                onChange={(e) => setEventData({ ...eventData, category: e.target.value })}
+                                                onChange={(e) =>
+                                                    setEventData({ ...eventData, category: e.target.value })
+                                                }
                                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white appearance-none pr-10"
                                                 required
                                             >
@@ -282,12 +328,24 @@ export default function EventDetails() {
                                                 <option value="3">Exhibition</option>
                                             </select>
                                             <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                <svg
+                                                    className="w-4 h-4 text-gray-400"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        strokeWidth={2}
+                                                        d="M19 9l-7 7-7-7"
+                                                    />
                                                 </svg>
                                             </div>
                                         </div>
-                                        <p className="text-xs text-gray-500">* ต้องเลือกให้ตรงกับ categories ในฐานข้อมูล</p>
+                                        <p className="text-xs text-gray-500">
+                                            * ต้องเลือกให้ตรงกับ categories ในฐานข้อมูล
+                                        </p>
                                     </div>
 
                                     {/* Upload Picture */}
@@ -298,7 +356,11 @@ export default function EventDetails() {
 
                                         {coverPreview && (
                                             <div className="relative w-full max-w-2xl">
-                                                <img src={coverPreview} alt="Preview" className="w-full aspect-[16/9] object-cover rounded-lg border" />
+                                                <img
+                                                    src={coverPreview}
+                                                    alt="Preview"
+                                                    className="w-full aspect-[16/9] object-cover rounded-lg border"
+                                                />
                                                 <button
                                                     type="button"
                                                     onClick={clearImageLocalOnly}
@@ -311,8 +373,18 @@ export default function EventDetails() {
                                             </div>
                                         )}
 
-                                        <div className={`border-2 border-dashed ${coverPreview ? "border-gray-200" : "border-gray-300"} rounded-lg p-6 text-center hover:border-gray-400 transition-colors`}>
-                                            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                                        <div
+                                            className={`border-2 border-dashed ${
+                                                coverPreview ? "border-gray-200" : "border-gray-300"
+                                            } rounded-lg p-6 text-center hover:border-gray-400 transition-colors`}
+                                        >
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleFileChange}
+                                                className="hidden"
+                                            />
                                             <button
                                                 type="button"
                                                 onClick={pickFile}
@@ -333,8 +405,12 @@ export default function EventDetails() {
                                                 </button>
                                             )}
 
-                                            <p className="text-xs text-gray-500 mt-2">PNG, JPG, JPEG, GIF up to 10MB</p>
-                                            {imgError && <p className="text-xs text-red-600 mt-1">{imgError}</p>}
+                                            <p className="text-xs text-gray-500 mt-2">
+                                                PNG, JPG, JPEG, GIF up to 10MB
+                                            </p>
+                                            {imgError && (
+                                                <p className="text-xs text-red-600 mt-1">{imgError}</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -343,16 +419,27 @@ export default function EventDetails() {
                             {/* Show Date and Time */}
                             <div className="bg-white rounded-lg p-6 shadow-sm">
                                 <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Show Date and Time</h2>
-                                    <p className="text-sm text-gray-600">Let attendee know your event's start and end time.</p>
+                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">
+                                        Show Date and Time
+                                    </h2>
+                                    <p className="text-sm text-gray-600">
+                                        Let attendee know your event's start and end time.
+                                    </p>
                                 </div>
 
                                 <div className="space-y-6">
                                     {dateTimeEntries.map((entry, index) => (
-                                        <div key={entry.id} className="relative space-y-4 p-4 border border-gray-200 rounded-lg">
+                                        <div
+                                            key={entry.id}
+                                            className="relative space-y-4 p-4 border border-gray-200 rounded-lg"
+                                        >
                                             <button
                                                 type="button"
-                                                onClick={() => setDateTimeEntries(prev => prev.filter(e => e.id !== entry.id))}
+                                                onClick={() =>
+                                                    setDateTimeEntries((prev) =>
+                                                        prev.filter((e) => e.id !== entry.id),
+                                                    )
+                                                }
                                                 className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
                                                 aria-label="Remove date-time block"
                                                 title="Remove"
@@ -362,7 +449,9 @@ export default function EventDetails() {
 
                                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Start Date</label>
+                                                    <label className="text-sm font-medium text-gray-700">
+                                                        Start Date
+                                                    </label>
                                                     <input
                                                         type="date"
                                                         value={entry.startDate}
@@ -376,7 +465,9 @@ export default function EventDetails() {
                                                 </div>
 
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Start Time</label>
+                                                    <label className="text-sm font-medium text-gray-700">
+                                                        Start Time
+                                                    </label>
                                                     <input
                                                         type="time"
                                                         step={300}
@@ -391,7 +482,9 @@ export default function EventDetails() {
                                                 </div>
 
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">End Date</label>
+                                                    <label className="text-sm font-medium text-gray-700">
+                                                        End Date
+                                                    </label>
                                                     <input
                                                         type="date"
                                                         value={entry.endDate}
@@ -405,7 +498,9 @@ export default function EventDetails() {
                                                 </div>
 
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">End Time</label>
+                                                    <label className="text-sm font-medium text-gray-700">
+                                                        End Time
+                                                    </label>
                                                     <input
                                                         type="time"
                                                         step={300}
@@ -424,9 +519,17 @@ export default function EventDetails() {
 
                                     <button
                                         onClick={() =>
-                                            setDateTimeEntries(prev => [
+                                            setDateTimeEntries((prev) => [
                                                 ...prev,
-                                                { id: prev.length ? Math.max(...prev.map(p => p.id)) + 1 : 1, startDate: "", startTime: "", endDate: "", endTime: "" },
+                                                {
+                                                    id: prev.length
+                                                        ? Math.max(...prev.map((p) => p.id)) + 1
+                                                        : 1,
+                                                    startDate: "",
+                                                    startTime: "",
+                                                    endDate: "",
+                                                    endTime: "",
+                                                },
                                             ])
                                         }
                                         className="flex items-center gap-2 text-[#09090B] border border-gray-300 rounded-full px-4 py-2 hover:bg-gray-50 transition-colors"
@@ -440,8 +543,12 @@ export default function EventDetails() {
                             {/* Location */}
                             <div className="bg-white rounded-lg p-6 shadow-sm">
                                 <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Location</h2>
-                                    <p className="text-sm text-gray-600">Let attendees know where your event is held.</p>
+                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">
+                                        Location
+                                    </h2>
+                                    <p className="text-sm text-gray-600">
+                                        Let attendees know where your event is held.
+                                    </p>
                                 </div>
 
                                 <div className="space-y-4">
@@ -452,12 +559,21 @@ export default function EventDetails() {
                                                 name="locationType"
                                                 value="venue"
                                                 checked={eventData.locationType === "venue"}
-                                                onChange={(e) => setEventData({ ...eventData, locationType: e.target.value as any })}
+                                                onChange={(e) =>
+                                                    setEventData({
+                                                        ...eventData,
+                                                        locationType: e.target.value as any,
+                                                    })
+                                                }
                                                 className="hidden"
                                             />
-                                            <span className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
-                                                eventData.locationType === "venue" ? "border-blue-600 text-blue-600 bg-blue-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                                            }`}>
+                                            <span
+                                                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
+                                                    eventData.locationType === "venue"
+                                                        ? "border-blue-600 text-blue-600 bg-blue-50"
+                                                        : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                                                }`}
+                                            >
                         <MapPin className="w-4 h-4" /> Venue
                       </span>
                                         </label>
@@ -467,12 +583,21 @@ export default function EventDetails() {
                                                 name="locationType"
                                                 value="announced"
                                                 checked={eventData.locationType === "announced"}
-                                                onChange={(e) => setEventData({ ...eventData, locationType: e.target.value as any })}
+                                                onChange={(e) =>
+                                                    setEventData({
+                                                        ...eventData,
+                                                        locationType: e.target.value as any,
+                                                    })
+                                                }
                                                 className="hidden"
                                             />
-                                            <span className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
-                                                eventData.locationType === "announced" ? "border-blue-600 text-blue-600 bg-blue-50" : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                                            }`}>
+                                            <span
+                                                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
+                                                    eventData.locationType === "announced"
+                                                        ? "border-blue-600 text-blue-600 bg-blue-50"
+                                                        : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                                                }`}
+                                            >
                         <Clock className="w-4 h-4" /> To be announced
                       </span>
                                         </label>
@@ -483,13 +608,25 @@ export default function EventDetails() {
                                             Location name <span className="text-red-500 ml-1">*</span>
                                         </label>
                                         <Input
-                                            placeholder={eventData.locationType === "venue" ? "Main Hall / Auditorium A" : "To be announced (auto)"}
-                                            value={eventData.locationType === "venue" ? eventData.locationName : "To be announced"}
-                                            onChange={(e) => setEventData({ ...eventData, locationName: e.target.value })}
+                                            placeholder={
+                                                eventData.locationType === "venue"
+                                                    ? "Main Hall / Auditorium A"
+                                                    : "To be announced (auto)"
+                                            }
+                                            value={
+                                                eventData.locationType === "venue"
+                                                    ? eventData.locationName
+                                                    : "To be announced"
+                                            }
+                                            onChange={(e) =>
+                                                setEventData({ ...eventData, locationName: e.target.value })
+                                            }
                                             disabled={eventData.locationType !== "venue"}
                                         />
                                         {eventData.locationType !== "venue" && (
-                                            <p className="text-xs text-gray-500">ระบบจะบันทึกเป็น “To be announced” อัตโนมัติ</p>
+                                            <p className="text-xs text-gray-500">
+                                                ระบบจะบันทึกเป็น “To be announced” อัตโนมัติ
+                                            </p>
                                         )}
                                     </div>
                                 </div>
@@ -498,12 +635,16 @@ export default function EventDetails() {
                             {/* Description */}
                             <div className="bg-white rounded-lg p-6 shadow-sm">
                                 <div className="mb-6">
-                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">Description</h2>
+                                    <h2 className="text-lg font-semibold text-gray-900 mb-2">
+                                        Description
+                                    </h2>
                                 </div>
                                 <textarea
                                     placeholder="Add more details about your event."
                                     value={eventData.description}
-                                    onChange={(e) => setEventData({ ...eventData, description: e.target.value })}
+                                    onChange={(e) =>
+                                        setEventData({ ...eventData, description: e.target.value })
+                                    }
                                     rows={6}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                                 />
@@ -511,7 +652,10 @@ export default function EventDetails() {
 
                             {/* Actions */}
                             <div className="flex justify-end gap-3">
-                                <Link to="/organizationmnge" className="rounded-full bg-[#FA3A2B] px-5 py-3 text-white font-medium shadow-sm hover:bg-[#e23325] transition-colors">
+                                <Link
+                                    to="/organizationmnge"
+                                    className="rounded-full bg-[#FA3A2B] px-5 py-3 text-white font-medium shadow-sm hover:bg-[#e23325] transition-colors"
+                                >
                                     Cancel
                                 </Link>
                                 <button

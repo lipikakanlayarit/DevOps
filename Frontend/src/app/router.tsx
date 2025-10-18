@@ -1,7 +1,8 @@
+// src/router.tsx
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
-// Public pages
+// ---------- Public Pages ----------
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import OrganizerLogin from "@/pages/OrganizerLogin";
@@ -11,7 +12,7 @@ import Component from "@/pages/Component";
 import Forbidden from "@/pages/Forbidden";
 import Landding from "@/pages/Landding";
 
-// Protected pages
+// ---------- Protected Pages ----------
 import Profile from "@/pages/Profile";
 import Eventselect from "@/pages/Eventselect";
 import Eventdetail from "@/pages/Eventdetail";
@@ -19,12 +20,15 @@ import Ticketdetail from "@/pages/Ticketdetail";
 import EventDashboard from "@/pages/Eventdashboard";
 import Organizationmnge from "@/pages/Organizationmnge";
 
-// Admin pages
+// ---------- Payment Page (NEW) ----------
+import Payment from "@/pages/payment"; // <<-- เพิ่ม import
+
+// ---------- Admin Pages ----------
 import Admin from "@/pages/admin";
 import AdminEventdetail from "@/pages/admin-eventdetail";
 import EventPermission from "@/pages/admin-permission";
 
-// Guards
+// ---------- Guards ----------
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
@@ -33,16 +37,20 @@ export const router = createBrowserRouter([
         path: "/",
         element: <RootLayout />,
         children: [
-            // ---------- Public ----------
+            /* ===========================
+               Public Pages
+               =========================== */
             { index: true, element: <Landding /> },
             { path: "home", element: <Home /> },
             { path: "login", element: <Login /> },
-            { path: "OrganizerLogin", element: <OrganizerLogin /> },
+            { path: "organizerlogin", element: <OrganizerLogin /> },
             { path: "signin", element: <SignIn /> },
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
 
-            // ---------- Auth required ----------
+            /* ===========================
+               Auth Required
+               =========================== */
             {
                 element: (
                     <RequireAuth>
@@ -51,27 +59,33 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { path: "profile", element: <Profile /> },
-                    { path: "eventselect", element: <Eventselect /> },
 
-                    // Create Event
+                    // ✅ Event select (ซื้อบัตร/เลือกที่นั่ง)
+                    { path: "eventselect", element: <Eventselect /> },
+                    { path: "eventselect/:eventId", element: <Eventselect /> },
+
+                    // ✅ Create Event
                     { path: "eventdetail", element: <Eventdetail /> },
 
-                    // ✅ Edit Event (prefill from id)
+                    // ✅ Edit Event
                     { path: "eventdetail/:eventId", element: <Eventdetail /> },
 
-                    // ✅ Ticket Details (prefill & update)
+                    // ✅ Ticket Detail (สำหรับ setup ticket)
+                    { path: "ticketdetail", element: <Ticketdetail /> },
                     { path: "ticketdetail/:eventId", element: <Ticketdetail /> },
 
-                    // Fallback (เดิม ถ้าเข้าโดยยังไม่มี id)
-                    { path: "ticketdetail", element: <Ticketdetail /> },
-
-                    // Event dashboard (ถ้าใช้งาน)
-                    { path: "eventdashboard/:eventId", element: <EventDashboard /> },
+                    // ✅ Dashboard per event
                     { path: "eventdashboard", element: <EventDashboard /> },
+                    { path: "eventdashboard/:eventId", element: <EventDashboard /> },
+
+                    // ✅ Payment (NEW)
+                    { path: "payment/:reservedId", element: <Payment /> }, // <<-- เพิ่มเส้นทาง
                 ],
             },
 
-            // ---------- Organizer/ Admin ----------
+            /* ===========================
+               Organizer / Admin
+               =========================== */
             {
                 path: "organizationmnge",
                 element: (
@@ -81,7 +95,9 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ---------- Admin ----------
+            /* ===========================
+               Admin Section
+               =========================== */
             {
                 path: "admin",
                 element: (
@@ -98,7 +114,9 @@ export const router = createBrowserRouter([
                 ],
             },
 
-            // ---------- 404 ----------
+            /* ===========================
+               Fallback (404)
+               =========================== */
             { path: "*", element: <NotFound /> },
         ],
     },
