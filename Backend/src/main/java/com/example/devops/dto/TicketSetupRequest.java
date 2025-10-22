@@ -1,47 +1,51 @@
 package com.example.devops.dto;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.Instant;
 import java.util.List;
 
-@Getter
-@Setter
+/**
+ * Payload ที่ FE ส่งมาเพื่อ setup/update ผังที่นั่งและรายละเอียดตั๋วของอีเวนต์
+ * โครงสร้างให้สอดคล้องกับ keys ที่ getSetup() ส่งกลับ (seatRows, seatColumns, zones, ฯลฯ)
+ */
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class TicketSetupRequest {
 
-    // จำนวนแถว (A..), จำนวนคอลัมน์ (1..)
-    private int seatRows;     // ex. 8
-    private int seatColumns;  // ex. 20
+    /** จำนวนแถว (ค่า default รวมๆ สำหรับสร้าง seat_rows/labels) */
+    private Integer seatRows;
 
-    // อนุญาตหลายโซน (รองรับปุ่ม “+ Add Zone”)
-    private List<ZoneConfig> zones; // [{code:"VIP", name:"VIP", rowStart:1, rowEnd:2, price:5000}, ...]
+    /** จำนวนคอลัมน์ (ค่า default รวมๆ สำหรับสร้าง seats 1..N) */
+    private Integer seatColumns;
 
-    // (ออปชัน) รูปแบบเก่า: zone/price เดียว
-    private String zone;
-    private Double price;
+    /** รายการโซนที่ต้องการกำหนดราคา / mapping ticket type (ถ้าไม่ได้ส่ง id จะสร้างโซนใหม่) */
+    private List<ZoneDTO> zones;
 
-    // ---- Advanced Setting (global) ----
-    private Integer minPerOrder;   // Minimum ticket per order
-    private Integer maxPerOrder;   // Maximum ticket per order
-    private Boolean active;        // true = Available, false = Unavailable
+    /** ค่ากลางสำหรับประเภทตั๋ว (จะ apply ให้ ticket_types ทั้งอีเวนต์) */
+    private Integer minPerOrder;           // min ต่อคำสั่งซื้อ
+    private Integer maxPerOrder;           // max ต่อคำสั่งซื้อ
+    private Boolean active;                // สถานะเปิดขาย/ปิดขาย
 
-    // ---- Sales Period (global) ----
-    private Instant salesStartDatetime; // ใช้กับ ticket_types.sale_start_datetime
-    private Instant salesEndDatetime;   // ใช้กับ ticket_types.sale_end_datetime
+    /** sales window (ค่ากลาง) – จะอัปเดตทั้ง ticket_types และซ้ำลง events_nam */
+    private Instant salesStartDatetime;
+    private Instant salesEndDatetime;
 
-    @Getter @Setter
-    @NoArgsConstructor @AllArgsConstructor
-    public static class ZoneConfig {
-        private String code;       // "VIP" | "STANDARD"
-        private String name;       // แสดงผล
-        private Integer rowStart;  // 1-indexed เช่น VIP ครอบคลุมแถว 1..2 (A..B)
-        private Integer rowEnd;
-        private Double price;
-        private Long ticketTypeId; // ถ้ามีเชื่อม ticket_types เดิม
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ZoneDTO {
+        private Long id;               // zone_id (ถ้ามีจะ update, ถ้าไม่มีจะสร้าง)
+        private String code;           // เช่น "VIP" / "REGULAR" / "STANDING" (ใช้เป็น description)
+        private String name;           // ชื่อโซน เช่น "Zone A"
+        private Integer price;         // ราคาในโซน (int บาท) – จะ sync ไป ticket_types
+        private Long ticketTypeId;     // ถ้ามีจะ map โซน→ticket_types ตามนี้
+
+        /** ถ้า false/ไม่ได้ส่ง และ code != STANDING -> จะสร้าง seat rows/columns ให้ตามค่ากลาง */
+        private Boolean hasSeats;      // true = ไม่มีที่นั่งแบบ fixed (standing)
+        private Integer sortOrder;     // ลำดับแสดงผล (optional)
     }
 }

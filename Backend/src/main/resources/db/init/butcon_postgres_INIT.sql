@@ -4,9 +4,7 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- ===================
--- USERS
--- ===================
+-- =================== USERS ===================
 CREATE TABLE IF NOT EXISTS users (
                                      user_id SERIAL PRIMARY KEY,
                                      email VARCHAR(100) UNIQUE NOT NULL,
@@ -19,9 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     roles VARCHAR(20) NOT NULL
     );
 
--- ===================
--- ORGANIZERS
--- ===================
+-- =================== ORGANIZERS ===================
 CREATE TABLE IF NOT EXISTS organizers (
                                           organizer_id SERIAL PRIMARY KEY,
                                           email VARCHAR(100) UNIQUE NOT NULL,
@@ -36,9 +32,7 @@ CREATE TABLE IF NOT EXISTS organizers (
     verification_status VARCHAR(20)
     );
 
--- ===================
--- ADMIN_USERS
--- ===================
+-- =================== ADMIN_USERS ===================
 CREATE TABLE IF NOT EXISTS admin_users (
                                            admin_id SERIAL PRIMARY KEY,
                                            email VARCHAR(100) UNIQUE NOT NULL,
@@ -50,18 +44,14 @@ CREATE TABLE IF NOT EXISTS admin_users (
     is_active BOOLEAN DEFAULT TRUE
     );
 
--- ===================
--- CATEGORIES
--- ===================
+-- =================== CATEGORIES ===================
 CREATE TABLE IF NOT EXISTS categories (
                                           category_id SERIAL PRIMARY KEY,
                                           category_name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT
     );
 
--- ===================
--- EVENTS
--- ===================
+-- =================== EVENTS ===================
 CREATE TABLE IF NOT EXISTS events_nam (
                                           event_id SERIAL PRIMARY KEY,
                                           organizer_id INT REFERENCES organizers(organizer_id) ON DELETE CASCADE,
@@ -73,26 +63,22 @@ CREATE TABLE IF NOT EXISTS events_nam (
     venue_name VARCHAR(200),
     venue_address TEXT,
     max_capacity INT,
-    status VARCHAR(50),               -- ตั้ง DEFAULT ด้านล่าง
--- cover
+    status VARCHAR(50),
     cover_image BYTEA,
     cover_image_type VARCHAR(100),
     cover_updated_at TIMESTAMPTZ
     );
 
--- ตั้งค่า DEFAULT ให้ status = 'PENDING' + normalize ค่าที่ว่าง
-DO $$
+DO $$ BEGIN
 BEGIN
 EXECUTE 'ALTER TABLE events_nam ALTER COLUMN status SET DEFAULT ''PENDING''';
-EXCEPTION WHEN others THEN
-  NULL;
-END$$;
+EXCEPTION WHEN others THEN NULL;
+END;
+END $$;
 
 UPDATE events_nam SET status = 'PENDING' WHERE status IS NULL;
 
--- อนุญาตค่าที่ใช้จริงในโปรเจกต์ (รวม PUBLISHED เผื่ออนาคต)
-DO $$
-BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.table_constraints
     WHERE table_name='events_nam' AND constraint_name='events_status_check'
@@ -101,16 +87,14 @@ ALTER TABLE events_nam
     ADD CONSTRAINT events_status_check
         CHECK (status IN ('PENDING','APPROVED','REJECTED','PUBLISHED'));
 END IF;
-END$$;
+END $$;
 
--- cover fields (idempotent)
 ALTER TABLE events_nam
-    ADD COLUMN IF NOT EXISTS cover_image BYTEA,
-    ADD COLUMN IF NOT EXISTS cover_image_type VARCHAR(100),
-    ADD COLUMN IF NOT EXISTS cover_updated_at TIMESTAMPTZ;
-
--- generated columns
-ALTER TABLE events_nam
+    ADD COLUMN IF NOT EXISTS sales_start_datetime TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS sales_end_datetime   TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS review TEXT,
+    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS reviewed_by INT REFERENCES admin_users(admin_id),
     ADD COLUMN IF NOT EXISTS cover_image_bytes INT
     GENERATED ALWAYS AS (octet_length(cover_image)) STORED,
     ADD COLUMN IF NOT EXISTS cover_image_sha1 TEXT
@@ -120,24 +104,10 @@ ALTER TABLE events_nam
     END
     ) STORED;
 
--- ===== NEW: columns for admin review =====
-ALTER TABLE events_nam
-    ADD COLUMN IF NOT EXISTS review TEXT,
-    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS reviewed_by INT REFERENCES admin_users(admin_id);
-
--- ===== NEW: Sales period on events (ใช้กับ Landing Page) =====
-ALTER TABLE events_nam
-    ADD COLUMN IF NOT EXISTS sales_start_datetime TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS sales_end_datetime   TIMESTAMPTZ;
-
--- ===== Indexes =====
 CREATE INDEX IF NOT EXISTS idx_events_status ON events_nam(status);
 CREATE INDEX IF NOT EXISTS idx_events_sales_window ON events_nam (sales_start_datetime, sales_end_datetime);
 
--- ===================
--- TICKET TYPES
--- ===================
+-- =================== TICKET TYPES ===================
 CREATE TABLE IF NOT EXISTS ticket_types (
                                             ticket_type_id SERIAL PRIMARY KEY,
                                             event_id INT REFERENCES events_nam(event_id) ON DELETE CASCADE,
@@ -167,9 +137,7 @@ SET created_at = COALESCE(created_at, NOW()),
     min_per_order = COALESCE(min_per_order, 1),
     max_per_order = COALESCE(max_per_order, 1);
 
--- ===================
--- RESERVED / PAYMENTS
--- ===================
+-- =================== RESERVED / PAYMENTS ===================
 CREATE TABLE IF NOT EXISTS reserved (
                                         reserved_id SERIAL PRIMARY KEY,
                                         user_id INT REFERENCES users(user_id) ON DELETE CASCADE,
@@ -192,9 +160,7 @@ CREATE TABLE IF NOT EXISTS payments (
     gateway_response TEXT
     );
 
--- ===================
--- SESSIONS
--- ===================
+-- =================== SESSIONS ===================
 CREATE TABLE IF NOT EXISTS organizer_sessions (
                                                   session_id VARCHAR(100) PRIMARY KEY,
     organizer_id INT REFERENCES organizers(organizer_id) ON DELETE CASCADE,
@@ -215,9 +181,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     user_agent TEXT
     );
 
--- ===================
--- SEATING STRUCTURE
--- ===================
+-- =================== SEATING STRUCTURE ===================
 CREATE TABLE IF NOT EXISTS seat_zones (
                                           zone_id SERIAL PRIMARY KEY,
                                           event_id INT REFERENCES events_nam(event_id) ON DELETE CASCADE,
@@ -259,11 +223,15 @@ CREATE TABLE IF NOT EXISTS reserved_seats (
     seat_id INT REFERENCES seats(seat_id) ON DELETE CASCADE
     );
 
+-- ✅ MATCH Java Entity: seat_locks
 CREATE TABLE IF NOT EXISTS seat_locks (
-                                          lock_id SERIAL PRIMARY KEY,
-                                          seat_id INT REFERENCES seats(seat_id) ON DELETE CASCADE,
-    locked_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ
+                                          lock_id    SERIAL PRIMARY KEY,
+                                          seat_id    INT REFERENCES seats(seat_id) ON DELETE CASCADE,
+    event_id   INT REFERENCES events_nam(event_id) ON DELETE CASCADE,
+    user_id    INT REFERENCES users(user_id) ON DELETE SET NULL,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,
+    status     VARCHAR(20)   -- eg. LOCKED / RELEASED
     );
 
 CREATE TABLE IF NOT EXISTS zone_ticket_types (
@@ -272,10 +240,9 @@ CREATE TABLE IF NOT EXISTS zone_ticket_types (
     ticket_type_id INT REFERENCES ticket_types(ticket_type_id) ON DELETE CASCADE
     );
 
--- ===== Trigger function (shared) =====
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'tg_set_updated_at') THEN
+-- =================== TRIGGERS ===================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='tg_set_updated_at') THEN
     CREATE OR REPLACE FUNCTION tg_set_updated_at()
     RETURNS trigger AS $f$
 BEGIN
@@ -284,56 +251,48 @@ RETURN NEW;
 END;
     $f$ LANGUAGE plpgsql;
 END IF;
-END$$;
+END $$;
 
--- ===== Triggers =====
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ticket_types_set_updated_at') THEN
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_ticket_types_set_updated_at') THEN
 CREATE TRIGGER trg_ticket_types_set_updated_at
     BEFORE UPDATE ON ticket_types
     FOR EACH ROW EXECUTE FUNCTION tg_set_updated_at();
 END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_seat_zones_set_updated_at') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_seat_zones_set_updated_at') THEN
 CREATE TRIGGER trg_seat_zones_set_updated_at
     BEFORE UPDATE ON seat_zones
     FOR EACH ROW EXECUTE FUNCTION tg_set_updated_at();
 END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_seat_rows_set_updated_at') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_seat_rows_set_updated_at') THEN
 CREATE TRIGGER trg_seat_rows_set_updated_at
     BEFORE UPDATE ON seat_rows
     FOR EACH ROW EXECUTE FUNCTION tg_set_updated_at();
 END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_seats_set_updated_at') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_seats_set_updated_at') THEN
 CREATE TRIGGER trg_seats_set_updated_at
     BEFORE UPDATE ON seats
     FOR EACH ROW EXECUTE FUNCTION tg_set_updated_at();
 END IF;
-END$$;
+END $$;
 
--- ===== Indexes =====
 CREATE INDEX IF NOT EXISTS idx_seat_zones_event_id ON seat_zones(event_id);
 CREATE INDEX IF NOT EXISTS idx_seat_rows_zone_id   ON seat_rows(zone_id);
 CREATE INDEX IF NOT EXISTS idx_seats_row_id        ON seats(row_id);
 
--- =========================================================
---  VIEWS for Landing Page (idempotent)
--- =========================================================
-
--- A) อีเวนต์ที่ "กำลังขายตอนนี้"
+-- =================== VIEWS (Landing) ===================
 CREATE OR REPLACE VIEW public_events_on_sale AS
 SELECT e.*
 FROM events_nam e
 WHERE UPPER(e.status) = 'APPROVED'
   AND (
-    (
-        e.sales_start_datetime IS NOT NULL
-            AND e.sales_end_datetime IS NOT NULL
-            AND e.sales_start_datetime <= NOW()
-            AND e.sales_end_datetime  >= NOW()
+    ( e.sales_start_datetime IS NOT NULL
+        AND e.sales_end_datetime IS NOT NULL
+        AND e.sales_start_datetime <= NOW()
+        AND e.sales_end_datetime   >= NOW()
         )
         OR EXISTS (
         SELECT 1
@@ -348,7 +307,6 @@ WHERE UPPER(e.status) = 'APPROVED'
 
 GRANT SELECT ON public_events_on_sale TO PUBLIC;
 
--- B) อีเวนต์ที่ "กำลังจะเริ่มขาย"
 CREATE OR REPLACE VIEW public_events_upcoming AS
 WITH tt_min AS (
   SELECT event_id, MIN(sale_start_datetime) AS min_sale_start
@@ -368,14 +326,14 @@ ORDER BY COALESCE(e.sales_start_datetime, m.min_sale_start), e.event_id;
 
 GRANT SELECT ON public_events_upcoming TO PUBLIC;
 
--- C) VIEW อ่านง่าย (มีคอลัมน์ช่วงขาย) — ใช้ DROP + CREATE กัน column rename error
+-- ✅ pretty view
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.views
-    WHERE table_schema = 'public' AND table_name = 'events_nam_pretty'
+    WHERE table_schema='public' AND table_name='events_nam_pretty'
   ) THEN
-DROP VIEW public.events_nam_pretty;
+    EXECUTE 'DROP VIEW public.events_nam_pretty';
 END IF;
 END$$;
 
@@ -402,24 +360,20 @@ FROM events_nam;
 
 GRANT SELECT ON public.events_nam_pretty TO PUBLIC;
 
--- ===================
--- SEED DATA
--- ===================
-INSERT INTO users (email, username, password_hash, first_name, last_name, phone_number, id_card_passport, roles)
-VALUES
-    ('alice@example.com','alice123', crypt('password123', gen_salt('bf', 10)),'Alice','Wong','0812345678','1234567890123','USER'),
-    ('admin@example.com','admin', crypt('password123', gen_salt('bf', 10)),'Admin','User','0812345678','1234567890123','ADMIN'),
-    ('organizer@example.com','organizer', crypt('password123', gen_salt('bf', 10)),'Organizer','User','0822222222','1234567890124','ORGANIZER')
+-- =================== SEED DATA ===================
+INSERT INTO users (email, username, password_hash, first_name, last_name, phone_number, id_card_passport, roles) VALUES
+                                                                                                                     ('alice@example.com','alice123',   crypt('password123', gen_salt('bf', 10)),'Alice','Wong','0812345678','1234567890123','USER'),
+                                                                                                                     ('admin@example.com','admin',      crypt('password123', gen_salt('bf', 10)),'Admin','User','0812345678','1234567890123','ADMIN'),
+                                                                                                                     ('organizer@example.com','organizer', crypt('password123', gen_salt('bf', 10)),'Organizer','User','0822222222','1234567890124','ORGANIZER')
     ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO organizers (email, username, password_hash, first_name, last_name, phone_number, address, company_name, tax_id, verification_status)
-VALUES
-    ('org1@butcon.com','organizer',  crypt('password123', gen_salt('bf', 10)), 'Nina','Lee','0834567890','Bangkok, TH','EventPro Ltd.','TAX123456','VERIFIED'),
-    ('org2@butcon.com','organizer2', crypt('password123', gen_salt('bf', 10)), 'John','Chan','0845678901','Chiang Mai, TH','ConcertHub Co.','TAX654321','VERIFIED')
+INSERT INTO organizers (email, username, password_hash, first_name, last_name, phone_number, address, company_name, tax_id, verification_status) VALUES
+                                                                                                                                                     ('org1@butcon.com','organizer',  crypt('password123', gen_salt('bf', 10)), 'Nina','Lee','0834567890','Bangkok, TH','EventPro Ltd.','TAX123456','VERIFIED'),
+                                                                                                                                                     ('org2@butcon.com','organizer2', crypt('password123', gen_salt('bf', 10)), 'John','Chan','0845678901','Chiang Mai, TH','ConcertHub Co.','TAX654321','VERIFIED')
     ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO admin_users (email, username, password_hash, first_name, last_name, role_name, is_active)
-VALUES ('admin@butcon.com','admin', crypt('password123', gen_salt('bf', 10)), 'System','Admin','SUPERADMIN', TRUE)
+INSERT INTO admin_users (email, username, password_hash, first_name, last_name, role_name, is_active) VALUES
+    ('admin@butcon.com','admin', crypt('password123', gen_salt('bf', 10)), 'System','Admin','SUPERADMIN', TRUE)
     ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO categories (category_name, description) VALUES
@@ -428,75 +382,270 @@ INSERT INTO categories (category_name, description) VALUES
                                                         ('Exhibition','Outdoor and cultural Exhibition')
     ON CONFLICT DO NOTHING;
 
--- Seed events → ตั้งต้น PENDING
-INSERT INTO events_nam (
-    organizer_id, event_name, description, category_id,
-    start_datetime, end_datetime, venue_name, venue_address,
-    max_capacity, status
-) VALUES
-      (1,'BUTCON Music Fest 2025','Annual outdoor music festival',1,
-       TIMESTAMPTZ '2025-11-01 18:00:00+07', TIMESTAMPTZ '2025-11-01 23:59:59+07',
-       'Central Park','Bangkok, Thailand',5000,'PENDING'),
-      (2,'Startup Seminar 2025','Seminar for startups and investors',2,
-       TIMESTAMPTZ '2025-10-15 09:00:00+07', TIMESTAMPTZ '2025-10-15 17:00:00+07',
-       'Chiang Mai Conference Center','Chiang Mai, Thailand',300,'PENDING')
+-- =================== Seed events (PENDING) ===================
+-- BUTCON Music Fest 2025 → Show: 20 Nov 2025 18:00–23:59 (+07)
+INSERT INTO events_nam (organizer_id, event_name, description, category_id,
+                        start_datetime, end_datetime, venue_name, venue_address,
+                        max_capacity, status)
+SELECT o.organizer_id, 'BUTCON Music Fest 2025','Annual outdoor music festival',1,
+       TIMESTAMPTZ '2025-11-20 18:00:00+07', TIMESTAMPTZ '2025-11-20 23:59:59+07',
+    'Central Park','Bangkok, Thailand',5000,'PENDING'
+FROM organizers o WHERE o.email='org1@butcon.com'
     ON CONFLICT DO NOTHING;
 
-INSERT INTO ticket_types (
-    event_id, type_name, description, price, quantity_available, quantity_sold,
-    sale_start_datetime, sale_end_datetime, is_active, min_per_order, max_per_order
-) VALUES
-      (1,'General Admission','Standard entry ticket',1500.00,3000,100,
-       TIMESTAMPTZ '2025-09-01 10:00:00+07', TIMESTAMPTZ '2025-11-01 18:00:00+07', TRUE, 1, 10),
-      (1,'VIP','VIP access with perks',5000.00,500,50,
-       TIMESTAMPTZ '2025-09-01 10:00:00+07', TIMESTAMPTZ '2025-11-01 18:00:00+07', TRUE, 1, 5),
-      (2,'Seminar Pass','Full-day seminar pass',1000.00,200,20,
-       TIMESTAMPTZ '2025-08-15 09:00:00+07', TIMESTAMPTZ '2025-10-15 09:00:00+07', TRUE, 1, 4)
+-- Startup Seminar 2025 → Show: 20 Dec 2025 18:00–23:59 (+07)
+INSERT INTO events_nam (organizer_id, event_name, description, category_id,
+                        start_datetime, end_datetime, venue_name, venue_address,
+                        max_capacity, status)
+SELECT o.organizer_id, 'Startup Seminar 2025','Seminar for startups and investors',2,
+       TIMESTAMPTZ '2025-12-20 18:00:00+07', TIMESTAMPTZ '2025-12-20 23:59:59+07',
+    'Chiang Mai Conference Center','Chiang Mai, Thailand',300,'PENDING'
+FROM organizers o WHERE o.email='org2@butcon.com'
     ON CONFLICT DO NOTHING;
 
-INSERT INTO reserved (user_id, event_id, ticket_type_id, quantity, total_amount, payment_status, confirmation_code, notes)
-VALUES
-    (1,1,1,2,3000.00,'PAID','CONF123ABC','Excited to join!'),
-    (2,1,2,1,5000.00,'PENDING','CONF456DEF','Need invoice'),
-    (1,2,3,1,1000.00,'PAID','CONF789GHI','Business trip covered')
+-- =================== Base ticket types (Sale Opening Date = 22 Oct 2025, 12:00 +07) ===================
+-- BUTCON Music Fest 2025 (ขายถึงเวลาเริ่มงาน 20 Nov 2025 18:00)
+INSERT INTO ticket_types (event_id, type_name, description, price, quantity_available, quantity_sold,
+                          sale_start_datetime, sale_end_datetime, is_active, min_per_order, max_per_order)
+SELECT e.event_id, 'General Admission','Standard entry ticket',1500.00,3000,100,
+       TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-11-20 18:00:00+07', TRUE, 1, 10
+FROM events_nam e WHERE e.event_name='BUTCON Music Fest 2025'
     ON CONFLICT DO NOTHING;
 
-INSERT INTO payments (reserved_id, amount, payment_method, transaction_id, payment_status, gateway_response)
-VALUES
-    (1,3000.00,'Credit Card','TXN123','SUCCESS','Approved by gateway'),
-    (2,5000.00,'Bank Transfer','TXN456','PENDING',NULL),
-    (3,1000.00,'E-Wallet','TXN789','SUCCESS','Wallet confirmed')
+INSERT INTO ticket_types (event_id, type_name, description, price, quantity_available, quantity_sold,
+                          sale_start_datetime, sale_end_datetime, is_active, min_per_order, max_per_order)
+SELECT e.event_id, 'VIP','VIP access with perks',5000.00,500,50,
+       TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-11-20 18:00:00+07', TRUE, 1, 5
+FROM events_nam e WHERE e.event_name='BUTCON Music Fest 2025'
     ON CONFLICT DO NOTHING;
 
-INSERT INTO organizer_sessions (session_id, organizer_id, created_at, expires_at, is_active, ip_address, user_agent)
-VALUES ('sess_org1',1,NOW(),NOW() + INTERVAL '1 day',TRUE,'192.168.1.10','Mozilla/5.0')
+-- Startup Seminar 2025 (ขายถึงเวลาเริ่มงาน 20 Dec 2025 18:00)
+INSERT INTO ticket_types (event_id, type_name, description, price, quantity_available, quantity_sold,
+                          sale_start_datetime, sale_end_datetime, is_active, min_per_order, max_per_order)
+SELECT e.event_id, 'Seminar Pass','Full-day seminar pass',1000.00,200,20,
+       TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-12-20 18:00:00+07', TRUE, 1, 4
+FROM events_nam e WHERE e.event_name='Startup Seminar 2025'
     ON CONFLICT DO NOTHING;
 
-INSERT INTO user_sessions (session_id, user_id, created_at, expires_at, is_active, ip_address, user_agent)
-VALUES
-    ('sess_user1',1,NOW(),NOW() + INTERVAL '1 day',TRUE,'192.168.1.11','Mozilla/5.0'),
-    ('sess_user2',2,NOW(),NOW() + INTERVAL '1 day',TRUE,'192.168.1.12','Chrome/120.0')
-    ON CONFLICT DO NOTHING;
+-- (ออปชัน) เซ็ต sales window ระดับ event ให้ตรงกับ requirement
+UPDATE events_nam
+SET sales_start_datetime = TIMESTAMPTZ '2025-10-22 12:00:00+07',
+    sales_end_datetime   = CASE
+      WHEN event_name='BUTCON Music Fest 2025'  THEN TIMESTAMPTZ '2025-11-20 18:00:00+07'
+      WHEN event_name='Startup Seminar 2025'    THEN TIMESTAMPTZ '2025-12-20 18:00:00+07'
+      ELSE sales_end_datetime
+END
+WHERE event_name IN ('BUTCON Music Fest 2025','Startup Seminar 2025');
 
--- ===================
--- SEED TWEAKS FOR LANDING PAGE (make sure we have onSale & upcoming)
--- ===================
--- 1) BUTCON Music Fest 2025 → APPROVED + onSale now→30d (ไม่ทับถ้าเคยอนุมัติแล้ว)
+-- =================== Approve known seeds & give sales window ===================
 UPDATE events_nam
 SET status = 'APPROVED',
     sales_start_datetime = COALESCE(sales_start_datetime, NOW() - INTERVAL '1 day'),
     sales_end_datetime   = COALESCE(sales_end_datetime,   NOW() + INTERVAL '30 days')
-WHERE event_name = 'BUTCON Music Fest 2025'
-  AND (status IS NULL OR UPPER(status) = 'PENDING');
+WHERE event_name IN ('BUTCON Music Fest 2025','Startup Seminar 2025')
+  AND (status IS NULL OR UPPER(status)='PENDING');
 
--- 2) Startup Seminar 2025 → APPROVED + upcoming in 2d (ไม่ทับถ้าเคยอนุมัติแล้ว)
+-- Auto-approve & backfill the latest event of @organizer
+DO $$ DECLARE v_ev BIGINT; BEGIN
+SELECT e.event_id INTO v_ev
+FROM events_nam e JOIN organizers o ON o.organizer_id=e.organizer_id
+WHERE o.username='organizer'
+ORDER BY e.event_id DESC LIMIT 1;
+
+IF v_ev IS NOT NULL THEN
 UPDATE events_nam
-SET status = 'APPROVED',
-    sales_start_datetime = COALESCE(sales_start_datetime, NOW() + INTERVAL '2 days'),
-    sales_end_datetime   = COALESCE(sales_end_datetime,   NOW() + INTERVAL '40 days')
-WHERE event_name = 'Startup Seminar 2025'
-  AND (status IS NULL OR UPPER(status) = 'PENDING');
+SET status='APPROVED',
+    sales_start_datetime=COALESCE(sales_start_datetime, NOW()-INTERVAL '1 day'),
+    sales_end_datetime  =COALESCE(sales_end_datetime,   NOW()+INTERVAL '30 days')
+WHERE event_id=v_ev;
 
--- =========================================================
--- End of file
--- =========================================================
+UPDATE ticket_types
+SET is_active = COALESCE(is_active, TRUE),
+    min_per_order = COALESCE(min_per_order, 1),
+    max_per_order = COALESCE(max_per_order, 10),
+    sale_start_datetime = COALESCE(sale_start_datetime, NOW()-INTERVAL '1 day'),
+    sale_end_datetime   = COALESCE(sale_end_datetime,   NOW()+INTERVAL '30 day'),
+    updated_at = NOW()
+WHERE event_id=v_ev;
+END IF;
+END $$;
+
+-- 🎫 Seat Map for BUTCON (single DO block — ไม่มี DO ซ้อน)
+-- NOTE: ปรับ sale window ของบัตร: 22 Oct 2025 12:00 → 20 Nov 2025 18:00
+DO $$
+DECLARE
+ev_id BIGINT;
+  z_rec RECORD;
+  r_label TEXT;
+  i INT;
+  c INT;
+BEGIN
+SELECT event_id INTO ev_id
+FROM events_nam
+WHERE event_name='BUTCON Music Fest 2025'
+ORDER BY event_id DESC LIMIT 1;
+
+IF ev_id IS NULL THEN
+    RAISE NOTICE 'BUTCON Music Fest 2025 not found. Skip seat map.';
+    RETURN;
+END IF;
+
+  -- clear previous
+DELETE FROM zone_ticket_types WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id=ev_id);
+DELETE FROM seats       WHERE row_id IN (SELECT row_id FROM seat_rows WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id=ev_id));
+DELETE FROM seat_rows   WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id=ev_id);
+DELETE FROM seat_zones  WHERE event_id=ev_id;
+DELETE FROM ticket_types WHERE event_id=ev_id;
+
+-- ticket types
+INSERT INTO ticket_types (event_id,type_name,description,price,quantity_available,quantity_sold,
+                          sale_start_datetime,sale_end_datetime,is_active,min_per_order,max_per_order,created_at,updated_at)
+VALUES
+    (ev_id,'VIP','Zone A premium front stage',2500,100,0,
+     TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-11-20 18:00:00+07',TRUE,1,5,NOW(),NOW()),
+    (ev_id,'REGULAR','Zone B standard seats',1500,200,0,
+     TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-11-20 18:00:00+07',TRUE,1,5,NOW(),NOW()),
+    (ev_id,'STANDING','Zone C standing area',800,500,0,
+     TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-11-20 18:00:00+07',TRUE,1,10,NOW(),NOW());
+
+-- zones
+INSERT INTO seat_zones (event_id, zone_name, description, sort_order, is_active, created_at, updated_at) VALUES
+                                                                                                             (ev_id,'Zone A','VIP',1,TRUE,NOW(),NOW()),
+                                                                                                             (ev_id,'Zone B','REGULAR',2,TRUE,NOW(),NOW()),
+                                                                                                             (ev_id,'Zone C','STANDING',3,TRUE,NOW(),NOW());
+
+-- map zone <-> ticket_type
+INSERT INTO zone_ticket_types (zone_id, ticket_type_id)
+SELECT z.zone_id, t.ticket_type_id
+FROM seat_zones z JOIN ticket_types t ON t.event_id=ev_id
+WHERE z.event_id=ev_id AND (
+    (z.description='VIP'      AND t.type_name='VIP')
+        OR (z.description='REGULAR'  AND t.type_name='REGULAR')
+        OR (z.description='STANDING' AND t.type_name='STANDING')
+    );
+
+-- rows A..E for VIP/REGULAR
+FOR z_rec IN
+SELECT * FROM seat_zones WHERE event_id=ev_id AND description IN ('VIP','REGULAR') ORDER BY sort_order
+    LOOP
+    FOR i IN 1..5 LOOP
+      r_label := CHR(64 + i); -- A=65
+INSERT INTO seat_rows (zone_id,row_label,sort_order,created_at,updated_at)
+VALUES (z_rec.zone_id, r_label, i, NOW(), NOW());
+END LOOP;
+END LOOP;
+
+  -- seats 1..10 in each row (VIP/REGULAR)
+FOR z_rec IN
+SELECT * FROM seat_zones WHERE event_id=ev_id AND description IN ('VIP','REGULAR') ORDER BY sort_order
+    LOOP
+    FOR r_label IN SELECT row_label FROM seat_rows WHERE zone_id=z_rec.zone_id ORDER BY sort_order
+    LOOP
+      FOR c IN 1..10 LOOP
+                   INSERT INTO seats (row_id, seat_number, seat_label, is_active, created_at, updated_at)
+                   VALUES (
+                           (SELECT row_id FROM seat_rows WHERE zone_id=z_rec.zone_id AND row_label=r_label LIMIT 1),
+                           c, r_label || c, TRUE, NOW(), NOW()
+                           );
+END LOOP;
+END LOOP;
+END LOOP;
+END
+$$;
+
+-- 🎓 Seat Map for Startup Seminar 2025
+DO $$
+DECLARE
+ev_id BIGINT;
+  z_rec RECORD;
+  r_label TEXT;
+  i INT;
+  c INT;
+BEGIN
+SELECT event_id INTO ev_id
+FROM events_nam
+WHERE event_name='Startup Seminar 2025'
+ORDER BY event_id DESC
+    LIMIT 1;
+
+IF ev_id IS NULL THEN
+    RAISE NOTICE 'Startup Seminar 2025 not found. Skip seat map.';
+    RETURN;
+END IF;
+
+  -- clear previous (เผื่อเคยมี)
+DELETE FROM zone_ticket_types
+WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id = ev_id);
+DELETE FROM seats
+WHERE row_id IN (
+    SELECT row_id FROM seat_rows
+    WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id = ev_id)
+);
+DELETE FROM seat_rows
+WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id = ev_id);
+DELETE FROM seat_zones
+WHERE event_id = ev_id;
+DELETE FROM ticket_types
+WHERE event_id = ev_id;
+
+-- ticket types (Sale: 22 Oct 2025 12:00 → 20 Dec 2025 18:00)
+INSERT INTO ticket_types (
+    event_id, type_name, description, price, quantity_available, quantity_sold,
+    sale_start_datetime, sale_end_datetime, is_active, min_per_order, max_per_order,
+    created_at, updated_at
+) VALUES
+      (ev_id,'VIP','Front-row VIP seat',1500,50,0,
+       TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-12-20 18:00:00+07',
+       TRUE, 1, 3, NOW(), NOW()),
+      (ev_id,'STANDARD','Standard seat',800,150,0,
+       TIMESTAMPTZ '2025-10-22 12:00:00+07', TIMESTAMPTZ '2025-12-20 18:00:00+07',
+       TRUE, 1, 5, NOW(), NOW());
+
+-- zones
+INSERT INTO seat_zones (event_id, zone_name, description, sort_order, is_active, created_at, updated_at)
+VALUES
+    (ev_id,'Zone A','VIP',1,TRUE,NOW(),NOW()),
+    (ev_id,'Zone B','STANDARD',2,TRUE,NOW(),NOW());
+
+-- zone <-> ticket
+INSERT INTO zone_ticket_types (zone_id, ticket_type_id)
+SELECT z.zone_id, t.ticket_type_id
+FROM seat_zones z
+         JOIN ticket_types t ON t.event_id = z.event_id
+WHERE z.event_id = ev_id
+  AND (
+    (z.description='VIP'      AND t.type_name='VIP')
+        OR
+    (z.description='STANDARD' AND t.type_name='STANDARD')
+    );
+
+-- rows A..C
+FOR z_rec IN
+SELECT * FROM seat_zones WHERE event_id=ev_id ORDER BY sort_order
+    LOOP
+    FOR i IN 1..3 LOOP
+      r_label := CHR(64 + i); -- A,B,C
+INSERT INTO seat_rows (zone_id,row_label,sort_order,created_at,updated_at)
+VALUES (z_rec.zone_id,r_label,i,NOW(),NOW());
+END LOOP;
+END LOOP;
+
+  -- seats 1..10 per row
+FOR z_rec IN
+SELECT * FROM seat_zones WHERE event_id=ev_id ORDER BY sort_order
+    LOOP
+    FOR r_label IN SELECT row_label FROM seat_rows WHERE zone_id=z_rec.zone_id ORDER BY sort_order
+    LOOP
+      FOR c IN 1..10 LOOP
+                   INSERT INTO seats (row_id, seat_number, seat_label, is_active, created_at, updated_at)
+                   VALUES (
+                           (SELECT row_id FROM seat_rows WHERE zone_id=z_rec.zone_id AND row_label=r_label LIMIT 1),
+                           c, r_label || c, TRUE, NOW(), NOW()
+                           );
+END LOOP;
+END LOOP;
+END LOOP;
+END
+$$;
+
+-- =================== END ===================

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -40,8 +41,8 @@ public class PublicEventsController {
         List<EventsNam> list;
         switch (section.toLowerCase()) {
             case "upcoming" -> list = eventsRepo.findUpcomingViaView();
-            case "onsale" -> list = eventsRepo.findOnSaleViaView();
-            default -> list = eventsRepo.findCurrentlyOnSale(Instant.now());
+            case "onsale"   -> list = eventsRepo.findOnSaleViaView();
+            default         -> list = eventsRepo.findCurrentlyOnSale(Instant.now());
         }
         return list.stream().map(EventCardResponse::from).toList();
     }
@@ -53,40 +54,89 @@ public class PublicEventsController {
     public ResponseEntity<?> getEventPublic(@PathVariable Long eventId) {
         return eventsRepo.findById(eventId)
                 .<ResponseEntity<?>>map(e -> ResponseEntity.ok(EventPublicResponse.from(e)))
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                        "error", "EVENT_NOT_FOUND",
-                        "message", "Event " + eventId + " not found"
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(jsonError(
+                        "EVENT_NOT_FOUND",
+                        "Event " + eventId + " not found"
                 )));
     }
 
     /* ============================================================
-       🔹 ผังที่นั่ง (public)
+       🔹 ผังที่นั่ง (public) — กันพังและไม่ใช้ Map.of(null)
        ============================================================ */
     @GetMapping(value = "/{eventId}/tickets/setup", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getPublicSeatSetup(@PathVariable("eventId") Long eventId) {
-        var evOpt = eventsRepo.findById(eventId);
-        if (evOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "error", "EVENT_NOT_FOUND",
-                    "message", "Event " + eventId + " not found"
-            ));
-        }
+        try {
+            var evOpt = eventsRepo.findById(eventId);
+            if (evOpt.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(jsonError(
+                        "EVENT_NOT_FOUND",
+                        "Event " + eventId + " not found"
+                ));
+            }
 
-        Map<String, Object> setup = ticketSetupService.getSetup(eventId);
-        if (setup == null) {
-            // โครงเปล่าที่ FE รับมือได้
-            return ResponseEntity.ok(Map.of(
-                    "seatRows", 0,
-                    "seatColumns", 0,
-                    "zones", List.of(),
-                    "minPerOrder", null,
-                    "maxPerOrder", null,
-                    "active", null,
-                    "salesStartDatetime", null,
-                    "salesEndDatetime", null
+            Map<String, Object> setup = null;
+            try {
+                setup = ticketSetupService.getSetup(eventId);
+            } catch (Exception ex) {
+                // กันพัง: ถ้า service ล้มก็ไปใช้ fallback ข้างล่าง
+                System.err.println("[WARN] getSetup failed: " + ex.getMessage());
+            }
+
+            if (setup == null) {
+                // ⚠️ ห้ามใช้ Map.of เพราะมีค่า null
+                return ResponseEntity.ok(emptySeatSetup(
+                        0, 0, null, null, null,
+                        evOpt.get().getSalesStartDatetime(),
+                        evOpt.get().getSalesEndDatetime()
+                ));
+            }
+
+            // normalize keys ให้ครบ ป้องกัน NPE ฝั่ง FE
+            setup.putIfAbsent("seatRows", 0);
+            setup.putIfAbsent("seatColumns", 0);
+            setup.putIfAbsent("zones", List.of());
+            setup.putIfAbsent("minPerOrder", null);
+            setup.putIfAbsent("maxPerOrder", null);
+            setup.putIfAbsent("active", null);
+            setup.putIfAbsent("salesStartDatetime", null);
+            setup.putIfAbsent("salesEndDatetime", null);
+
+            return ResponseEntity.ok(setup);
+        } catch (Exception e) {
+            e.printStackTrace();
+            // ⚠️ ห้ามใช้ Map.of เพราะมีค่า null
+            return ResponseEntity.ok(emptySeatSetup(
+                    0, 0, null, null, null, null, null
             ));
         }
-        return ResponseEntity.ok(setup);
+    }
+
+    private static Map<String, Object> emptySeatSetup(
+            Integer seatRows,
+            Integer seatColumns,
+            Integer minPerOrder,
+            Integer maxPerOrder,
+            Boolean active,
+            Instant salesStartDatetime,
+            Instant salesEndDatetime
+    ) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("seatRows", seatRows);
+        m.put("seatColumns", seatColumns);
+        m.put("zones", List.of());
+        m.put("minPerOrder", minPerOrder);
+        m.put("maxPerOrder", maxPerOrder);
+        m.put("active", active);
+        m.put("salesStartDatetime", salesStartDatetime);
+        m.put("salesEndDatetime", salesEndDatetime);
+        return m;
+    }
+
+    private static Map<String, Object> jsonError(String code, String message) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("error", code);
+        m.put("message", message);
+        return m;
     }
 
     /* ============================================================
@@ -131,7 +181,7 @@ public class PublicEventsController {
             String venueAddress,
             Integer maxCapacity,
             String status,
-            Instant updatedAt,       // ใช้ reviewed_at แทน updated_at
+            Instant updatedAt,
             Instant coverUpdatedAt,
             String coverUrl
     ) {
@@ -154,7 +204,7 @@ public class PublicEventsController {
                     e.getVenueAddress(),
                     e.getMaxCapacity(),
                     e.getStatus(),
-                    e.getReviewed_at(),     // ✅ แก้จุดนี้
+                    e.getReviewed_at(),
                     e.getCover_updated_at(),
                     coverUrl
             );

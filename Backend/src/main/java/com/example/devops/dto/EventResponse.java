@@ -10,8 +10,11 @@ import java.time.Instant;
 
 /**
  * DTO กลางสำหรับแสดง/ตอบกลับ Event (ใช้ทั้ง Admin และ Public)
- * - ใช้ Lombok @Builder เพื่อรองรับการเรียกแบบ builder ใน EventMapper
- * - ใส่ฟิลด์ salesStartDateTime/salesEndDateTime เผื่อแมปในอนาคต (จะมีเมธอดบน builder ให้พร้อม)
+ * -------------------------------------------------------------
+ * - รองรับ builder (จาก EventMapper)
+ * - ใช้ได้กับหน้า: Admin Permission, Organizer Dashboard, Landing Page
+ * - มีฟิลด์รูป (coverUrl, coverUpdatedAt) เพื่อให้ FE แสดงภาพได้ตรงๆ
+ * -------------------------------------------------------------
  */
 @Getter
 @Setter
@@ -27,16 +30,16 @@ public class EventResponse {
     /* ====== Basics ====== */
     private String eventName;
     private String description;
-    private Long categoryId;          // ให้ตรงกับ entity: Long
-    private String categoryLabel;     // ถ้ามีการแปลง label ใน layer อื่น
+    private Long categoryId;
+    private String categoryLabel; // optional – ใช้เวลา join category table
 
     /* ====== Times ====== */
-    private Instant startDateTime;    // entity.startDatetime
-    private Instant endDateTime;      // entity.endDatetime
-    private Instant salesStartDateTime; // entity.salesStartDatetime (สำรอง เผื่อใช้)
-    private Instant salesEndDateTime;   // entity.salesEndDatetime (สำรอง เผื่อใช้)
-    private Instant submittedDate;    // ถ้าไม่ได้ใช้ ปล่อย null ได้
-    private Instant updatedAt;        // ใช้จาก cover_updated_at หรืออื่นๆ ตาม mapper
+    private Instant startDateTime;       // event.startDatetime
+    private Instant endDateTime;         // event.endDatetime
+    private Instant salesStartDateTime;  // event.salesStartDatetime
+    private Instant salesEndDateTime;    // event.salesEndDatetime
+    private Instant submittedDate;       // optional
+    private Instant updatedAt;           // ใช้จาก cover_updated_at / reviewed_at / startDatetime
 
     /* ====== Venue / Capacity ====== */
     private String venueName;
@@ -44,17 +47,21 @@ public class EventResponse {
     private Integer maxCapacity;
 
     /* ====== Status ====== */
-    private String status;            // PENDING / APPROVED / REJECTED / PUBLISHED
+    private String status; // PENDING / APPROVED / REJECTED / PUBLISHED
 
-    /* ====== Organizer (หน้า Admin อาจใช้) ====== */
+    /* ====== Organizer Info (หน้า Admin ใช้) ====== */
     private String organizerName;
     private String organizerEmail;
     private String organizerCompany;
     private String organizerPhone;
     private String organizerAddress;
 
-    /* ====== Review (หน้า Admin อาจใช้) ====== */
+    /* ====== Review Info (หน้า Admin ใช้) ====== */
     private String review;
     private Instant reviewedAt;
     private String reviewedBy;
+
+    /* ====== 🖼️ Cover Image Info (ใหม่) ====== */
+    private Instant coverUpdatedAt;   // ใช้ bust cache
+    private String coverUrl;          // เช่น "/api/public/events/1/cover?v=1690000000000"
 }

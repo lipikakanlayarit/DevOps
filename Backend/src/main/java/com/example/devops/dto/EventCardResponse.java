@@ -18,7 +18,7 @@ public class EventCardResponse {
         r.id = e.getId();
         r.eventName = e.getEventName();
         r.categoryId = e.getCategoryId();
-        r.salesStartDatetime = e.getSalesStartDatetime(); // อาจเป็น null ถ้าใช้จาก VIEW ที่อิง ticket_types
+        r.salesStartDatetime = e.getSalesStartDatetime(); // อาจเป็น null ถ้าใช้จาก VIEW
         r.salesEndDatetime   = e.getSalesEndDatetime();
         r.venueName = e.getVenueName();
 
@@ -36,6 +36,4 @@ public class EventCardResponse {
     public Instant getSalesEndDatetime() { return salesEndDatetime; }
     public String getCoverUrl() { return coverUrl; }
     public String getVenueName() { return venueName; }
-
-    /* เซ็ตเตอร์ไม่จำเป็นสำหรับ response; ถ้าต้องการ เพิ่มได้ */
 }

@@ -10,15 +10,24 @@ public class EventMapper {
     public static EventResponse toDto(EventsNam ev) {
         if (ev == null) return null;
 
-        // cover_updated_at ถ้ามี ใช้เป็น updatedAt ไม่งั้น fallback startDatetime
-        Instant updatedAt = ev.getCover_updated_at() != null
-                ? ev.getCover_updated_at()
-                : ev.getStartDatetime();
+        // ใช้ reviewed_at เป็นตัว bust cache ก่อน (เวลาอนุมัติรีวิว)
+        // ถ้าไม่มี ใช้ cover_updated_at; ถ้าไม่มีอีก ใช้ startDatetime
+        Instant updatedAt =
+                ev.getReviewed_at() != null ? ev.getReviewed_at()
+                        : (ev.getCover_updated_at() != null ? ev.getCover_updated_at()
+                        : ev.getStartDatetime());
+
+        // สำหรับ query string cache-busting ฝั่ง FE
+        String ver = ev.getCover_updated_at() != null
+                ? String.valueOf(ev.getCover_updated_at().toEpochMilli())
+                : (updatedAt != null ? String.valueOf(updatedAt.toEpochMilli()) : null);
+
+        String coverUrl = "/api/public/events/" + ev.getId() + "/cover" + (ver != null ? ("?v=" + ver) : "");
 
         return EventResponse.builder()
                 .id(ev.getId())
                 .organizerId(ev.getOrganizerId())
-                // organizerName จะเติมใน controller แบบ bulk เพื่อเลี่ยง N+1
+                // organizerName จะเติมใน controller ถ้าต้องการเลี่ยง N+1
                 .eventName(nz(ev.getEventName()))
                 .description(nz(ev.getDescription()))
                 .categoryId(ev.getCategoryId())
@@ -32,6 +41,9 @@ public class EventMapper {
                 .maxCapacity(ev.getMaxCapacity())
                 .status(nz(ev.getStatus()))
                 .updatedAt(updatedAt)
+                // 🆕 ฟิลด์รูป
+                .coverUpdatedAt(ev.getCover_updated_at())
+                .coverUrl(coverUrl)
                 .build();
     }
 

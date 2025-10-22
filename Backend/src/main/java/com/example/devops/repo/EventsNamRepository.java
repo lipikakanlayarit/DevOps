@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
@@ -131,4 +132,15 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
     int updateSalesPeriod(@Param("eventId") Long eventId,
                           @Param("startTs") Instant startTs,
                           @Param("endTs") Instant endTs);
+
+
+    /* =========================
+       🆕 ใช้กับ ImageSeeder: หา event ล่าสุดตามชื่อ
+       ========================= */
+
+    /**
+     * คืนอีเวนต์ล่าสุด (id มากสุด) ตามชื่ออีเวนต์
+     * ใช้สำหรับ seed รูปจาก resources ตอนแอปสตาร์ต
+     */
+    Optional<EventsNam> findTopByEventNameOrderByIdDesc(String eventName);
 }
