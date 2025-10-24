@@ -1,21 +1,59 @@
+/// <reference types="vitest" />  // ✅ ให้ TypeScript รู้จัก Vitest
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
 import path from 'path'
 
-// ใช้ proxy ของ Vite → ส่ง /api/* ไป service "backend" ใน docker-compose
+// ✅ ใช้ defineConfig เพื่อให้ Vite เข้าใจ config TypeScript
 export default defineConfig({
     plugins: [react(), tailwind()],
+
     resolve: {
         alias: { '@': path.resolve(__dirname, './src') },
     },
+
     server: {
         proxy: {
             '/api': {
-                target: 'http://backend:8080', // ✅ ต้องใช้ชื่อ service = backend (ไม่ใช่ container_name)
+                target: 'http://backend:8080', // ✅ ใช้ชื่อ service backend ใน docker-compose
                 changeOrigin: true,
-                // ห้าม rewrite prefix ออก เพราะ backend มี /api อยู่แล้ว
+                // ❗️อย่าตัด prefix /api ออก เพราะ backend มี /api อยู่แล้ว
             },
+        },
+    },
+
+    // ✅ ให้โหลด environment variables ที่ขึ้นต้นด้วย VITE_
+    envPrefix: 'VITE_',
+
+    /* ==========================================================
+       🧪 VITEST CONFIGURATION (ส่วน test ที่เพิ่ม)
+    ========================================================== */
+    test: {
+        globals: true,                // ✅ ใช้ expect(), describe() ได้เลย
+        environment: 'jsdom',         // ✅ จำลอง browser สำหรับ React
+        setupFiles: './src/setupTests.ts', // ✅ setup ก่อนทุก test เช่น import jest-dom
+        css: false,                   // ✅ ปิดโหลด CSS ใน test เพื่อความเร็ว
+        include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'], // ✅ ไฟล์ test pattern
+
+        deps: {
+            inline: [
+                '@testing-library/react',
+                '@testing-library/jest-dom'
+            ], // ✅ ป้องกัน dependency error
+        },
+
+        // ✅ Coverage Report เหมือน JaCoCo
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'html'], // ✅ แสดงทั้ง console และ HTML
+            all: true,                  // ✅ รวมทุกไฟล์ src แม้ไม่มี test
+            include: ['src/**/*.{ts,tsx}'],
+            exclude: ['src/main.tsx', 'src/vite-env.d.ts'],
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
         },
     },
 })
