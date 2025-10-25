@@ -6,8 +6,10 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor @Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ReservedResponse {
     private Long reservedId;
     private Long userId;
@@ -15,7 +17,7 @@ public class ReservedResponse {
     private Long ticketTypeId;
     private Integer quantity;
     private BigDecimal totalAmount;
-    private String paymentStatus;     // UNPAID / PAID
+    private String paymentStatus;
     private Instant registrationDatetime;
     private Instant paymentDatetime;
     private String confirmationCode;
@@ -23,16 +25,16 @@ public class ReservedResponse {
 
     public static ReservedResponse from(Reserved r) {
         return ReservedResponse.builder()
-                .reservedId(r.getReserved_id())
-                .userId(r.getUser_id())
-                .eventId(r.getEvent_id())
-                .ticketTypeId(r.getTicket_type_id())
+                .reservedId(r.getReservedId())
+                .userId(r.getUserId())
+                .eventId(r.getEventId())
+                .ticketTypeId(r.getTicketTypeId())
                 .quantity(r.getQuantity())
-                .totalAmount(r.getTotal_amount())
-                .paymentStatus(r.getPayment_status())
-                .registrationDatetime(r.getRegistration_datetime())
-                .paymentDatetime(r.getPayment_datetime())
-                .confirmationCode(r.getConfirmation_code())
+                .totalAmount(r.getTotalAmount())
+                .paymentStatus(r.getPaymentStatus())
+                .registrationDatetime(r.getRegistrationDatetime())
+                .paymentDatetime(r.getPaymentDatetime())
+                .confirmationCode(r.getConfirmationCode())
                 .notes(r.getNotes())
                 .build();
     }

@@ -47,12 +47,6 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- Logging -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-logging</artifactId>
-        </dependency>
-
         <!-- Database -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -120,14 +114,11 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <!-- ใช้ release 17 ก็ได้ แต่เพิ่ม -parameters เพื่อให้ Spring อ่านชื่อพารามิเตอร์ได้ -->
                     <release>17</release>
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <compilerArgs>
                         <arg>-parameters</arg>
                     </compilerArgs>
-
-                    <!-- แนะนำ: บอก annotation processor ของ Lombok ให้ชัด (กันบางเครื่องไม่ gen) -->
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

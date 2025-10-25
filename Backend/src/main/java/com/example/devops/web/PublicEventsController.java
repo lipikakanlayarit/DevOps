@@ -3,18 +3,13 @@ package com.example.devops.web;
 import com.example.devops.dto.EventCardResponse;
 import com.example.devops.model.EventsNam;
 import com.example.devops.repo.EventsNamRepository;
+import com.example.devops.repo.SeatsRepository;
 import com.example.devops.service.TicketSetupService;
-import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/public/events")
@@ -26,30 +21,29 @@ public class PublicEventsController {
 
     private final EventsNamRepository eventsRepo;
     private final TicketSetupService ticketSetupService;
+    private final SeatsRepository seatsRepo;
 
     public PublicEventsController(EventsNamRepository eventsRepo,
-                                  TicketSetupService ticketSetupService) {
+                                  TicketSetupService ticketSetupService,
+                                  SeatsRepository seatsRepo) {
         this.eventsRepo = eventsRepo;
         this.ticketSetupService = ticketSetupService;
+        this.seatsRepo = seatsRepo;
     }
 
-    /* ============================================================
-       🔹 Landing: แสดงอีเวนต์ OnSale / Upcoming
-       ============================================================ */
+    /* Landing */
     @GetMapping(value = "/landing", produces = MediaType.APPLICATION_JSON_VALUE)
     public List<EventCardResponse> landing(@RequestParam(defaultValue = "onSale") String section) {
         List<EventsNam> list;
         switch (section.toLowerCase()) {
             case "upcoming" -> list = eventsRepo.findUpcomingViaView();
-            case "onsale"   -> list = eventsRepo.findOnSaleViaView();
-            default         -> list = eventsRepo.findCurrentlyOnSale(Instant.now());
+            case "onsale" -> list = eventsRepo.findOnSaleViaView();
+            default -> list = eventsRepo.findCurrentlyOnSale(Instant.now());
         }
         return list.stream().map(EventCardResponse::from).toList();
     }
 
-    /* ============================================================
-       🔹 หน้า EventSelect (public): ดึงรายละเอียดอีเวนต์เดียว
-       ============================================================ */
+    /* Event public info */
     @GetMapping(value = "/{eventId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getEventPublic(@PathVariable Long eventId) {
         return eventsRepo.findById(eventId)
@@ -60,9 +54,7 @@ public class PublicEventsController {
                 )));
     }
 
-    /* ============================================================
-       🔹 ผังที่นั่ง (public) — กันพังและไม่ใช้ Map.of(null)
-       ============================================================ */
+    /* ✅ ผังที่นั่ง (public) — เห็นที่นั่งที่ถูกจอง/จ่ายแล้วเป็น X */
     @GetMapping(value = "/{eventId}/tickets/setup", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getPublicSeatSetup(@PathVariable("eventId") Long eventId) {
         try {
@@ -78,12 +70,10 @@ public class PublicEventsController {
             try {
                 setup = ticketSetupService.getSetup(eventId);
             } catch (Exception ex) {
-                // กันพัง: ถ้า service ล้มก็ไปใช้ fallback ข้างล่าง
                 System.err.println("[WARN] getSetup failed: " + ex.getMessage());
             }
 
             if (setup == null) {
-                // ⚠️ ห้ามใช้ Map.of เพราะมีค่า null
                 return ResponseEntity.ok(emptySeatSetup(
                         0, 0, null, null, null,
                         evOpt.get().getSalesStartDatetime(),
@@ -91,57 +81,72 @@ public class PublicEventsController {
                 ));
             }
 
-            // normalize keys ให้ครบ ป้องกัน NPE ฝั่ง FE
+            setup.putIfAbsent("zones", List.of());
             setup.putIfAbsent("seatRows", 0);
             setup.putIfAbsent("seatColumns", 0);
-            setup.putIfAbsent("zones", List.of());
             setup.putIfAbsent("minPerOrder", null);
             setup.putIfAbsent("maxPerOrder", null);
-            setup.putIfAbsent("active", null);
-            setup.putIfAbsent("salesStartDatetime", null);
-            setup.putIfAbsent("salesEndDatetime", null);
+            setup.putIfAbsent("salesStartDatetime", evOpt.get().getSalesStartDatetime());
+            setup.putIfAbsent("salesEndDatetime", evOpt.get().getSalesEndDatetime());
+
+            // ✅ ที่นั่งที่จองแล้ว/ชำระแล้ว และล็อกอยู่
+            List<Long> takenSeatIds = seatsRepo.findPaidTakenSeatIdsByEvent(eventId);
+            List<Long> lockedSeatIds = seatsRepo.findLockedSeatIdsByEvent(eventId);
+
+            Set<Long> allIds = new LinkedHashSet<>();
+            allIds.addAll(takenSeatIds);
+            allIds.addAll(lockedSeatIds);
+
+            List<Map<String, Object>> occupiedMap = new ArrayList<>();
+            if (!allIds.isEmpty()) {
+                try {
+                    List<Object[]> rows = seatsRepo.findZoneRowColForSeatIds(eventId, allIds.toArray(Long[]::new));
+                    for (Object[] r : rows) {
+                        Long seatId = ((Number) r[0]).longValue();
+                        Long zoneId = ((Number) r[1]).longValue();
+                        int row = ((Number) r[2]).intValue() - 1; // convert to 0-based
+                        int col = ((Number) r[3]).intValue() - 1;
+                        occupiedMap.add(Map.of(
+                                "seatId", seatId,
+                                "zoneId", zoneId,
+                                "r", row,
+                                "c", col
+                        ));
+                    }
+                } catch (Exception ex) {
+                    System.err.println("[WARN] findZoneRowColForSeatIds failed: " + ex.getMessage());
+                }
+            }
+
+            // ✅ รวมทั้งหมดเข้า response
+            setup.put("takenSeatIds", takenSeatIds);
+            setup.put("lockedSeatIds", lockedSeatIds);
+            setup.put("occupiedSeatMap", occupiedMap);
 
             return ResponseEntity.ok(setup);
+
         } catch (Exception e) {
             e.printStackTrace();
-            // ⚠️ ห้ามใช้ Map.of เพราะมีค่า null
-            return ResponseEntity.ok(emptySeatSetup(
-                    0, 0, null, null, null, null, null
-            ));
+            return ResponseEntity.ok(emptySeatSetup(0, 0, null, null, null, null, null));
         }
     }
 
-    private static Map<String, Object> emptySeatSetup(
-            Integer seatRows,
-            Integer seatColumns,
-            Integer minPerOrder,
-            Integer maxPerOrder,
-            Boolean active,
-            Instant salesStartDatetime,
-            Instant salesEndDatetime
-    ) {
+    /* endpoint เบา ๆ ให้ FE รีเฟรชสถานะที่นั่งอย่างเดียว */
+    @GetMapping(value = "/{eventId}/seats/taken", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> seatsTaken(@PathVariable Long eventId) {
+        if (eventsRepo.findById(eventId).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(jsonError(
+                    "EVENT_NOT_FOUND",
+                    "Event " + eventId + " not found"
+            ));
+        }
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("seatRows", seatRows);
-        m.put("seatColumns", seatColumns);
-        m.put("zones", List.of());
-        m.put("minPerOrder", minPerOrder);
-        m.put("maxPerOrder", maxPerOrder);
-        m.put("active", active);
-        m.put("salesStartDatetime", salesStartDatetime);
-        m.put("salesEndDatetime", salesEndDatetime);
-        return m;
+        m.put("takenSeatIds", seatsRepo.findPaidTakenSeatIdsByEvent(eventId));
+        m.put("lockedSeatIds", seatsRepo.findLockedSeatIdsByEvent(eventId));
+        return ResponseEntity.ok(m);
     }
 
-    private static Map<String, Object> jsonError(String code, String message) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("error", code);
-        m.put("message", message);
-        return m;
-    }
-
-    /* ============================================================
-       🔹 รูปปก (Cover)
-       ============================================================ */
+    /* Cover */
     @GetMapping("/{eventId}/cover")
     public ResponseEntity<byte[]> cover(@PathVariable Long eventId) {
         EventsNam e = eventsRepo.findById(eventId).orElse(null);
@@ -165,9 +170,7 @@ public class PublicEventsController {
         return new ResponseEntity<>(e.getCover_image(), headers, HttpStatus.OK);
     }
 
-    /* ============================================================
-       🔹 DTO: ข้อมูล Event สำหรับหน้า Public
-       ============================================================ */
+    /* DTO */
     public record EventPublicResponse(
             Long id,
             String eventName,
@@ -209,5 +212,35 @@ public class PublicEventsController {
                     coverUrl
             );
         }
+    }
+
+    /* helpers */
+    private static Map<String, Object> emptySeatSetup(
+            Integer seatRows,
+            Integer seatColumns,
+            Integer minPerOrder,
+            Integer maxPerOrder,
+            Boolean active,
+            Instant salesStartDatetime,
+            Instant salesEndDatetime
+    ) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("seatRows", seatRows);
+        m.put("seatColumns", seatColumns);
+        m.put("zones", List.of());
+        m.put("minPerOrder", minPerOrder);
+        m.put("maxPerOrder", maxPerOrder);
+        m.put("active", active);
+        m.put("salesStartDatetime", salesStartDatetime);
+        m.put("salesEndDatetime", salesEndDatetime);
+        m.put("occupiedSeatMap", List.of());
+        return m;
+    }
+
+    private static Map<String, Object> jsonError(String code, String message) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("error", code);
+        m.put("message", message);
+        return m;
     }
 }

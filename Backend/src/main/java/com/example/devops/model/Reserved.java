@@ -3,14 +3,11 @@ package com.example.devops.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
 @Getter @Setter
-@NoArgsConstructor @AllArgsConstructor
 @Entity
 @Table(name = "reserved")
 public class Reserved {
@@ -18,34 +15,34 @@ public class Reserved {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "reserved_id")
-    private Long reserved_id;
+    private Long reservedId;
 
     @Column(name = "user_id")
-    private Long user_id;
+    private Long userId;
 
     @Column(name = "event_id")
-    private Long event_id;
+    private Long eventId;
 
     @Column(name = "ticket_type_id")
-    private Long ticket_type_id;
+    private Long ticketTypeId;
 
     @Column(name = "quantity")
     private Integer quantity;
 
     @Column(name = "total_amount")
-    private BigDecimal total_amount;
+    private BigDecimal totalAmount;
 
     @Column(name = "payment_status")
-    private String payment_status; // UNPAID / PAID
+    private String paymentStatus; // UNPAID / PAID
 
     @Column(name = "registration_datetime")
-    private Instant registration_datetime;
+    private Instant registrationDatetime;
 
     @Column(name = "payment_datetime")
-    private Instant payment_datetime;
+    private Instant paymentDatetime;
 
     @Column(name = "confirmation_code")
-    private String confirmation_code;
+    private String confirmationCode;
 
     @Column(name = "notes")
     private String notes;

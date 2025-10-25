@@ -13,26 +13,26 @@ public class SeatZones {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "zone_id")
-    private Long zone_id;
+    private Long zoneId;
 
     @Column(name = "event_id")
-    private Long event_id;
+    private Long eventId;
 
     @Column(name = "zone_name")
-    private String zone_name;
+    private String zoneName;
 
     @Column(name = "description")
     private String description;
 
     @Column(name = "sort_order")
-    private Integer sort_order;
+    private Integer sortOrder;
 
     @Column(name = "is_active")
-    private Boolean is_active;
+    private Boolean isActive;
 
     @Column(name = "created_at")
-    private Instant created_at;
+    private Instant createdAt;
 
     @Column(name = "updated_at")
-    private Instant updated_at;
+    private Instant updatedAt;
 }

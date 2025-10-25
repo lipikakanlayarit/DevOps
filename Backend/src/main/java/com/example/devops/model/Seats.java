@@ -13,23 +13,23 @@ public class Seats {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "seat_id")
-    private Long seat_id;
+    private Long seatId;
 
-    @Column(name = "row_id")
-    private Long row_id;
+    @Column(name = "row_id", nullable = false)
+    private Long rowId;
 
-    @Column(name = "seat_number")
-    private Integer seat_number;
+    @Column(name = "seat_number", nullable = false)
+    private Integer seatNumber;
 
     @Column(name = "seat_label")
-    private String seat_label;
+    private String seatLabel;
 
     @Column(name = "is_active")
-    private Boolean is_active;
+    private Boolean isActive;
 
     @Column(name = "created_at")
-    private Instant created_at;
+    private Instant createdAt;
 
     @Column(name = "updated_at")
-    private Instant updated_at;
+    private Instant updatedAt;
 }

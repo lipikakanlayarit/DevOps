@@ -3,9 +3,12 @@ package com.example.devops.config;
 import com.example.devops.model.EventsNam;
 import com.example.devops.repo.EventsNamRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.CommandLineRunner;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.CommandLineRunner;
 
 import java.io.InputStream;
 import java.time.Instant;
@@ -13,22 +16,29 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 @Component
+@Profile("dev") // รันเฉพาะ dev
 @RequiredArgsConstructor
 public class ImageSeeder implements CommandLineRunner {
 
     private final EventsNamRepository eventsRepo;
 
+    @Value("${app.seed.images:true}") // เปิด/ปิด seeder ด้วย flag
+    private boolean enableSeeding;
+
     @Override
     public void run(String... args) {
-        // map: eventName -> basePath (ไม่ต้องใส่นามสกุลก็ได้)
+        if (!enableSeeding) {
+            log.info("ImageSeeder disabled (app.seed.images=false)");
+            return;
+        }
+
         Map<String, String> targets = new LinkedHashMap<>();
         targets.put("BUTCON Music Fest 2025", "pic_seed/seed1");
         targets.put("Startup Seminar 2025",  "pic_seed/seed2");
 
-        for (Map.Entry<String, String> e : targets.entrySet()) {
-            seedCoverIfMissingSmart(e.getKey(), e.getValue());
-        }
+        targets.forEach(this::seedCoverIfMissingSmart);
     }
 
     /** พยายามเปิดไฟล์หลายแบบ: ไม่มีนามสกุล, .jpeg, .jpg, .png และกำหนด mime ให้เหมาะ */
@@ -36,18 +46,19 @@ public class ImageSeeder implements CommandLineRunner {
         try {
             Optional<EventsNam> opt = eventsRepo.findTopByEventNameOrderByIdDesc(eventName);
             if (opt.isEmpty()) {
-                System.out.println("ℹ️  ImageSeeder: Event not found: " + eventName);
+                log.warn("ImageSeeder: event not found: {}", eventName);
                 return;
             }
             EventsNam e = opt.get();
+
             if (e.getCover_image() != null && e.getCover_image().length > 0) {
-                System.out.println(" ImageSeeder: cover already exists for \"" + eventName + "\" (id=" + e.getId() + ")");
+                log.info("ImageSeeder: skip \"{}\" (id={}) existing cover bytes={}",
+                        e.getEventName(), e.getId(), e.getCover_image().length);
                 return;
             }
 
-            // ลองหาไฟล์ตามลำดับ
             String[] candidates = new String[] {
-                    baseClasspath,              // ex: pic_seed/seed2
+                    baseClasspath,
                     baseClasspath + ".jpeg",
                     baseClasspath + ".jpg",
                     baseClasspath + ".png"
@@ -62,14 +73,13 @@ public class ImageSeeder implements CommandLineRunner {
                 if (b != null && b.length > 0) {
                     bytes = b;
                     chosenPath = c;
-                    if (c.endsWith(".png")) mime = "image/png";
-                    else mime = "image/jpeg"; // defult เป็น jpeg
+                    mime = c.endsWith(".png") ? "image/png" : "image/jpeg";
                     break;
                 }
             }
 
             if (bytes == null) {
-                System.out.println(" ImageSeeder: resource not found for any candidate: " + baseClasspath + " (tried no-ext/.jpeg/.jpg/.png)");
+                log.warn("ImageSeeder: resource not found for {} (tried no-ext/.jpeg/.jpg/.png)", baseClasspath);
                 return;
             }
 
@@ -77,9 +87,12 @@ public class ImageSeeder implements CommandLineRunner {
             e.setCover_image_type(mime);
             e.setCover_updated_at(Instant.now());
             eventsRepo.save(e);
-            System.out.println(" ImageSeeder: seeded cover for \"" + eventName + "\" from " + chosenPath + " (id=" + e.getId() + ")");
+
+            log.info("ImageSeeder: seeded cover for \"{}\" from {} (id={}) bytes={} type={}",
+                    e.getEventName(), chosenPath, e.getId(), bytes.length, mime);
+
         } catch (Exception ex) {
-            System.out.println(" ImageSeeder error for \"" + eventName + "\": " + ex.getMessage());
+            log.error("ImageSeeder error for \"{}\": {}", eventName, ex.getMessage(), ex);
         }
     }
 

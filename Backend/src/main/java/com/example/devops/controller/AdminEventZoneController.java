@@ -43,7 +43,7 @@ public class AdminEventZoneController {
     public ResponseEntity<?> listZonesSummary(@PathVariable("eventId") Long eventId) {
         List<SeatZones> zones = seatZonesRepo.findByEventIdOrderBySortOrderAsc(eventId);
         List<Map<String, Object>> result = zones.stream().map(z -> {
-            Long zoneId = z.getZone_id();
+            Long zoneId = z.getZoneId();
 
             // 1) จำนวนแถวจริงของโซน
             int rowCount = seatRowsRepo.countByZoneId(zoneId);
@@ -62,7 +62,7 @@ public class AdminEventZoneController {
             String sale = sold + "/" + capacity;
 
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("zone", z.getZone_name() != null ? z.getZone_name() : ("Zone #" + zoneId));
+            m.put("zone", z.getZoneName() != null ? z.getZoneName() : ("Zone #" + zoneId));
             m.put("row", rowCount);
             m.put("column", columnCount);
             m.put("price", priceStr);

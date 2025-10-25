@@ -1,39 +1,47 @@
 package com.example.devops.dto;
 
 import com.example.devops.model.EventsNam;
+import com.example.devops.service.EventStatusService;
+
 import java.time.Instant;
-import java.time.OffsetDateTime;
 
 public class EventMapper {
+
+    // ถ้ายังไม่ได้จัดการผ่าน DI, ใช้ instance ตรง ๆ เพื่อไม่กระทบโครงสร้างเดิม
+    private static final EventStatusService statusService = new EventStatusService();
 
     // === Entity -> DTO ===
     public static EventResponse toDto(EventsNam ev) {
         if (ev == null) return null;
 
-        // ใช้ reviewed_at เป็นตัว bust cache ก่อน (เวลาอนุมัติรีวิว)
-        // ถ้าไม่มี ใช้ cover_updated_at; ถ้าไม่มีอีก ใช้ startDatetime
         Instant updatedAt =
                 ev.getReviewed_at() != null ? ev.getReviewed_at()
                         : (ev.getCover_updated_at() != null ? ev.getCover_updated_at()
                         : ev.getStartDatetime());
 
-        // สำหรับ query string cache-busting ฝั่ง FE
         String ver = ev.getCover_updated_at() != null
                 ? String.valueOf(ev.getCover_updated_at().toEpochMilli())
                 : (updatedAt != null ? String.valueOf(updatedAt.toEpochMilli()) : null);
 
         String coverUrl = "/api/public/events/" + ev.getId() + "/cover" + (ver != null ? ("?v=" + ver) : "");
 
+        // ✅ คำนวณสถานะที่ใช้งานจริง
+        var eff = statusService.computeEffectiveStatus(
+                ev.getStatus(),
+                Instant.now(),
+                ev.getSalesStartDatetime(),
+                ev.getSalesEndDatetime()
+        );
+        boolean purchasable = statusService.isPurchasable(eff);
+
         return EventResponse.builder()
                 .id(ev.getId())
                 .organizerId(ev.getOrganizerId())
-                // organizerName จะเติมใน controller ถ้าต้องการเลี่ยง N+1
                 .eventName(nz(ev.getEventName()))
                 .description(nz(ev.getDescription()))
                 .categoryId(ev.getCategoryId())
                 .startDateTime(ev.getStartDatetime())
                 .endDateTime(ev.getEndDatetime())
-                // 🆕 expose sales period
                 .salesStartDateTime(ev.getSalesStartDatetime())
                 .salesEndDateTime(ev.getSalesEndDatetime())
                 .venueName(nz(ev.getVenueName()))
@@ -41,9 +49,10 @@ public class EventMapper {
                 .maxCapacity(ev.getMaxCapacity())
                 .status(nz(ev.getStatus()))
                 .updatedAt(updatedAt)
-                // 🆕 ฟิลด์รูป
                 .coverUpdatedAt(ev.getCover_updated_at())
                 .coverUrl(coverUrl)
+                .effectiveStatus(eff.name())
+                .purchasable(purchasable)
                 .build();
     }
 
@@ -56,7 +65,6 @@ public class EventMapper {
         target.setCategoryId(req.getCategoryId());
         target.setStartDatetime(req.getStartDateTime());
         target.setEndDatetime(req.getEndDateTime());
-        // 🆕 allow set on create (ถ้าไม่ได้ส่งมาก็เป็น null)
         target.setSalesStartDatetime(req.getSalesStartDateTime());
         target.setSalesEndDatetime(req.getSalesEndDateTime());
         target.setVenueName(req.getVenueName());
@@ -75,12 +83,10 @@ public class EventMapper {
         if (req.getCategoryId() != null)      target.setCategoryId(req.getCategoryId());
         if (req.getStartDateTime() != null)   target.setStartDatetime(req.getStartDateTime());
         if (req.getEndDateTime() != null)     target.setEndDatetime(req.getEndDateTime());
-        // 🆕 support sales period update (ทั้งแบบ *DateTime และ *Datetime)
-        Instant salesStart = req.getSalesStartDateTime() != null
-                ? req.getSalesStartDateTime()
+
+        var salesStart = req.getSalesStartDateTime() != null ? req.getSalesStartDateTime()
                 : req.getSalesStartDatetime();
-        Instant salesEnd = req.getSalesEndDateTime() != null
-                ? req.getSalesEndDateTime()
+        var salesEnd   = req.getSalesEndDateTime() != null ? req.getSalesEndDateTime()
                 : req.getSalesEndDatetime();
         if (salesStart != null) target.setSalesStartDatetime(salesStart);
         if (salesEnd != null)   target.setSalesEndDatetime(salesEnd);
@@ -92,15 +98,4 @@ public class EventMapper {
     }
 
     private static String nz(String s) { return s == null ? "" : s; }
-
-    // (optional) parser สำหรับ string ISO-8601
-    @SuppressWarnings("unused")
-    private static Instant parseOffsetToInstant(String s) {
-        try {
-            if (s == null || s.isBlank()) return null;
-            return OffsetDateTime.parse(s).toInstant();
-        } catch (Exception e) {
-            try { return Instant.parse(s); } catch (Exception ignore) { return null; }
-        }
-    }
 }

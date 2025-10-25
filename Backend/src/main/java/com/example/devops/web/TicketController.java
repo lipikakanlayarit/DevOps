@@ -2,7 +2,6 @@ package com.example.devops.web;
 
 import com.example.devops.dto.TicketSetupRequest;
 import com.example.devops.dto.TicketSetupResponse;
-import com.example.devops.model.SeatZones;
 import com.example.devops.service.TicketSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,10 +23,7 @@ public class TicketController {
 
     private final TicketSetupService ticketSetupService;
 
-    /**
-     * PREFILL: ดึงผังที่นั่ง/โซน/ราคา/Advanced/SalesPeriod ปัจจุบันของอีเวนต์
-     * ถ้ายังไม่เคยตั้งค่า จะคืน 200 + โครงว่าง (ไม่ 404)
-     */
+    /** PREFILL: ดึงผังที่นั่ง/โซน/ราคา/Advanced/SalesPeriod */
     @GetMapping("/setup")
     public ResponseEntity<?> getSetup(@PathVariable("eventId") Long eventId) {
         Map<String, Object> m = ticketSetupService.getSetup(eventId);
@@ -46,7 +42,6 @@ public class TicketController {
             );
         }
 
-        // ปลอดภัยกับ type มากขึ้น (รองรับ Integer/Long)
         int seatRows = toInt(m.get("seatRows"), 0);
         int seatColumns = toInt(m.get("seatColumns"), 0);
 
@@ -82,10 +77,7 @@ public class TicketController {
         );
     }
 
-    /**
-     * CREATE/REGENERATE: ลบของเก่าและสร้างผังใหม่ตาม payload
-     * (รองรับ Advanced + Sales Period ใน payload)
-     */
+    /** CREATE/REGENERATE */
     @PostMapping("/setup")
     public ResponseEntity<?> setupTickets(@PathVariable("eventId") Long eventId,
                                           @RequestBody @jakarta.validation.Valid TicketSetupRequest request,
@@ -97,9 +89,7 @@ public class TicketController {
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * UPDATE: ตอนนี้ทำแบบ regenerate ทั้งชุดเหมือน POST
-     */
+    /** UPDATE */
     @PutMapping("/setup")
     public ResponseEntity<?> updateTickets(@PathVariable("eventId") Long eventId,
                                            @RequestBody @jakarta.validation.Valid TicketSetupRequest request,
@@ -111,24 +101,20 @@ public class TicketController {
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * ใช้เรนเดอร์เก้าอี้เป็นกริดในหน้าอื่น
-     */
+    /** เรนเดอร์เก้าอี้เป็นกริด */
     @GetMapping("/grid")
     public ResponseEntity<?> getSeatGrid(@PathVariable("eventId") Long eventId) {
         return ResponseEntity.ok(ticketSetupService.getSeatGrid(eventId));
     }
 
-    /**
-     * ดึงรายการโซนทั้งหมดของอีเวนต์ (ตามลำดับ sort)
-     */
+    /** ดึงโซนทั้งหมดของอีเวนต์ */
     @GetMapping("/zones")
     public ResponseEntity<?> getZones(@PathVariable("eventId") Long eventId) {
-        List<SeatZones> zones = ticketSetupService.getZones(eventId);
-        return ResponseEntity.ok(zones);
+        // ✅ เปลี่ยนจาก getZones → getSeatGrid หรือ getSetup
+        Map<String, Object> data = ticketSetupService.getSetup(eventId);
+        return ResponseEntity.ok(data.get("zones"));
     }
 
-    // -------- helpers --------
     private static int toInt(Object v, int def) {
         if (v instanceof Number n) return n.intValue();
         return def;

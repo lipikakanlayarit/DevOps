@@ -46,7 +46,8 @@ export default function PaymentPage() {
             try {
                 setLoading(true);
                 setError(null);
-                const { data } = await api.get<ReservedResponse>(`/api/public/reservations/${reservedId}`);
+                // ⚠️ ลบ /api ออก ให้เหลือ /public/... เพราะ baseURL คือ /api แล้ว
+                const { data } = await api.get<ReservedResponse>(`/public/reservations/${reservedId}`);
                 setResv(data);
             } catch (e: any) {
                 setError(e?.response?.data?.error || "Failed to load reservation");
@@ -69,7 +70,8 @@ export default function PaymentPage() {
         try {
             setPaying(true);
             setError(null);
-            const { data } = await api.post<ReservedResponse>(`/api/public/reservations/${reservedId}/pay`, {
+            // ⚠️ ลบ /api ออก
+            const { data } = await api.post<ReservedResponse>(`/public/reservations/${reservedId}/pay`, {
                 method: "MOCK",
             });
             setResv(data);
@@ -102,7 +104,11 @@ export default function PaymentPage() {
                                     <div className="text-sm text-gray-500">RESERVATION</div>
                                     <div className="font-mono text-lg">{resv.reservedId}</div>
                                 </div>
-                                <div className={`px-3 py-1.5 rounded-full text-sm font-semibold ${isPaid ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"}`}>
+                                <div
+                                    className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
+                                        isPaid ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"
+                                    }`}
+                                >
                                     {isPaid ? "PAID" : "UNPAID"}
                                 </div>
                             </div>

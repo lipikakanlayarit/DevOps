@@ -1,4 +1,3 @@
-// src/pages/admin-eventmanager.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +10,7 @@ import AuthImage from "@/components/AuthImage";
 import posterFallback from "@/assets/poster.png";
 
 // ---------- Types ----------
-type ModerationStatus = "ON SALE" | "OFF SALE";
+type EffectiveStatus = "ONSALE" | "OFFSALE" | "UPCOMING";
 type Order = "newest" | "oldest";
 
 type Event = {
@@ -22,7 +21,7 @@ type Event = {
     startSaleDate?: string;
     endSaleDate?: string;
     location?: string;
-    status: ModerationStatus;
+    status: EffectiveStatus;
     category: string;
     date?: string;
     saleSeat?: string;
@@ -42,21 +41,20 @@ const fmtDateTime = (iso?: string) =>
         }).format(new Date(iso))
         : "-";
 
-function useDebounced<T>(value: T, delay = 250) {
-    const [v, setV] = useState(value);
-    useEffect(() => {
-        const t = setTimeout(() => setV(value), delay);
-        return () => clearTimeout(t);
-    }, [value, delay]);
-    return v;
-}
-
 function withinSaleWindow(start?: string, end?: string): boolean {
     if (!start || !end) return false;
     const now = Date.now();
     const s = +new Date(start);
     const e = +new Date(end);
     return now >= s && now <= e;
+}
+
+function isUpcoming(start?: string): boolean {
+    if (!start) return false;
+    const now = Date.now();
+    const s = +new Date(start);
+    const diffDays = (s - now) / (1000 * 60 * 60 * 24);
+    return diffDays <= 7 && diffDays > 0;
 }
 
 function categoryLabel(id?: number | null): string {
@@ -69,20 +67,24 @@ function categoryLabel(id?: number | null): string {
 const coverPath = (id: string | number, updatedAt?: string) =>
     `/admin/events/${id}/cover${updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ""}`;
 
-function statusBadgeClass(status: ModerationStatus) {
-    return status === "ON SALE"
-        ? "bg-emerald-100 text-emerald-800 whitespace-nowrap"
-        : "bg-zinc-200 text-zinc-800 whitespace-nowrap";
+function statusBadgeClass(status: EffectiveStatus) {
+    switch (status) {
+        case "ONSALE":
+            return "bg-emerald-100 text-emerald-800 whitespace-nowrap";
+        case "UPCOMING":
+            return "bg-amber-100 text-amber-800 whitespace-nowrap";
+        default:
+            return "bg-zinc-200 text-zinc-800 whitespace-nowrap";
+    }
 }
 
 // ---------- Page ----------
 export default function AdminEventManagementPage() {
     const navigate = useNavigate();
 
-    const [statusFilter, setStatusFilter] = useState<"all" | ModerationStatus>("all");
+    const [statusFilter, setStatusFilter] = useState<"all" | EffectiveStatus>("all");
     const [order, setOrder] = useState<Order>("newest");
     const [search, setSearch] = useState("");
-    const debouncedSearch = useDebounced(search, 300);
 
     const [events, setEvents] = useState<Event[]>([]);
     const [loading, setLoading] = useState(true);
@@ -102,7 +104,6 @@ export default function AdminEventManagementPage() {
                     const id =
                         it.id ?? it.eventId ?? it.event_id ?? it.eventsNamId ?? it.events_id;
 
-                    // ✅ ใช้คีย์ที่ถูกต้องตาม backend (salesStartDateTime / salesEndDateTime)
                     const start =
                         it.salesStartDateTime ??
                         it.sales_start_datetime ??
@@ -134,9 +135,10 @@ export default function AdminEventManagementPage() {
                     const updatedAt =
                         it.updatedAt ?? it.updated_at ?? it.cover_updated_at ?? it.modifiedAt;
 
-                    const status: ModerationStatus = withinSaleWindow(start, end)
-                        ? "ON SALE"
-                        : "OFF SALE";
+                    // ✅ เพิ่ม logic upcoming
+                    let status: EffectiveStatus = "OFFSALE";
+                    if (withinSaleWindow(start, end)) status = "ONSALE";
+                    else if (isUpcoming(start)) status = "UPCOMING";
 
                     return {
                         id,
@@ -166,12 +168,13 @@ export default function AdminEventManagementPage() {
 
     useEffect(() => {
         setPage(1);
-    }, [statusFilter, debouncedSearch, order]);
+    }, [statusFilter, search, order]);
 
     const categoryOptions = [
         { label: "Show all", value: "all" },
-        { label: "ON SALE", value: "ON SALE" },
-        { label: "OFF SALE", value: "OFF SALE" },
+        { label: "ONSALE", value: "ONSALE" },
+        { label: "UPCOMING", value: "UPCOMING" },
+        { label: "OFFSALE", value: "OFFSALE" },
     ];
 
     const filtered = useMemo(() => {
@@ -179,8 +182,8 @@ export default function AdminEventManagementPage() {
 
         if (statusFilter !== "all") list = list.filter((e) => e.status === statusFilter);
 
-        if (debouncedSearch.trim()) {
-            const q = debouncedSearch.toLowerCase().trim();
+        const q = search.trim().toLowerCase();
+        if (q) {
             list = list.filter(
                 (e) =>
                     e.eventName.toLowerCase().includes(q) ||
@@ -196,7 +199,7 @@ export default function AdminEventManagementPage() {
         });
 
         return list;
-    }, [events, statusFilter, debouncedSearch, order]);
+    }, [events, statusFilter, search, order]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -204,21 +207,16 @@ export default function AdminEventManagementPage() {
     return (
         <div className="min-h-screen bg-gray-100">
             <Sidebar />
-
             <div className="ml-64 p-8">
                 <div className="mx-auto max-w-7xl">
                     {/* Header */}
                     <div className="mb-6 flex items-center justify-between gap-4 relative">
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            Event Management
-                        </h1>
+                        <h1 className="text-3xl font-bold text-gray-900">Event Management</h1>
                         <div className="relative">
                             <EventToolbar
                                 categories={categoryOptions}
                                 category={statusFilter}
-                                onCategoryChange={(v) =>
-                                    setStatusFilter(v as "all" | ModerationStatus)
-                                }
+                                onCategoryChange={(v) => setStatusFilter(v as "all" | EffectiveStatus)}
                                 order={order}
                                 onOrderChange={setOrder}
                                 search={search}
@@ -239,30 +237,14 @@ export default function AdminEventManagementPage() {
                         <table className="w-full">
                             <thead className="sticky top-0 z-[1] border-b border-gray-200 bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Poster
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Event Name
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Organizer
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Show Date
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Sale Period
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Location
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Status
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                                    Sale seat
-                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Poster</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Event Name</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Organizer</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Show Date</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Sale Period</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Location</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Status</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Sale seat</th>
                             </tr>
                             </thead>
 
@@ -270,39 +252,19 @@ export default function AdminEventManagementPage() {
                             {loading ? (
                                 Array.from({ length: 5 }).map((_, i) => (
                                     <tr key={`sk-${i}`} className="animate-pulse">
-                                        <td className="px-6 py-4">
-                                            <div className="h-16 w-12 rounded bg-gray-200" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="mb-2 h-4 w-48 rounded bg-gray-200" />
-                                            <div className="h-3 w-24 rounded bg-gray-100" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="h-4 w-40 rounded bg-gray-200" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="h-4 w-32 rounded bg-gray-200" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="h-3 w-32 rounded bg-gray-200" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="h-4 w-40 rounded bg-gray-200" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="h-6 w-20 rounded bg-gray-200" />
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="h-4 w-24 rounded bg-gray-200" />
-                                        </td>
+                                        <td className="px-6 py-4"><div className="h-16 w-12 rounded bg-gray-200" /></td>
+                                        <td className="px-6 py-4"><div className="mb-2 h-4 w-48 rounded bg-gray-200" /><div className="h-3 w-24 rounded bg-gray-100" /></td>
+                                        <td className="px-6 py-4"><div className="h-4 w-40 rounded bg-gray-200" /></td>
+                                        <td className="px-6 py-4"><div className="h-4 w-32 rounded bg-gray-200" /></td>
+                                        <td className="px-6 py-4"><div className="h-3 w-32 rounded bg-gray-200" /></td>
+                                        <td className="px-6 py-4"><div className="h-4 w-40 rounded bg-gray-200" /></td>
+                                        <td className="px-6 py-4"><div className="h-6 w-20 rounded bg-gray-200" /></td>
+                                        <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-gray-200" /></td>
                                     </tr>
                                 ))
                             ) : pageItems.length === 0 ? (
                                 <tr>
-                                    <td
-                                        colSpan={8}
-                                        className="px-6 py-14 text-center text-sm text-gray-600"
-                                    >
+                                    <td colSpan={8} className="px-6 py-14 text-center text-sm text-gray-600">
                                         ไม่พบอีเวนต์ที่ตรงกับเงื่อนไข
                                     </td>
                                 </tr>
@@ -311,11 +273,7 @@ export default function AdminEventManagementPage() {
                                     <tr
                                         key={event.id}
                                         className="cursor-pointer transition-colors hover:bg-gray-50"
-                                        onClick={() =>
-                                            navigate(
-                                                `/admin/eventdetail?id=${event.id}`
-                                            )
-                                        }
+                                        onClick={() => navigate(`/admin/eventdetail?id=${event.id}`)}
                                     >
                                         <td className="px-6 py-4">
                                             <AuthImage
@@ -334,44 +292,25 @@ export default function AdminEventManagementPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-sm text-gray-900">
-                                                {event.organizer}
-                                            </div>
+                                            <div className="text-sm text-gray-900">{event.organizer}</div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="text-sm text-gray-900">{fmtDateTime(event.date)}</div>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="text-sm text-gray-900">
-                                                {fmtDateTime(event.date)}
+                                                {event.startSaleDate ? fmtDateTime(event.startSaleDate) : "-"} →{" "}
+                                                {event.endSaleDate ? fmtDateTime(event.endSaleDate) : "-"}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-sm text-gray-900">
-                                                {event.startSaleDate
-                                                    ? fmtDateTime(event.startSaleDate)
-                                                    : "-"}{" "}
-                                                →{" "}
-                                                {event.endSaleDate
-                                                    ? fmtDateTime(event.endSaleDate)
-                                                    : "-"}
-                                            </div>
+                                            <div className="text-sm text-gray-900">{event.location}</div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-sm text-gray-900">
-                                                {event.location}
-                                            </div>
+                                            <Badge className={statusBadgeClass(event.status)}>{event.status}</Badge>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <Badge
-                                                className={statusBadgeClass(
-                                                    event.status
-                                                )}
-                                            >
-                                                {event.status}
-                                            </Badge>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="text-sm text-gray-900">
-                                                {event.saleSeat ?? "—"}
-                                            </div>
+                                            <div className="text-sm text-gray-900">{event.saleSeat ?? "—"}</div>
                                         </td>
                                     </tr>
                                 ))
@@ -399,9 +338,7 @@ export default function AdminEventManagementPage() {
                                     key={i}
                                     onClick={() => setPage(i + 1)}
                                     className={`rounded-md border px-3 py-1.5 text-sm ${
-                                        page === i + 1
-                                            ? "bg-gray-900 text-white"
-                                            : "hover:bg-gray-50"
+                                        page === i + 1 ? "bg-gray-900 text-white" : "hover:bg-gray-50"
                                     }`}
                                 >
                                     {i + 1}

@@ -82,14 +82,12 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
        Public landing queries
        ========================= */
 
-    /** A) ใช้ VIEW ที่รวม logic จาก ticket_types ไว้แล้ว */
     @Query(value = "SELECT * FROM public_events_on_sale ORDER BY event_id DESC", nativeQuery = true)
     List<EventsNam> findOnSaleViaView();
 
     @Query(value = "SELECT * FROM public_events_upcoming", nativeQuery = true)
     List<EventsNam> findUpcomingViaView();
 
-    /** B) ใช้คอลัมน์ sales_* โดยตรง */
     @Query(value = """
         SELECT e.*
         FROM events_nam e
@@ -114,33 +112,8 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
 
 
     /* =========================
-       🆕 Sales period updater
+       ใช้กับ ImageSeeder: หา event ล่าสุดตามชื่อ
        ========================= */
 
-    /**
-     * อัปเดตช่วงเวลาขายบัตรของอีเวนต์
-     * - ส่งค่า null สำหรับ start หรือ end เพื่อเคลียร์ค่าในฐานข้อมูลได้
-     */
-    @Transactional
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query(value = """
-        UPDATE events_nam
-           SET sales_start_datetime = :startTs,
-               sales_end_datetime   = :endTs
-         WHERE event_id = :eventId
-        """, nativeQuery = true)
-    int updateSalesPeriod(@Param("eventId") Long eventId,
-                          @Param("startTs") Instant startTs,
-                          @Param("endTs") Instant endTs);
-
-
-    /* =========================
-       🆕 ใช้กับ ImageSeeder: หา event ล่าสุดตามชื่อ
-       ========================= */
-
-    /**
-     * คืนอีเวนต์ล่าสุด (id มากสุด) ตามชื่ออีเวนต์
-     * ใช้สำหรับ seed รูปจาก resources ตอนแอปสตาร์ต
-     */
     Optional<EventsNam> findTopByEventNameOrderByIdDesc(String eventName);
 }
