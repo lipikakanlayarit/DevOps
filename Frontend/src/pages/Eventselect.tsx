@@ -1,4 +1,3 @@
-// src/pages/Eventselect.tsx
 "use client";
 
 import { Calendar, Clock, MapPin, Ticket } from "lucide-react";
@@ -87,7 +86,9 @@ const API_PREFIX =
     ((api as any)?.defaults?.baseURL as string | undefined)?.replace(/\/+$/, "") || "/api";
 
 const coverPath = (id: number | string, updatedAt?: string | null) =>
-    `${API_PREFIX}/public/events/${id}/cover${updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ""}`;
+    `${API_PREFIX}/public/events/${id}/cover${
+        updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ""
+    }`;
 
 function useQuery() {
     const { search } = useLocation();
@@ -199,7 +200,9 @@ export default function Eventselect() {
     const fetchSetupLatest = useCallback(async () => {
         if (!eventId) return;
         try {
-            const { data: setup } = await api.get<SetupResponse>(`/public/events/${eventId}/tickets/setup`);
+            const { data: setup } = await api.get<SetupResponse>(
+                `/public/events/${eventId}/tickets/setup?t=${Date.now()}`
+            );
             setSetupTimes((prev) => ({
                 salesStartDatetime: setup?.salesStartDatetime ?? prev.salesStartDatetime ?? null,
                 salesEndDatetime: setup?.salesEndDatetime ?? prev.salesEndDatetime ?? null,
@@ -332,7 +335,9 @@ export default function Eventselect() {
             setSubmitting(true);
 
             // 🔄 ดึง setup ล่าสุดแบบ in-place เพื่อใช้ตรวจชนทันที (ไม่พึ่ง state)
-            const { data: latestSetup } = await api.get<SetupResponse>(`/public/events/${eventId}/tickets/setup`);
+            const { data: latestSetup } = await api.get<SetupResponse>(
+                `/public/events/${eventId}/tickets/setup?t=${Date.now()}`
+            );
             const latestZones = mapSetupToUI(latestSetup);
 
             // อัปเดต state ให้ UI ทันสมัยด้วย
@@ -351,7 +356,10 @@ export default function Eventselect() {
             if (collided.length > 0) {
                 setSelectedSeats((prev) =>
                     prev.filter(
-                        (s) => !collided.some((c) => String(c.zoneId) === String(s.zoneId) && c.row === s.row && c.col === s.col)
+                        (s) =>
+                            !collided.some(
+                                (c) => String(c.zoneId) === String(s.zoneId) && c.row === s.row && c.col === s.col
+                            )
                     )
                 );
                 alert("มีบางที่นั่งถูกจองไปแล้ว ระบบได้ตัดที่นั่งนั้นออกให้ กรุณาเลือกใหม่");
@@ -378,7 +386,8 @@ export default function Eventselect() {
             }
         } catch (err: any) {
             console.error("Reservation failed:", err);
-            const msg = err?.response?.data?.error || err?.message || "เกิดข้อผิดพลาดในการสร้างรายการจอง";
+            const msg =
+                err?.response?.data?.error || err?.message || "เกิดข้อผิดพลาดในการสร้างรายการจอง";
             alert(msg);
         } finally {
             setSubmitting(false);
@@ -484,7 +493,9 @@ export default function Eventselect() {
                                             {zones.length > 0
                                                 ? zones
                                                     .map((z) =>
-                                                        typeof z.price === "number" ? `฿ ${z.price.toLocaleString()} (${z.name})` : `(${z.name})`
+                                                        typeof z.price === "number"
+                                                            ? `฿ ${z.price.toLocaleString()} (${z.name})`
+                                                            : `(${z.name})`
                                                     )
                                                     .join(" / ")
                                                 : "-"}
@@ -578,7 +589,6 @@ export default function Eventselect() {
                                 boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
                             }}
                             onClick={() => handleDateClick(d.key)}
-
                         >
                             <div className="flex">
                                 <div

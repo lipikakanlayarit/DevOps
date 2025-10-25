@@ -126,8 +126,8 @@ WHERE event_name='BUTCON Music Fest 2025'
 ORDER BY event_id DESC LIMIT 1;
 
 IF ev_id IS NULL THEN
-    RAISE NOTICE 'BUTCON Music Fest 2025 not found. Skip seat map.';
-    RETURN;
+      RAISE NOTICE 'BUTCON Music Fest 2025 not found. Skip seat map.';
+      RETURN;
 END IF;
 
 DELETE FROM zone_ticket_types WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id=ev_id);
@@ -166,7 +166,7 @@ SELECT * FROM seat_zones WHERE event_id=ev_id AND description IN ('VIP','REGULAR
     FOR i IN 1..5 LOOP
       r_label := CHR(64 + i);
 INSERT INTO seat_rows (zone_id,row_label,sort_order,created_at,updated_at)
-VALUES (z_rec.zone_id, r_label, i, NOW(), NOW());
+VALUES (z_rec.zone_id, r_label, i - 1, NOW(), NOW()); -- ✅ 0-based
 END LOOP;
 END LOOP;
 
@@ -202,8 +202,8 @@ WHERE event_name='Startup Seminar 2025'
 ORDER BY event_id DESC LIMIT 1;
 
 IF ev_id IS NULL THEN
-    RAISE NOTICE 'Startup Seminar 2025 not found. Skip seat map.';
-    RETURN;
+      RAISE NOTICE 'Startup Seminar 2025 not found. Skip seat map.';
+      RETURN;
 END IF;
 
 DELETE FROM zone_ticket_types WHERE zone_id IN (SELECT zone_id FROM seat_zones WHERE event_id = ev_id);
@@ -242,7 +242,7 @@ FOR z_rec IN SELECT * FROM seat_zones WHERE event_id=ev_id ORDER BY sort_order L
     FOR i IN 1..3 LOOP
       r_label := CHR(64 + i);
 INSERT INTO seat_rows (zone_id,row_label,sort_order,created_at,updated_at)
-VALUES (z_rec.zone_id,r_label,i,NOW(),NOW());
+VALUES (z_rec.zone_id, r_label, i - 1, NOW(), NOW()); -- ✅ 0-based
 END LOOP;
 END LOOP;
 

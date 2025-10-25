@@ -60,15 +60,15 @@ public class TicketSetupService {
                         .max().orElse(0);
             }
 
-            // ✅ ที่นั่งที่ขายแล้ว (PAID) — คืนเป็นพิกัด 0-based ต่อโซน
+            // ✅ ที่นั่งที่ถูกจอง/จ่ายแล้ว (พิกัด 0-based ต่อโซน)
             Map<Long, List<Map<String, Integer>>> occupiedByZone = new HashMap<>();
             try {
                 List<Object[]> occ = seatsRepo.findOccupiedWithZoneRowColByEventId(eventId);
                 for (Object[] row : occ) {
                     Long zoneId = ((Number) row[0]).longValue();
-                    int r1 = ((Number) row[1]).intValue(); // 1-based
-                    int c1 = ((Number) row[2]).intValue(); // 1-based
-                    int r = Math.max(0, r1 - 1);
+                    int r0 = ((Number) row[1]).intValue(); // ✅ sort_order = 0-based
+                    int c1 = ((Number) row[2]).intValue(); // ✅ seat_number = 1-based
+                    int r = r0;
                     int c = Math.max(0, c1 - 1);
                     occupiedByZone.computeIfAbsent(zoneId, k -> new ArrayList<>())
                             .add(Map.of("r", r, "c", c));
@@ -88,9 +88,9 @@ public class TicketSetupService {
                     List<Object[]> mapped = seatsRepo.findZoneRowColForSeatIds(eventId, union.toArray(Long[]::new));
                     for (Object[] r : mapped) {
                         Long zoneId = ((Number) r[1]).longValue();
-                        int r1 = ((Number) r[2]).intValue();
-                        int c1 = ((Number) r[3]).intValue();
-                        int rr = Math.max(0, r1 - 1);
+                        int r0 = ((Number) r[2]).intValue(); // ✅ 0-based
+                        int c1 = ((Number) r[3]).intValue(); // ✅ 1-based
+                        int rr = r0;
                         int cc = Math.max(0, c1 - 1);
                         occupiedByZone.computeIfAbsent(zoneId, k -> new ArrayList<>())
                                 .add(Map.of("r", rr, "c", cc));
@@ -128,11 +128,11 @@ public class TicketSetupService {
                 m.put("id", zoneId);
                 m.put("code", safe(z.getDescription()));
                 m.put("name", safe(z.getZoneName()));
-                m.put("price", price);                 // ✅ now FE จะเห็นราคา
+                m.put("price", price);
                 m.put("ticketTypeId", ticketTypeId);
                 m.put("hasSeats", !"STANDING".equalsIgnoreCase(safe(z.getDescription())));
                 m.put("sortOrder", z.getSortOrder() == null ? 0 : z.getSortOrder());
-                m.put("occupiedSeats", occupiedByZone.getOrDefault(zoneId, List.of()));
+                m.put("occupiedSeats", occupiedByZone.getOrDefault(zoneId, List.of())); // FE จะใช้แปลงเป็น "X"
 
                 zoneDtos.add(m);
             }
@@ -376,7 +376,7 @@ public class TicketSetupService {
                         SeatRows r = new SeatRows();
                         r.setZoneId(z.getZoneId());
                         r.setRowLabel(String.valueOf((char) ('A' + (i - 1))));
-                        r.setSortOrder(i);
+                        r.setSortOrder(i - 1); // ✅ 0-based
                         r.setCreatedAt(Instant.now());
                         r.setUpdatedAt(Instant.now());
                         r = seatRowsRepo.save(r);
@@ -384,7 +384,7 @@ public class TicketSetupService {
                         for (int c = 1; c <= colsCount; c++) {
                             Seats s = new Seats();
                             s.setRowId(r.getRowId());
-                            s.setSeatNumber(c);
+                            s.setSeatNumber(c); // 1-based OK
                             s.setSeatLabel(r.getRowLabel() + c);
                             s.setIsActive(true);
                             s.setCreatedAt(Instant.now());

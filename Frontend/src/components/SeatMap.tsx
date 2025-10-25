@@ -15,7 +15,7 @@ export type Zone = {
 const ROW_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 type Props = {
-    eventId?: number; // ✅ เพิ่ม เพื่อ fetch เองได้
+    eventId?: number; // ✅ ถ้ามี ให้ fetch setup เองได้
     zones?: Zone[];
     selected?: Array<{ zoneId: Zone["id"]; r: number; c: number }>;
     onPick?: (zoneId: Zone["id"], r: number, c: number) => void;
@@ -36,19 +36,41 @@ export default function SeatMap({
     const [zones, setZones] = useState<Zone[]>(propZones);
     const purchasable = (effectiveStatus || "OFFSALE").toUpperCase() === "ONSALE";
 
-    // ✅ ถ้ามี eventId ให้ fetch setup เอง
+    // ✅ sync กับ propZones เมื่อ parent อัปเดต
+    useEffect(() => {
+        setZones(propZones);
+    }, [propZones]);
+
+    // ✅ ถ้ามี eventId ให้ fetch setup เอง (ใช้กรณีเอาคอมโพเนนต์ไป standalone)
     useEffect(() => {
         if (!eventId) return;
-        fetch(`/api/public/events/${eventId}/tickets/setup`)
+        fetch(`/api/public/events/${eventId}/tickets/setup?t=${Date.now()}`, {
+            credentials: "include",
+            headers: { Accept: "application/json" },
+        })
             .then((r) => r.json())
             .then((data) => {
                 // data.zones = zone array
-                // data.occupiedSeatMap = [{ zoneId, r, c }]
-                const zonesWithOcc = (data.zones || []).map((z: any) => {
-                    const occ = (data.occupiedSeatMap || [])
+                // data.occupiedSeatMap = [{ seatId, zoneId, r, c }]
+                const zonesWithOcc = (data.zones || []).map((z: any, idx: number) => {
+                    const occFromFlat = (data.occupiedSeatMap || [])
                         .filter((o: any) => String(o.zoneId) === String(z.id))
                         .map((o: any) => ({ r: o.r, c: o.c }));
-                    return { ...z, occupied: occ };
+                    const occupied = [
+                        ...(z.occupiedSeats || []),
+                        ...occFromFlat,
+                    ].reduce((acc: Array<{ r: number; c: number }>, cur: { r: number; c: number }) => {
+                        if (!acc.some((p) => p.r === cur.r && p.c === cur.c)) acc.push(cur);
+                        return acc;
+                    }, []);
+                    return {
+                        id: z.id,
+                        name: z.name ?? z.code ?? `ZONE-${idx + 1}`,
+                        rows: z.rows ?? data.seatRows ?? 0,
+                        cols: z.cols ?? data.seatColumns ?? 0,
+                        price: z.price ?? null,
+                        occupied,
+                    } as Zone;
                 });
                 setZones(zonesWithOcc);
             })
@@ -71,9 +93,7 @@ export default function SeatMap({
             {!purchasable && (
                 <div className="absolute inset-0 z-10 grid place-items-center bg-black/35 rounded-xl">
                     <div className="px-3 py-1.5 rounded-full bg-white text-xs font-semibold shadow">
-                        {effectiveStatus === "UPCOMING"
-                            ? "UPCOMING (Available on sale start)"
-                            : "OFFSALE"}
+                        {effectiveStatus === "UPCOMING" ? "UPCOMING (Available on sale start)" : "OFFSALE"}
                     </div>
                 </div>
             )}
@@ -89,7 +109,7 @@ export default function SeatMap({
                 {/* โซนต่าง ๆ */}
                 <div className="grid gap-8">
                     {zones.map((z) => {
-                        const aisleEveryCols = Math.max(1, (aisleEvery ?? Math.floor(z.cols / 2)) || 1);
+                        const aisleEveryCols = Math.max(1, (aisleEvery ?? Math.floor((z.cols || 1) / 2)) || 1);
                         const baseColor = z.color || "#a88df1";
 
                         return (
@@ -118,15 +138,9 @@ export default function SeatMap({
                                                         {/* ที่นั่ง */}
                                                         <div className="flex gap-2">
                                                             {Array.from({ length: z.cols }).map((__, cIdx) => {
-                                                                const taken =
-                                                                    z.occupied?.some(
-                                                                        (o) => o.r === rIdx && o.c === cIdx
-                                                                    ) ?? false;
+                                                                const taken = z.occupied?.some((o) => o.r === rIdx && o.c === cIdx) ?? false;
                                                                 const chosen = isSelected(z.id, rIdx, cIdx);
-                                                                const shouldAisle =
-                                                                    aisleEveryCols > 0 &&
-                                                                    cIdx > 0 &&
-                                                                    cIdx % aisleEveryCols === 0;
+                                                                const shouldAisle = aisleEveryCols > 0 && cIdx > 0 && cIdx % aisleEveryCols === 0;
                                                                 const style = taken
                                                                     ? {}
                                                                     : {
@@ -136,9 +150,7 @@ export default function SeatMap({
 
                                                                 return (
                                                                     <React.Fragment key={cIdx}>
-                                                                        {shouldAisle && (
-                                                                            <div className="w-4 md:w-5 lg:w-6" aria-hidden />
-                                                                        )}
+                                                                        {shouldAisle && <div className="w-4 md:w-5 lg:w-6" aria-hidden />}
                                                                         <button
                                                                             disabled={taken || readOnly}
                                                                             onClick={() => onPick?.(z.id, rIdx, cIdx)}
@@ -151,14 +163,8 @@ export default function SeatMap({
                                                                                         : "text-transparent hover:scale-110",
                                                                             ].join(" ")}
                                                                             style={style}
-                                                                            title={`Zone ${z.name} • Row ${rowLabel} • Seat ${
-                                                                                cIdx + 1
-                                                                            }${
-                                                                                taken
-                                                                                    ? " — occupied"
-                                                                                    : chosen
-                                                                                        ? " — selected"
-                                                                                        : ""
+                                                                            title={`Zone ${z.name} • Row ${rowLabel} • Seat ${cIdx + 1}${
+                                                                                taken ? " — occupied" : chosen ? " — selected" : ""
                                                                             }`}
                                                                         >
                                                                             {taken ? (

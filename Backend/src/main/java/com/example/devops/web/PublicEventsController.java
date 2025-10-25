@@ -104,8 +104,8 @@ public class PublicEventsController {
                     for (Object[] r : rows) {
                         Long seatId = ((Number) r[0]).longValue();
                         Long zoneId = ((Number) r[1]).longValue();
-                        int row = ((Number) r[2]).intValue() - 1; // convert to 0-based
-                        int col = ((Number) r[3]).intValue() - 1;
+                        int row = ((Number) r[2]).intValue();      // ✅ sort_order = 0-based -> ไม่ต้อง -1
+                        int col = ((Number) r[3]).intValue() - 1;  // ✅ seat_number = 1-based -> ยังต้อง -1
                         occupiedMap.add(Map.of(
                                 "seatId", seatId,
                                 "zoneId", zoneId,
