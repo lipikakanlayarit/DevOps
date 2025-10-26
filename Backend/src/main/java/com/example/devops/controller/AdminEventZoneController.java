@@ -36,30 +36,31 @@ public class AdminEventZoneController {
     }
 
     /**
-     * คืนรายการโซนของอีเวนต์ พร้อมสรุป Row/Column/Price (จริง) และ Sale (mock)
+     * ✅ คืนรายการโซนของอีเวนต์ พร้อมสรุป Row/Column/Price (จริง) และ Sale (จากฐานข้อมูล)
      * GET /api/admin/events/{eventId}/zones
      */
     @GetMapping("/{eventId}/zones")
     public ResponseEntity<?> listZonesSummary(@PathVariable("eventId") Long eventId) {
-        List<SeatZones> zones = seatZonesRepo.findByEventIdOrderBySortOrderAsc(eventId);
+        List<SeatZones> zones = seatZonesRepo.findByEventIdOrderBySortOrderAscZoneIdAsc(eventId);
+
         List<Map<String, Object>> result = zones.stream().map(z -> {
             Long zoneId = z.getZoneId();
 
-            // 1) จำนวนแถวจริงของโซน
+            // 1) จำนวนแถวของโซน
             int rowCount = seatRowsRepo.countByZoneId(zoneId);
 
-            // 2) คอลัมน์ = max(#seats) ต่อแถวในโซน
+            // 2) จำนวนคอลัมน์สูงสุดในโซน
             Integer maxSeatsPerRow = seatsRepo.findMaxSeatsPerRowByZoneId(zoneId);
             int columnCount = (maxSeatsPerRow == null ? 0 : maxSeatsPerRow);
 
-            // 3) ราคา: เลือก ticket_type ของโซนนั้นที่ราคา "สูงสุด" (ตามการ map)
+            // 3) ราคาตั๋ว (เลือก ticket_type แรกหรือสูงสุดในโซน)
             BigDecimal price = zttRepo.findFirstPriceByZoneId(zoneId);
-            String priceStr = price == null ? null : price.toPlainString();
+            String priceStr = price != null ? price.toPlainString() : "-";
 
-            // 4) Sale (mock): คิด sold ~30% ของความจุ
-            int capacity = rowCount * columnCount;
-            int sold = (int) Math.round(capacity * 0.30); // mock
-            String sale = sold + "/" + capacity;
+            // 4) Sale จริงจากฐานข้อมูล
+            int totalSeats = seatsRepo.countSeatsInZone(zoneId);
+            int soldSeats = seatsRepo.countSoldSeatsInZone(zoneId);
+            String sale = soldSeats + "/" + totalSeats;
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("zone", z.getZoneName() != null ? z.getZoneName() : ("Zone #" + zoneId));

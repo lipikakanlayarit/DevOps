@@ -1,9 +1,11 @@
 package com.example.devops.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -31,21 +33,49 @@ public class TicketSetupRequest {
     private Boolean active;                // สถานะเปิดขาย/ปิดขาย
 
     /** sales window (ค่ากลาง) – จะอัปเดตทั้ง ticket_types และซ้ำลง events_nam */
-    private Instant salesStartDatetime;
-    private Instant salesEndDatetime;
+    @JsonAlias({"salesStartDatetime"})
+    private Instant salesStartDateTime;
+
+    @JsonAlias({"salesEndDatetime"})
+    private Instant salesEndDateTime;
+
+    /* ===== Alias getters/setters เพื่อรองรับชื่อแบบ "...Datetime" (t เล็ก) ที่โค้ดฝั่ง service เรียกใช้ ===== */
+    public Instant getSalesStartDatetime() { return salesStartDateTime; }
+    public void setSalesStartDatetime(Instant v) { this.salesStartDateTime = v; }
+    public Instant getSalesEndDatetime() { return salesEndDateTime; }
+    public void setSalesEndDatetime(Instant v) { this.salesEndDateTime = v; }
 
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ZoneDTO {
-        private Long id;               // zone_id (ถ้ามีจะ update, ถ้าไม่มีจะสร้าง)
-        private String code;           // เช่น "VIP" / "REGULAR" / "STANDING" (ใช้เป็น description)
-        private String name;           // ชื่อโซน เช่น "Zone A"
-        private Integer price;         // ราคาในโซน (int บาท) – จะ sync ไป ticket_types
-        private Long ticketTypeId;     // ถ้ามีจะ map โซน→ticket_types ตามนี้
+        /** zone_id (ถ้ามีจะ update, ถ้าไม่มีจะสร้าง) */
+        private Long id;
 
-        /** ถ้า false/ไม่ได้ส่ง และ code != STANDING -> จะสร้าง seat rows/columns ให้ตามค่ากลาง */
-        private Boolean hasSeats;      // true = ไม่มีที่นั่งแบบ fixed (standing)
-        private Integer sortOrder;     // ลำดับแสดงผล (optional)
+        /** เช่น "VIP" / "REGULAR" / "STANDING" (ใช้เป็น description/รหัสภายใน) */
+        private String code;
+
+        /** ชื่อโซน เช่น "Zone A" */
+        private String name;
+
+        /** ราคาในโซน (บาท) – จะ sync ไป ticket_types */
+        private BigDecimal price;
+
+        /** ถ้ามีจะ map โซน → ticket_types ตามนี้ */
+        private Long ticketTypeId;
+
+        /**
+         * โหมดยืน/ไม่มีผังที่นั่ง (standing)
+         * - เพื่อ backward-compat: รองรับรับค่าจาก hasSeats (เก่า) ด้วย โดย "hasSeats=true" => standing=true
+         */
+        @JsonAlias({"hasSeats"})
+        private Boolean standing;
+
+        /** ลำดับแสดงผล (optional) */
+        private Integer sortOrder;
+
+        /** (optional) กำหนดจำนวนแถว/คอลัมน์เฉพาะโซน (จะ override ค่ากลางถ้ามี) */
+        private Integer seatRows;
+        private Integer seatColumns;
     }
 }

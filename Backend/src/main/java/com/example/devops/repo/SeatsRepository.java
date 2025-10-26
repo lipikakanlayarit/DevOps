@@ -86,7 +86,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     void deleteByEventId(@Param("eventId") Long eventId);
 
-    // ==================== เพิ่มส่วน Public สำหรับ FE ====================
+    // ==================== Public สำหรับ FE (สถานะที่นั่ง) ====================
 
     @Query(value = """
         SELECT s.seat_id
@@ -139,4 +139,27 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     List<Object[]> findZoneRowColForSeatIds(@Param("eventId") Long eventId,
                                             @Param("seatIds") Long[] seatIds);
+
+    // ==================== เพิ่มสำหรับ Admin: คำนวณ Sale ต่อโซน ====================
+
+    /** จำนวนที่นั่งทั้งหมดในโซน */
+    @Query(value = """
+        SELECT COUNT(*)
+          FROM seats s
+          JOIN seat_rows r ON r.row_id = s.row_id
+         WHERE r.zone_id = :zoneId
+        """, nativeQuery = true)
+    int countSeatsInZone(@Param("zoneId") Long zoneId);
+
+    /** จำนวนที่นั่งที่ขายแล้ว (PAID) ในโซน */
+    @Query(value = """
+        SELECT COALESCE(COUNT(*), 0)
+          FROM reserved_seats rs
+          JOIN reserved rsv ON rsv.reserved_id = rs.reserved_id
+          JOIN seats s      ON s.seat_id = rs.seat_id
+          JOIN seat_rows sr ON sr.row_id = s.row_id
+         WHERE sr.zone_id = :zoneId
+           AND UPPER(COALESCE(rsv.payment_status, '')) = 'PAID'
+        """, nativeQuery = true)
+    int countSoldSeatsInZone(@Param("zoneId") Long zoneId);
 }

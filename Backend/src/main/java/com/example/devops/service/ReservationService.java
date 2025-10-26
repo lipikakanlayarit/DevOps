@@ -16,10 +16,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class ReservationService {
+
+    private static final Set<String> ALLOWED_METHODS = Set.of("Credit Card", "Bank Transfer", "QR Payment");
 
     private final ReservedRepository reservedRepo;
     private final ReservedSeatsRepository reservedSeatsRepo;
@@ -40,33 +43,33 @@ public class ReservationService {
 
     @Transactional
     public ReservedResponse createReservation(Long userId, ReservationRequest req) {
-        if (req == null || req.eventId == null || req.quantity == null || req.quantity <= 0) {
+        if (req == null || req.getEventId() == null || req.getQuantity() == null || req.getQuantity() <= 0) {
             throw new IllegalArgumentException("Invalid reservation payload");
         }
-        final int count = (req.seats != null) ? req.seats.size() : 0;
-        if (count != req.quantity) {
+        final int count = (req.getSeats() != null) ? req.getSeats().size() : 0;
+        if (count != req.getQuantity()) {
             throw new IllegalArgumentException("quantity and seats count mismatch");
         }
 
         // === คำนวณ seat_id ทั้งหมดจาก payload (ก่อนเซฟ) ===
         List<Long> seatIdsToReserve = new ArrayList<>();
-        if (req.seats != null) {
-            for (ReservationRequest.SeatPick sp : req.seats) {
-                if (sp.zoneId == null || sp.row == null || sp.col == null) {
+        if (req.getSeats() != null) {
+            for (ReservationRequest.SeatPick sp : req.getSeats()) {
+                if (sp.getZoneId() == null || sp.getRow() == null || sp.getCol() == null) {
                     throw new IllegalArgumentException("Invalid seat pick");
                 }
-                int seatNumber = sp.col + 1;          // FE 0-based -> DB 1-based
-                char rowChar = (char) ('A' + sp.row); // เช่น 0->A, 1->B
+                int seatNumber = sp.getCol() + 1;          // FE 0-based -> DB 1-based
+                char rowChar = (char) ('A' + sp.getRow()); // 0->A, 1->B
 
                 Long seatId = seatsRepo.findSeatIdFlexible(
-                        sp.zoneId, sp.row, String.valueOf(rowChar), seatNumber
+                        sp.getZoneId(), sp.getRow(), String.valueOf(rowChar), seatNumber
                 );
                 if (seatId == null) {
-                    seatId = seatsRepo.findSeatIdByZoneRowCol(sp.zoneId, sp.row, seatNumber);
+                    seatId = seatsRepo.findSeatIdByZoneRowCol(sp.getZoneId(), sp.getRow(), seatNumber);
                 }
                 if (seatId == null) {
                     throw new IllegalArgumentException(
-                            "Seat not found for zone=" + sp.zoneId + " row=" + sp.row + " col=" + sp.col
+                            "Seat not found for zone=" + sp.getZoneId() + " row=" + sp.getRow() + " col=" + sp.getCol()
                     );
                 }
                 seatIdsToReserve.add(seatId);
@@ -75,7 +78,7 @@ public class ReservationService {
 
         // === กันจองทับที่นั่งที่ "ชำระเงินแล้ว" ภายในอีเวนต์เดียวกัน ===
         if (!seatIdsToReserve.isEmpty()) {
-            List<Long> paidTaken = seatsRepo.findPaidTakenAmong(req.eventId, seatIdsToReserve.toArray(Long[]::new));
+            List<Long> paidTaken = seatsRepo.findPaidTakenAmong(req.getEventId(), seatIdsToReserve.toArray(Long[]::new));
             if (!paidTaken.isEmpty()) {
                 throw new IllegalArgumentException("Some seats are already PAID by others: " + paidTaken);
             }
@@ -84,15 +87,16 @@ public class ReservationService {
         // 1) create reserved (UNPAID)
         Reserved r = new Reserved();
         r.setUserId(userId);
-        r.setEventId(req.eventId);
+        r.setEventId(req.getEventId());
         r.setTicketTypeId(null);
-        r.setQuantity(req.quantity);
-        r.setTotalAmount(req.totalAmount != null ? req.totalAmount : BigDecimal.ZERO);
+        r.setQuantity(req.getQuantity());
+        r.setTotalAmount(req.getTotalAmount() != null ? req.getTotalAmount() : BigDecimal.ZERO);
         r.setPaymentStatus("UNPAID");
         r.setRegistrationDatetime(Instant.now());
         r.setPaymentDatetime(null);
         r.setConfirmationCode(null);
         r.setNotes(null);
+        r.setPaymentMethod(null);
         r = reservedRepo.save(r);
 
         // 2) map seats -> reserved_seats
@@ -118,21 +122,30 @@ public class ReservationService {
         Reserved r = reservedRepo.findById(reservedId)
                 .orElseThrow(() -> new IllegalArgumentException("Reservation not found"));
 
+        String normalized = (method == null || method.isBlank()) ? "MOCK" : method.trim();
+
         if (!"PAID".equalsIgnoreCase(r.getPaymentStatus())) {
             r.setPaymentStatus("PAID");
             r.setPaymentDatetime(Instant.now());
             r.setConfirmationCode(("CONF-" + UUID.randomUUID().toString().replace("-", "")).substring(0, 12).toUpperCase());
+            r.setPaymentMethod(normalized);
             reservedRepo.save(r);
 
             Payments p = new Payments();
             p.setReservedId(r.getReservedId());
             p.setAmount(r.getTotalAmount() != null ? r.getTotalAmount() : BigDecimal.ZERO);
-            p.setPaymentMethod(method != null ? method : "MOCK");
+            p.setPaymentMethod(normalized);
             p.setTransactionId("MOCK-" + UUID.randomUUID());
             p.setPaymentStatus("SUCCESS");
             p.setPaymentDatetime(r.getPaymentDatetime());
             p.setGatewayResponse("{\"mock\":true}");
             paymentsRepo.save(p);
+        } else {
+            // กรณีจ่ายแล้ว แต่อาจแก้ไขวิธีชำระเงิน
+            if (normalized != null && (r.getPaymentMethod() == null || !normalized.equals(r.getPaymentMethod()))) {
+                r.setPaymentMethod(normalized);
+                reservedRepo.save(r);
+            }
         }
 
         return ReservedResponse.from(r);

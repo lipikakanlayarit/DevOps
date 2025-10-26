@@ -27,7 +27,10 @@ import static com.example.devops.dto.EventMapper.toEntity;
 
 @RestController
 @RequestMapping("/api/events")
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"}, allowCredentials = "true")
+@CrossOrigin(
+        origins = {"http://localhost:5173", "http://localhost:3000"},
+        allowCredentials = "true"
+)
 public class EventController {
 
     private final EventsNamRepository eventsRepository;
@@ -54,10 +57,25 @@ public class EventController {
         }
 
         EventsNam ev = toEntity(new EventsNam(), req, organizerOpt.get().getId());
-        if (ev.getStatus() == null) ev.setStatus("PENDING");
+        if (ev.getStatus() == null || ev.getStatus().isBlank()) {
+            ev.setStatus("PENDING");
+        }
 
         EventsNam saved = eventsRepository.save(ev);
-        return ResponseEntity.ok(toDto(saved));
+
+        // enrich dto with organizer info for FE
+        EventResponse dto = toDto(saved);
+        Organizer org = organizerOpt.get();
+        dto.setOrganizerId(org.getId());
+        dto.setOrganizerName(org.getCompanyName() != null && !org.getCompanyName().isBlank()
+                ? org.getCompanyName()
+                : (org.getUsername() != null ? org.getUsername() : "Organizer #" + org.getId()));
+        dto.setOrganizerCompany(org.getCompanyName());
+        dto.setOrganizerEmail(org.getEmail());
+        dto.setOrganizerPhone(org.getPhoneNumber());
+        dto.setOrganizerAddress(org.getAddress());
+
+        return ResponseEntity.ok(dto);
     }
 
     // ------------------ READ ------------------
@@ -65,7 +83,28 @@ public class EventController {
     @Transactional(readOnly = true)
     public ResponseEntity<?> getOne(@PathVariable("id") Long id) {
         return eventsRepository.findById(id)
-                .<ResponseEntity<?>>map(ev -> ResponseEntity.ok(toDto(ev)))
+                .<ResponseEntity<?>>map(ev -> {
+                    EventResponse dto = toDto(ev);
+
+                    // enrich organizer fields so FE แสดงได้ครบ (organizer name/phone/address)
+                    if (ev.getOrganizerId() != null) {
+                        organizerRepo.findById(ev.getOrganizerId()).ifPresent(org -> {
+                            dto.setOrganizerId(org.getId());
+                            dto.setOrganizerName(org.getCompanyName() != null && !org.getCompanyName().isBlank()
+                                    ? org.getCompanyName()
+                                    : (org.getUsername() != null ? org.getUsername() : "Organizer #" + org.getId()));
+                            dto.setOrganizerCompany(org.getCompanyName());
+                            dto.setOrganizerEmail(org.getEmail());
+                            dto.setOrganizerPhone(org.getPhoneNumber());
+                            dto.setOrganizerAddress(org.getAddress());
+                        });
+                    }
+
+                    // ป้องกัน nulls เล็กน้อย
+                    if (dto.getStatus() == null) dto.setStatus("PENDING");
+
+                    return ResponseEntity.ok(dto);
+                })
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Event not found")));
     }
 
@@ -83,7 +122,23 @@ public class EventController {
                     // อัปเดตด้วย mapper (รองรับ salesStart/End)
                     EventsNam updated = applyUpdate(ev, req);
                     EventsNam saved = eventsRepository.save(updated);
-                    return ResponseEntity.ok(toDto(saved));
+
+                    EventResponse dto = toDto(saved);
+                    if (saved.getOrganizerId() != null) {
+                        organizerRepo.findById(saved.getOrganizerId()).ifPresent(org -> {
+                            dto.setOrganizerId(org.getId());
+                            dto.setOrganizerName(org.getCompanyName() != null && !org.getCompanyName().isBlank()
+                                    ? org.getCompanyName()
+                                    : (org.getUsername() != null ? org.getUsername() : "Organizer #" + org.getId()));
+                            dto.setOrganizerCompany(org.getCompanyName());
+                            dto.setOrganizerEmail(org.getEmail());
+                            dto.setOrganizerPhone(org.getPhoneNumber());
+                            dto.setOrganizerAddress(org.getAddress());
+                        });
+                    }
+                    if (dto.getStatus() == null) dto.setStatus("PENDING");
+
+                    return ResponseEntity.ok(dto);
                 })
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Event not found")));
     }
@@ -125,6 +180,7 @@ public class EventController {
     }
 
     @GetMapping("/{id}/cover")
+    @Transactional(readOnly = true)
     public ResponseEntity<byte[]> getCover(@PathVariable("id") Long id) {
         Optional<EventsNam> opt = eventsRepository.findById(id);
         if (opt.isEmpty()) return ResponseEntity.notFound().build();

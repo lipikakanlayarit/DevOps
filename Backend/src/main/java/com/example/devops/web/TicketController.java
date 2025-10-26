@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -53,15 +54,15 @@ public class TicketController {
                 .map(z -> TicketSetupResponse.ZonePrice.builder()
                         .code((String) z.getOrDefault("code", ""))
                         .name((String) z.getOrDefault("name", ""))
-                        .price((Integer) z.getOrDefault("price", null))
+                        .price(toBigDecimal(z.get("price")))   // ✅ BigDecimal เท่านั้น
                         .build())
                 .toList();
 
-        Integer minPerOrder = (Integer) m.getOrDefault("minPerOrder", null);
-        Integer maxPerOrder = (Integer) m.getOrDefault("maxPerOrder", null);
-        Boolean active = (Boolean) m.getOrDefault("active", null);
-        Instant salesStart = (Instant) m.getOrDefault("salesStartDatetime", null);
-        Instant salesEnd   = (Instant) m.getOrDefault("salesEndDatetime", null);
+        Integer minPerOrder = toInteger(m.get("minPerOrder"));
+        Integer maxPerOrder = toInteger(m.get("maxPerOrder"));
+        Boolean active = toBoolean(m.get("active"));
+        Instant salesStart = toInstant(m.get("salesStartDatetime"));
+        Instant salesEnd   = toInstant(m.get("salesEndDatetime"));
 
         return ResponseEntity.ok(
                 TicketSetupResponse.builder()
@@ -110,13 +111,35 @@ public class TicketController {
     /** ดึงโซนทั้งหมดของอีเวนต์ */
     @GetMapping("/zones")
     public ResponseEntity<?> getZones(@PathVariable("eventId") Long eventId) {
-        // ✅ เปลี่ยนจาก getZones → getSeatGrid หรือ getSetup
         Map<String, Object> data = ticketSetupService.getSetup(eventId);
         return ResponseEntity.ok(data.get("zones"));
     }
 
+    /* ================= Helpers ================ */
     private static int toInt(Object v, int def) {
         if (v instanceof Number n) return n.intValue();
-        return def;
+        try { return v != null ? Integer.parseInt(v.toString()) : def; }
+        catch (Exception e) { return def; }
+    }
+    private static Integer toInteger(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.intValue();
+        try { return Integer.valueOf(v.toString()); } catch (Exception e) { return null; }
+    }
+    private static BigDecimal toBigDecimal(Object v) {
+        if (v == null) return null;
+        if (v instanceof BigDecimal b) return b;
+        if (v instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return new BigDecimal(v.toString());
+    }
+    private static Boolean toBoolean(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        return Boolean.valueOf(v.toString());
+    }
+    private static Instant toInstant(Object v) {
+        if (v == null) return null;
+        if (v instanceof Instant i) return i;
+        try { return Instant.parse(v.toString()); } catch (Exception e) { return null; }
     }
 }

@@ -1,11 +1,10 @@
 package com.example.devops.dto;
 
 import lombok.*;
-
 import java.time.Instant;
 
 /**
- * DTO กลางสำหรับแสดง/ตอบกลับ Event (ใช้ทั้ง Admin และ Public)
+ * DTO สำหรับแสดงข้อมูล Event (ใช้ได้ทั้งฝั่ง Admin / Organizer / Public)
  */
 @Getter
 @Setter
@@ -22,7 +21,7 @@ public class EventResponse {
     private String eventName;
     private String description;
     private Long categoryId;
-    private String categoryLabel; // optional
+    private String categoryLabel; // optional label
 
     /* ====== Times ====== */
     private Instant startDateTime;       // entity.startDatetime
@@ -56,7 +55,7 @@ public class EventResponse {
     private Instant coverUpdatedAt;
     private String coverUrl;
 
-    /* ====== Derived (NEW) ====== */
+    /* ====== Derived / Computed ====== */
     private String effectiveStatus; // ONSALE | OFFSALE | UPCOMING
     private boolean purchasable;    // true when ONSALE
 }

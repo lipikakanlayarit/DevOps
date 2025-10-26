@@ -66,12 +66,11 @@ public class TicketSetupService {
                 List<Object[]> occ = seatsRepo.findOccupiedWithZoneRowColByEventId(eventId);
                 for (Object[] row : occ) {
                     Long zoneId = ((Number) row[0]).longValue();
-                    int r0 = ((Number) row[1]).intValue(); // ✅ sort_order = 0-based
-                    int c1 = ((Number) row[2]).intValue(); // ✅ seat_number = 1-based
-                    int r = r0;
+                    int r0 = ((Number) row[1]).intValue(); // sort_order = 0-based
+                    int c1 = ((Number) row[2]).intValue(); // seat_number = 1-based
                     int c = Math.max(0, c1 - 1);
                     occupiedByZone.computeIfAbsent(zoneId, k -> new ArrayList<>())
-                            .add(Map.of("r", r, "c", c));
+                            .add(Map.of("r", r0, "c", c));
                 }
             } catch (Exception ex) {
                 log.warn("occupiedSeats query failed: {}", ex.getMessage());
@@ -88,12 +87,11 @@ public class TicketSetupService {
                     List<Object[]> mapped = seatsRepo.findZoneRowColForSeatIds(eventId, union.toArray(Long[]::new));
                     for (Object[] r : mapped) {
                         Long zoneId = ((Number) r[1]).longValue();
-                        int r0 = ((Number) r[2]).intValue(); // ✅ 0-based
-                        int c1 = ((Number) r[3]).intValue(); // ✅ 1-based
-                        int rr = r0;
-                        int cc = Math.max(0, c1 - 1);
+                        int r0 = ((Number) r[2]).intValue(); // 0-based
+                        int c1 = ((Number) r[3]).intValue(); // 1-based
+                        int c = Math.max(0, c1 - 1);
                         occupiedByZone.computeIfAbsent(zoneId, k -> new ArrayList<>())
-                                .add(Map.of("r", rr, "c", cc));
+                                .add(Map.of("r", r0, "c", c));
                     }
                 }
             } catch (Exception ex) {
@@ -184,7 +182,8 @@ public class TicketSetupService {
         Map<String, Object> resp = new LinkedHashMap<>();
         List<Map<String, Object>> zoneBlocks = new ArrayList<>();
 
-        List<SeatZones> zones = safeList(() -> seatZonesRepo.findByEventIdOrderBySortOrderAsc(eventId));
+        // ใช้วิธีเรียงที่เสถียรกว่า (sort_order, zone_id)
+        List<SeatZones> zones = safeList(() -> seatZonesRepo.findByEventIdOrderBySortOrderAscZoneIdAsc(eventId));
         List<SeatRows> allRows = safeList(() -> seatRowsRepo.findAllRowsByEventId(eventId));
         List<Seats> allSeats = safeList(() -> seatsRepo.findAllSeatsByEventId(eventId));
 
@@ -218,7 +217,7 @@ public class TicketSetupService {
                         cell.put("seatId", s.getSeatId());
                         cell.put("label", s.getSeatLabel());
                         cell.put("number", s.getSeatNumber());
-                        cell.put("active", Boolean.TRUE.equals(s.getIsActive()));
+                        cell.put("active", Boolean.TRUE.equals(s.getIsActive())); // ✅ แก้วงเล็บเกิน
                         seatCells.add(cell);
                     }
 
@@ -271,6 +270,7 @@ public class TicketSetupService {
                 return result;
             }
 
+            // ✅ ใช้ alias ชื่อ *Datetime (t เล็ก) ให้ตรงกับ DTO
             if (req.getSalesStartDatetime() != null) ev.setSalesStartDatetime(req.getSalesStartDatetime());
             if (req.getSalesEndDatetime() != null)   ev.setSalesEndDatetime(req.getSalesEndDatetime());
             eventsRepo.save(ev);
@@ -289,14 +289,14 @@ public class TicketSetupService {
             Instant saleStart = orElse(req.getSalesStartDatetime(), ev.getSalesStartDatetime());
             Instant saleEnd   = orElse(req.getSalesEndDatetime(),   ev.getSalesEndDatetime());
 
-            Map<Long, SeatZones> zonesById = safeList(() -> seatZonesRepo.findByEventIdOrderBySortOrderAsc(eventId))
+            Map<Long, SeatZones> zonesById = safeList(() -> seatZonesRepo.findByEventIdOrderBySortOrderAscZoneIdAsc(eventId))
                     .stream().collect(Collectors.toMap(SeatZones::getZoneId, z -> z, (a,b)->a, LinkedHashMap::new));
 
             List<TicketSetupRequest.ZoneDTO> zoneReqs = Optional.ofNullable(req.getZones()).orElse(List.of());
             List<SeatZones> savedZones = new ArrayList<>();
 
             for (TicketSetupRequest.ZoneDTO z : zoneReqs) {
-                // ✅ หาโซนเดิมก่อน (id -> code -> name)
+                // หาโซนเดิมก่อน (id -> code -> name)
                 SeatZones zone = null;
                 if (z.getId() != null && zonesById.containsKey(z.getId())) {
                     zone = zonesById.get(z.getId());
@@ -312,7 +312,7 @@ public class TicketSetupService {
                     if (zone == null) zone = new SeatZones(); // ไม่เจอจริง ๆ ค่อยสร้างใหม่
                 }
 
-                // ✅ อัปเดตข้อมูลโซน
+                // อัปเดตข้อมูลโซน
                 zone.setEventId(eventId);
                 zone.setZoneName(safe(z.getName()));
                 zone.setDescription(safe(z.getCode()));           // ใช้เป็น typeKey
@@ -324,7 +324,7 @@ public class TicketSetupService {
                 savedZones.add(zone);
                 zonesById.put(zone.getZoneId(), zone); // sync
 
-                // ✅ บริหาร ticket type ด้วย typeKey
+                // บริหาร ticket type ด้วย typeKey
                 String typeKey = safeUpper(firstNonEmpty(z.getCode(), z.getName(), "GENERAL"));
                 TicketTypes t = typeByName.get(typeKey);
                 if (t == null) {
@@ -337,7 +337,13 @@ public class TicketSetupService {
                     t.setCreatedAt(Instant.now());
                     typeByName.put(typeKey, t);
                 }
-                if (z.getPrice() != null) t.setPrice(BigDecimal.valueOf(z.getPrice()));
+                if (z.getPrice() != null) {
+                    // รองรับได้ทั้ง Integer/Long/BigDecimal
+                    Number n = z.getPrice();
+                    t.setPrice((n instanceof BigDecimal)
+                            ? (BigDecimal) n
+                            : BigDecimal.valueOf(n.longValue()));
+                }
                 if (t.getPrice() == null) t.setPrice(BigDecimal.ZERO);
                 t.setIsActive(active);
                 t.setMinPerOrder(minPer);
@@ -347,10 +353,10 @@ public class TicketSetupService {
                 t.setUpdatedAt(Instant.now());
             }
 
-            // ✅ เซฟ ticket types ก่อน
+            // เซฟ ticket types ก่อน
             ticketTypesRepo.saveAll(typeByName.values());
 
-            // ✅ Re-link zone ↔ ticket_type ตาม typeKey (เคลียร์ของเดิมกันซ้อน)
+            // Re-link zone ↔ ticket_type ตาม typeKey (เคลียร์ของเดิมกันซ้อน)
             for (SeatZones zone : savedZones) {
                 zoneTicketTypesRepo.deleteByZoneId(zone.getZoneId());
                 String typeKey = safeUpper(firstNonEmpty(zone.getDescription(), zone.getZoneName(), "GENERAL"));
@@ -376,7 +382,7 @@ public class TicketSetupService {
                         SeatRows r = new SeatRows();
                         r.setZoneId(z.getZoneId());
                         r.setRowLabel(String.valueOf((char) ('A' + (i - 1))));
-                        r.setSortOrder(i - 1); // ✅ 0-based
+                        r.setSortOrder(i - 1); // 0-based
                         r.setCreatedAt(Instant.now());
                         r.setUpdatedAt(Instant.now());
                         r = seatRowsRepo.save(r);

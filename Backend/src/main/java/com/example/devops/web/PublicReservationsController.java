@@ -45,25 +45,25 @@ public class PublicReservationsController {
         if (req == null) {
             return bad("BAD_REQUEST", "Body is required");
         }
-        if (req.eventId == null || req.eventId <= 0) {
+        if (req.getEventId() == null || req.getEventId() <= 0) {
             return bad("BAD_REQUEST", "eventId is required");
         }
-        if (!eventsRepo.existsById(req.eventId)) {
-            return notFound("EVENT_NOT_FOUND", "Event " + req.eventId + " not found");
+        if (!eventsRepo.existsById(req.getEventId())) {
+            return notFound("EVENT_NOT_FOUND", "Event " + req.getEventId() + " not found");
         }
-        if (req.quantity == null || req.quantity <= 0) {
+        if (req.getQuantity() == null || req.getQuantity() <= 0) {
             return bad("BAD_REQUEST", "quantity must be > 0");
         }
-        int seatCount = (req.seats != null) ? req.seats.size() : 0;
-        if (seatCount != req.quantity) {
+        int seatCount = (req.getSeats() != null) ? req.getSeats().size() : 0;
+        if (seatCount != req.getQuantity()) {
             return bad("BAD_REQUEST", "quantity and seats count mismatch");
         }
 
         Long userId = userIdHeader; // optional
 
-        // log payload ช่วยดีบักเวลาได้ 400
+        // log payload ช่วยดีบัก
         log.info("Create reservation: eventId={}, quantity={}, seatCount={}, userId={}",
-                req.eventId, req.quantity, seatCount, userId);
+                req.getEventId(), req.getQuantity(), seatCount, userId);
 
         try {
             ReservedResponse created = reservationService.createReservation(userId, req);
@@ -91,13 +91,22 @@ public class PublicReservationsController {
     }
 
     /* ============================================================
-       POST /api/public/reservations/{reservedId}/pay/mock
+       POST /api/public/reservations/{reservedId}/pay
+       body: { "method": "Credit Card" | "Bank Transfer" | "QR Payment" }
        ============================================================ */
-    @PostMapping(value = "/{reservedId}/pay/mock", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> payMock(@PathVariable Long reservedId,
-                                     @RequestParam(name = "method", required = false) String method) {
+    @PostMapping(value = "/{reservedId}/pay",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> pay(
+            @PathVariable Long reservedId,
+            @RequestBody(required = false) Map<String, Object> body
+    ) {
         if (reservedId == null || reservedId <= 0) {
             return bad("BAD_REQUEST", "reservedId is invalid");
+        }
+        String method = null;
+        if (body != null && body.get("method") != null) {
+            method = String.valueOf(body.get("method"));
         }
         try {
             ReservedResponse res = reservationService.payMock(reservedId, method);

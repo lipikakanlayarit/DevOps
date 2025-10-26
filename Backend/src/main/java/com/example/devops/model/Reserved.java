@@ -3,11 +3,11 @@ package com.example.devops.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 
-@Getter @Setter
+@Getter
+@Setter
 @Entity
 @Table(name = "reserved")
 public class Reserved {
@@ -46,4 +46,8 @@ public class Reserved {
 
     @Column(name = "notes")
     private String notes;
+
+    /** ✅ วิธีการชำระเงิน */
+    @Column(name = "payment_method")
+    private String paymentMethod; // Credit Card | Bank Transfer | QR Payment | null
 }

@@ -1,5 +1,6 @@
 package com.example.devops.web;
 
+import com.example.devops.dto.ReservedResponse;
 import com.example.devops.model.Reserved;
 import com.example.devops.model.ReservedSeats;
 import com.example.devops.repo.ReservedRepository;
@@ -19,7 +20,10 @@ import java.util.*;
 @Slf4j
 @RestController
 @RequestMapping("/api/public")
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"}, allowCredentials = "true")
+@CrossOrigin(
+        origins = {"http://localhost:5173", "http://localhost:3000"},
+        allowCredentials = "true"
+)
 @RequiredArgsConstructor
 public class PaymentPublicController {
 
@@ -27,11 +31,11 @@ public class PaymentPublicController {
     private final ReservedSeatsRepository reservedSeatsRepo;
     private final SeatsRepository seatsRepo;
 
-    /* ----------------------------------------------
+    /* =========================================================
        CREATE RESERVATION
        POST /api/public/reservations
-       body: { eventId, quantity, totalAmount, seats:[{zoneId,row,col}] }
-       ---------------------------------------------- */
+       body: { eventId, quantity, totalAmount, seats:[{zoneId,row,col}], notes? }
+       ========================================================= */
     @PostMapping("/reservations")
     @Transactional
     public ResponseEntity<?> createReservation(@RequestBody Map<String, Object> body) {
@@ -49,6 +53,7 @@ public class PaymentPublicController {
             ));
         }
 
+        // ✅ create Reserved record
         Reserved r = new Reserved();
         r.setEventId(eventId);
         r.setQuantity(quantity);
@@ -56,9 +61,11 @@ public class PaymentPublicController {
         r.setPaymentStatus("UNPAID");
         r.setRegistrationDatetime(Instant.now());
         r.setNotes(notes);
-        r = reservedRepository.save(r);
+        reservedRepository.save(r);
+
         log.info("Reservation saved successfully with ID: {}", r.getReservedId());
 
+        // ✅ map seats (optional)
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> seatsReq = (List<Map<String, Object>>) body.getOrDefault("seats", List.of());
         List<ReservedSeats> links = new ArrayList<>();
@@ -67,12 +74,13 @@ public class PaymentPublicController {
             Long zoneId = parseLong(m.get("zoneId"));
             Integer row = parseInt(m.get("row")); // 0-based
             Integer col = parseInt(m.get("col")); // 0-based
+
             if (zoneId == null || row == null || col == null) {
                 throw new IllegalArgumentException("Invalid seat payload (zoneId/row/col required)");
             }
 
-            int seatNo = col + 1;      // seat_number เป็น 1-based
-            int rowNumber = row;       // ถ้า sort_order เก็บ 0-based ให้ใช้ row ตรง ๆ
+            int seatNo = col + 1;      // seat_number = 1-based
+            int rowNumber = row;       // row index (0-based)
 
             Long seatId = seatsRepo.findSeatIdByZoneRowCol(zoneId, rowNumber, seatNo);
             if (seatId == null) {
@@ -83,8 +91,8 @@ public class PaymentPublicController {
             }
 
             ReservedSeats rs = new ReservedSeats();
-            rs.setReservedId(r.getReservedId()); // 👈 set id ตรง ๆ
-            rs.setSeatId(seatId);                // 👈 set id ตรง ๆ
+            rs.setReservedId(r.getReservedId());
+            rs.setSeatId(seatId);
             links.add(rs);
         }
 
@@ -96,52 +104,55 @@ public class PaymentPublicController {
         ));
     }
 
-    /* ----------------------------------------------
+    /* =========================================================
        GET RESERVATION
-       ---------------------------------------------- */
+       ========================================================= */
     @GetMapping("/reservations/{id}")
     @Transactional(readOnly = true)
     public ResponseEntity<?> getReservation(@PathVariable Long id) {
         log.info("Fetching reservation: {}", id);
+
+        // ❗ แก้ปัญหา type inference ของ Optional ให้รีเทิร์นชนิดเดียวกันแบบชัดเจน
         return reservedRepository.findById(id)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .<ResponseEntity<?>>map(r -> ResponseEntity.ok(ReservedResponse.from(r)))
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "RESERVED_NOT_FOUND")));
     }
 
-    /* ----------------------------------------------
-       MOCK PAY  (UNPAID -> PAID)
-       ---------------------------------------------- */
+    /* =========================================================
+       MOCK PAY (UNPAID -> PAID)
+       body (optional): { method: "Credit Card" | "Bank Transfer" | "QR Payment" }
+       ========================================================= */
     @PostMapping("/reservations/{id}/pay")
     @Transactional
-    public ResponseEntity<?> pay(@PathVariable Long id) {
+    public ResponseEntity<?> pay(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
         log.info("Processing payment for reservation: {}", id);
         Reserved r = reservedRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("RESERVED_NOT_FOUND"));
 
-        if ("PAID".equalsIgnoreCase(r.getPaymentStatus())) {
-            return ResponseEntity.ok(Map.of(
-                    "status", "ALREADY_PAID",
-                    "confirmationCode", r.getConfirmationCode()
-            ));
-        }
+        String paymentMethod = (body != null && body.get("method") != null)
+                ? body.get("method").toString()
+                : "MOCK";
 
-        r.setPaymentStatus("PAID");
-        r.setPaymentDatetime(Instant.now());
-        if (r.getConfirmationCode() == null || r.getConfirmationCode().isBlank()) {
+        if (!"PAID".equalsIgnoreCase(r.getPaymentStatus())) {
+            r.setPaymentStatus("PAID");
+            r.setPaymentDatetime(Instant.now());
             r.setConfirmationCode(generateConfirmationCode());
         }
-        reservedRepository.save(r);
+        r.setPaymentMethod(paymentMethod);
 
-        log.info("Payment processed successfully for reservation: {}", id);
+        reservedRepository.save(r);
+        log.info("Payment processed successfully for reservation {} with method {}", id, paymentMethod);
+
         return ResponseEntity.ok(Map.of(
                 "status", "PAID",
-                "confirmationCode", r.getConfirmationCode()
+                "confirmationCode", r.getConfirmationCode(),
+                "paymentMethod", r.getPaymentMethod()
         ));
     }
 
-    /* ----------------------------------------------
+    /* =========================================================
        SEAT STATUS สำหรับหน้าแผนผัง
-       ---------------------------------------------- */
+       ========================================================= */
     @GetMapping("/events/{eventId}/seats/status")
     @Transactional(readOnly = true)
     public ResponseEntity<?> getSeatStatus(@PathVariable Long eventId) {
@@ -152,7 +163,9 @@ public class PaymentPublicController {
         ));
     }
 
-    /* Helpers */
+    /* =========================================================
+       Helpers
+       ========================================================= */
     private static final SecureRandom RAND = new SecureRandom();
 
     private Long parseLong(Object o) {
@@ -160,17 +173,20 @@ public class PaymentPublicController {
         if (o instanceof Number n) return n.longValue();
         return Long.parseLong(o.toString());
     }
+
     private Integer parseInt(Object o) {
         if (o == null) return null;
         if (o instanceof Number n) return n.intValue();
         return Integer.parseInt(o.toString());
     }
+
     private BigDecimal parseBigDecimal(Object o) {
         if (o == null) return null;
         if (o instanceof BigDecimal b) return b;
         if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
         return new BigDecimal(o.toString());
     }
+
     private String generateConfirmationCode() {
         byte[] b = new byte[5];
         RAND.nextBytes(b);

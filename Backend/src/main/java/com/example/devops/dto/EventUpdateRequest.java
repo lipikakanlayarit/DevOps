@@ -4,6 +4,7 @@ package com.example.devops.dto;
 import lombok.*;
 import jakarta.validation.constraints.*;
 import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.time.Instant;
 
 @Getter
@@ -25,10 +26,12 @@ public class EventUpdateRequest {
     @NotNull
     private Instant endDateTime;
 
-    @JsonAlias("salesStartDatetime")
+    /** รองรับได้ทั้ง salesStartDateTime และ salesStartDatetime จาก FE */
+    @JsonAlias({"salesStartDatetime"})
     private Instant salesStartDateTime;
 
-    @JsonAlias("salesEndDatetime")
+    /** รองรับได้ทั้ง salesEndDateTime และ salesEndDatetime จาก FE */
+    @JsonAlias({"salesEndDatetime"})
     private Instant salesEndDateTime;
 
     @NotBlank
@@ -37,17 +40,21 @@ public class EventUpdateRequest {
     private String venueAddress;
     private Integer maxCapacity;
 
-    // 🧩 เพิ่ม getter ทั้งสองรูปแบบให้ Mapper ใช้ได้ทุกแบบ
-    public Instant getSalesStartDateTime() {
-        return salesStartDateTime;
-    }
-    public Instant getSalesEndDateTime() {
-        return salesEndDateTime;
-    }
+    /* ===== Alias getters สำหรับโค้ดเดิมที่เรียก *Datetime (t เล็ก) ===== */
     public Instant getSalesStartDatetime() {
         return salesStartDateTime;
     }
+
     public Instant getSalesEndDatetime() {
         return salesEndDateTime;
+    }
+
+    /* (ไม่บังคับ) alias setters—เผื่ออนาคตมีโค้ดเรียกชื่อนี้ */
+    public void setSalesStartDatetime(Instant salesStartDatetime) {
+        this.salesStartDateTime = salesStartDatetime;
+    }
+
+    public void setSalesEndDatetime(Instant salesEndDatetime) {
+        this.salesEndDateTime = salesEndDatetime;
     }
 }

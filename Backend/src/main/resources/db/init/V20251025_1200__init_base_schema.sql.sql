@@ -108,10 +108,6 @@ END IF;
 END $$;
 
 ALTER TABLE events_nam
-    ADD CONSTRAINT events_status_check
-        CHECK (UPPER(status) IN ('PENDING','APPROVED','REJECTED','PUBLISHED','UPCOMING'));
-
-ALTER TABLE events_nam
     ADD COLUMN IF NOT EXISTS sales_start_datetime TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS sales_end_datetime   TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS review TEXT,
@@ -147,7 +143,7 @@ CREATE TABLE IF NOT EXISTS ticket_types (
     updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
--- ✅ ปรับให้ไม่เกิด WARN/NOTICE เวลา migrate ซ้ำ ๆ
+-- ✅ ทำให้ idempotent
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -207,9 +203,12 @@ CREATE TABLE IF NOT EXISTS reserved (
     notes TEXT
     );
 
+-- ❌ เดิมมี ; คั่นกลาง → ทำให้ "ADD COLUMN payment_method ..." หลุดจาก ALTER
+-- ✅ แก้ให้รวมอยู่ในคำสั่ง ALTER TABLE เดียวกัน
 ALTER TABLE reserved
     ADD COLUMN IF NOT EXISTS registration_datetime TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS payment_datetime TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS payment_datetime      TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS payment_method        VARCHAR(50);
 
 CREATE TABLE IF NOT EXISTS payments (
                                         payment_id BIGSERIAL PRIMARY KEY,

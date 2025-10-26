@@ -1,9 +1,10 @@
-"use client";
+ // src/pages/payment.tsx
+    "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
-import { CreditCard, CheckCircle2, Calendar, MapPin } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin } from "lucide-react";
 
 type ReservedResponse = {
     reservedId: number;
@@ -17,6 +18,7 @@ type ReservedResponse = {
     paymentDatetime?: string;
     confirmationCode?: string;
     notes?: string;
+    paymentMethod?: "Credit Card" | "Bank Transfer" | "QR Payment" | string | null;
 };
 
 const fmt = (iso?: string) =>
@@ -39,6 +41,7 @@ export default function PaymentPage() {
     const [loading, setLoading] = useState(true);
     const [paying, setPaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [method, setMethod] = useState<"Credit Card" | "Bank Transfer" | "QR Payment">("Credit Card");
 
     useEffect(() => {
         if (!reservedId) return;
@@ -46,9 +49,13 @@ export default function PaymentPage() {
             try {
                 setLoading(true);
                 setError(null);
-                // ⚠️ ลบ /api ออก ให้เหลือ /public/... เพราะ baseURL คือ /api แล้ว
+                // baseURL ของ api คือ /api ดังนั้นอย่าเติม /api ซ้ำ
                 const { data } = await api.get<ReservedResponse>(`/public/reservations/${reservedId}`);
                 setResv(data);
+                // ถ้ามี method เดิม (เคยจ่ายแล้ว) ให้แสดง
+                if (data?.paymentMethod && (["Credit Card","Bank Transfer","QR Payment"] as const).includes(data.paymentMethod as any)) {
+                    setMethod(data.paymentMethod as any);
+                }
             } catch (e: any) {
                 setError(e?.response?.data?.error || "Failed to load reservation");
                 setResv(null);
@@ -58,21 +65,21 @@ export default function PaymentPage() {
         })();
     }, [reservedId]);
 
-    const isPaid = resv?.paymentStatus?.toUpperCase() === "PAID";
+    const isPaid = (resv?.paymentStatus ?? "").toUpperCase() === "PAID";
     const amountText = useMemo(() => {
         const n = Number(resv?.totalAmount ?? 0);
         if (Number.isNaN(n)) return "-";
         return "฿" + n.toLocaleString();
     }, [resv?.totalAmount]);
 
-    async function handlePay() {
+    async function handlePayWith(methodArg: "Credit Card" | "Bank Transfer" | "QR Payment") {
         if (!reservedId || !resv) return;
         try {
             setPaying(true);
             setError(null);
-            // ⚠️ ลบ /api ออก
+            // ส่ง method ไปให้ backend บันทึก
             const { data } = await api.post<ReservedResponse>(`/public/reservations/${reservedId}/pay`, {
-                method: "MOCK",
+                method: methodArg,
             });
             setResv(data);
         } catch (e: any) {
@@ -153,18 +160,31 @@ export default function PaymentPage() {
 
                         {/* Payment Box */}
                         <div className="bg-white p-6 rounded-lg shadow-sm border">
-                            <div className="flex items-center gap-3">
-                                <CreditCard className="w-6 h-6 text-gray-700" />
-                                <div className="text-lg font-bold text-gray-800">Pay with Mock Gateway</div>
+                            <div className="text-lg font-bold text-gray-800">Choose payment method</div>
+
+                            <div className="mt-3 space-y-2 text-sm">
+                                {(["Credit Card", "Bank Transfer", "QR Payment"] as const).map((m) => (
+                                    <label key={m} className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="pm"
+                                            value={m}
+                                            checked={method === m}
+                                            onChange={() => setMethod(m)}
+                                        />
+                                        <span>{m}</span>
+                                    </label>
+                                ))}
                             </div>
-                            <p className="text-sm text-gray-600 mt-2">
+
+                            <p className="text-sm text-gray-600 mt-3">
                                 ปุ่มนี้เป็นการ “จำลอง” การชำระเงิน: เมื่อกดระบบจะเปลี่ยนสถานะเป็น <b>PAID</b> และออก
                                 <b> Confirmation Code </b> ให้
                             </p>
 
                             <div className="mt-4 flex gap-3">
                                 <button
-                                    onClick={handlePay}
+                                    onClick={() => handlePayWith(method)}
                                     disabled={isPaid || paying}
                                     className="px-6 py-3 rounded-full font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                                 >
@@ -184,3 +204,4 @@ export default function PaymentPage() {
         </div>
     );
 }
+

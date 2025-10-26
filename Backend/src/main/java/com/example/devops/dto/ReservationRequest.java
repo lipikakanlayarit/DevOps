@@ -1,18 +1,37 @@
 package com.example.devops.dto;
 
+import lombok.*;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** ให้ตรงกับ payload จาก FE */
+/**
+ * DTO ที่ FE ส่งมาเวลาทำการจองที่นั่ง (สร้าง reservation)
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ReservationRequest {
-    public Long eventId;
-    public Integer quantity;
-    public BigDecimal totalAmount;
-    public List<SeatPick> seats;
 
+    private Long eventId;
+    private Integer quantity;
+    private BigDecimal totalAmount;
+    private List<SeatPick> seats;
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class SeatPick {
-        public Long zoneId;   // seat_zones.zone_id (จริง)
-        public Integer row;   // 0 -> 'A'
-        public Integer col;   // 0 -> seat_number 1
+        /** zone_id จริงจาก seat_zones */
+        private Long zoneId;
+
+        /** แถว (0-based, FE -> DB mapping: 0 → 'A') */
+        private Integer row;
+
+        /** คอลัมน์ (0-based, FE -> DB mapping: 0 → seat_number = 1) */
+        private Integer col;
     }
 }
