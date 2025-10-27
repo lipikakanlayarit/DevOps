@@ -5,11 +5,16 @@ import com.example.devops.model.EventsNam;
 import com.example.devops.repo.EventsNamRepository;
 import com.example.devops.repo.SeatsRepository;
 import com.example.devops.service.TicketSetupService;
-import org.springframework.http.*;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/public/events")
@@ -31,16 +36,21 @@ public class PublicEventsController {
         this.seatsRepo = seatsRepo;
     }
 
-    /* Landing */
+    /* ========= NEW: GET /api/public/events (root) =========
+       รองรับพารามิเตอร์ ?section=onSale|upcoming|all (default=onSale) */
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<EventCardResponse> list(@RequestParam(defaultValue = "onSale") String section) {
+        return pickEventsBySection(section).stream()
+                .map(EventCardResponse::from)
+                .collect(Collectors.toList());
+    }
+
+    /* เดิม: /landing (คงไว้ได้) */
     @GetMapping(value = "/landing", produces = MediaType.APPLICATION_JSON_VALUE)
     public List<EventCardResponse> landing(@RequestParam(defaultValue = "onSale") String section) {
-        List<EventsNam> list;
-        switch (section.toLowerCase()) {
-            case "upcoming" -> list = eventsRepo.findUpcomingViaView();
-            case "onsale" -> list = eventsRepo.findOnSaleViaView();
-            default -> list = eventsRepo.findCurrentlyOnSale(Instant.now());
-        }
-        return list.stream().map(EventCardResponse::from).toList();
+        return pickEventsBySection(section).stream()
+                .map(EventCardResponse::from)
+                .collect(Collectors.toList());
     }
 
     /* Event public info */
@@ -104,8 +114,8 @@ public class PublicEventsController {
                     for (Object[] r : rows) {
                         Long seatId = ((Number) r[0]).longValue();
                         Long zoneId = ((Number) r[1]).longValue();
-                        int row = ((Number) r[2]).intValue();      // ✅ sort_order = 0-based -> ไม่ต้อง -1
-                        int col = ((Number) r[3]).intValue() - 1;  // ✅ seat_number = 1-based -> ยังต้อง -1
+                        int row = ((Number) r[2]).intValue();      // sort_order = 0-based
+                        int col = ((Number) r[3]).intValue() - 1;  // seat_number = 1-based
                         occupiedMap.add(Map.of(
                                 "seatId", seatId,
                                 "zoneId", zoneId,
@@ -118,7 +128,6 @@ public class PublicEventsController {
                 }
             }
 
-            // ✅ รวมทั้งหมดเข้า response
             setup.put("takenSeatIds", takenSeatIds);
             setup.put("lockedSeatIds", lockedSeatIds);
             setup.put("occupiedSeatMap", occupiedMap);
@@ -170,7 +179,30 @@ public class PublicEventsController {
         return new ResponseEntity<>(e.getCover_image(), headers, HttpStatus.OK);
     }
 
-    /* DTO */
+    /* ========= helpers ========= */
+
+    private List<EventsNam> pickEventsBySection(String sectionRaw) {
+        String section = sectionRaw == null ? "onSale" : sectionRaw.toLowerCase();
+        try {
+            return switch (section) {
+                case "upcoming" -> eventsRepo.findUpcomingViaView();
+                case "onsale", "on_sale", "on" -> eventsRepo.findOnSaleViaView();
+                case "all" -> eventsRepo.findAll();
+                default -> {
+                    // ถ้าเมธอด custom ไม่อยู่ ให้ fallback
+                    try {
+                        yield eventsRepo.findCurrentlyOnSale(Instant.now());
+                    } catch (Exception ignore) {
+                        yield eventsRepo.findAll();
+                    }
+                }
+            };
+        } catch (Exception ex) {
+            // กัน compile/runtime ถ้าไม่มีเมธอด custom ข้างบน
+            return eventsRepo.findAll();
+        }
+    }
+
     public record EventPublicResponse(
             Long id,
             String eventName,
@@ -214,7 +246,6 @@ public class PublicEventsController {
         }
     }
 
-    /* helpers */
     private static Map<String, Object> emptySeatSetup(
             Integer seatRows,
             Integer seatColumns,

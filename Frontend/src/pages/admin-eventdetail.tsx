@@ -37,6 +37,9 @@ const categoryLabel = (id?: number | null) => {
     return "Other";
 };
 
+const fmtInt = (n?: number | null) =>
+    typeof n === "number" && Number.isFinite(n) ? n.toLocaleString() : "-";
+
 /* ==============================
    Types
    ============================== */
@@ -90,8 +93,8 @@ type TicketZone = {
     zone: string;
     row: number;
     column: number;
-    sale: string;
-    price: string;
+    sale: string; // e.g. "12/50"
+    price: string; // e.g. "5,000" or "-"
 };
 
 type Reservation = {
@@ -101,10 +104,17 @@ type Reservation = {
     user: string;
     status: "COMPLETE" | "UNPAID";
     date: string;
-    paymentMethod: "Credit Card" | "Bank Transfer" | "QR Payment";
+    paymentMethod: string;
 };
 
 type ResvFilter = "all" | "reserved" | "sold";
+
+type SeatStats = {
+    total: number;
+    sold: number;
+    reserved: number;
+    available: number;
+};
 
 const isSold = (r: Reservation) => r.status === "COMPLETE";
 const isReserved = (r: Reservation) => !isSold(r);
@@ -194,8 +204,8 @@ const PaginationControls = ({
                                 </button>
                                 {visiblePages[0] > 2 && (
                                     <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                        ...
-                                    </span>
+                    ...
+                  </span>
                                 )}
                             </>
                         )}
@@ -219,8 +229,8 @@ const PaginationControls = ({
                             <>
                                 {visiblePages[visiblePages.length - 1] < totalPages - 1 && (
                                     <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                        ...
-                                    </span>
+                    ...
+                  </span>
                                 )}
                                 <button
                                     onClick={() => onPageChange(totalPages)}
@@ -470,6 +480,7 @@ export default function AdminEventdetail() {
     const { search } = useLocation();
     const id = useMemo(() => new URLSearchParams(search).get("id") ?? "", [search]);
 
+    // ---- State (ประกาศครั้งเดียว) ----
     const [item, setItem] = useState<UiEvent | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -487,13 +498,15 @@ export default function AdminEventdetail() {
 
     const [ticketZones, setTicketZones] = useState<TicketZone[]>([]);
     const [reservations, setReservations] = useState<Reservation[]>([]);
+    const [seatStats, setSeatStats] = useState<SeatStats>({ total: 0, sold: 0, reserved: 0, available: 0 });
 
-    // Load event detail
+    // Load event detail + zones + seat stats + reservations
     useEffect(() => {
         if (!id) return;
         (async () => {
             setLoading(true);
             try {
+                // Event
                 const res = await api.get(`/admin/events/${id}`);
                 const ev: EventResponse = res.data ?? {};
 
@@ -517,56 +530,86 @@ export default function AdminEventdetail() {
                 };
                 setItem(ui);
 
-                // Load zones
-                let zones: TicketZone[] = [];
+                // Zones
                 try {
                     const z = await api.get(`/admin/events/${id}/zones`);
-                    zones = (z.data ?? []).map((it: any) => ({
+                    const zones: TicketZone[] = (z.data ?? []).map((it: any) => ({
                         zone: String(it.zone ?? "-"),
                         row: Number(it.row ?? 0),
                         column: Number(it.column ?? 0),
                         price: it.price != null ? String(it.price) : "Price/ticket",
                         sale: String(it.sale ?? "0/0"),
                     }));
+                    setTicketZones(zones);
                 } catch (err) {
-                    console.warn("load zones failed, fallback to mock:", err);
+                    console.warn("load zones failed:", err);
+                    setTicketZones([]);
                 }
 
-                if (!zones.length) {
-                    const capacity = ev.maxCapacity ?? 300;
-                    const mockZoneCount = Math.max(6, Math.min(20, Math.ceil(capacity / 50)));
-                    zones = Array.from({ length: mockZoneCount }).map((_, i) => ({
-                        zone: i % 3 === 0 ? "VIP zone" : i % 3 === 1 ? "zone A" : "Standard zone",
-                        row: 12,
-                        column: 6,
-                        sale: `${50 - (i % 10)}/${30 + (i % 10)}`,
-                        price: "Price/ticket",
+                // Seat stats (จริงจาก backend)
+                try {
+                    const s = await api.get(`/admin/events/${id}/seat-stats`);
+                    const body = s.data ?? {};
+                    setSeatStats({
+                        total: Number(body.total ?? 0),
+                        sold: Number(body.sold ?? 0),
+                        reserved: Number(body.reserved ?? 0),
+                        available: Number(body.available ?? 0),
+                    });
+                } catch (err) {
+                    console.warn("load seat-stats failed:", err);
+                    setSeatStats({ total: 0, sold: 0, reserved: 0, available: 0 });
+                }
+
+                // Reservations (จริงจาก backend)
+                try {
+                    const r = await api.get(`/admin/events/${id}/reservations`);
+                    const list: Reservation[] = (r.data ?? []).map((it: any) => ({
+                        id: String(it.id ?? it.reserved_code ?? "-"),
+                        seatId:
+                            (it.seat_label ??
+                                ([it.zone_label, it.row_label, it.seat_number].filter(Boolean).join(" ") || "-")) || "-",
+                        total:
+                            typeof it.total === "number"
+                                ? it.total.toLocaleString()
+                                : it.total
+                                    ? String(it.total)
+                                    : "-",
+                        // ✅ FIX: รองรับทั้ง "user" และ "username"
+                        user: it.user ?? it.username ?? "-",
+                        status: (String(it.status ?? "").toUpperCase() === "PAID" ? "COMPLETE" : "UNPAID") as
+                            | "COMPLETE"
+                            | "UNPAID",
+                        date: it.date
+                            ? new Date(it.date).toLocaleDateString("en-GB", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                            })
+                            : "-",
+                        paymentMethod: it.payment_method ?? "-",
                     }));
-                }
-                setTicketZones(zones);
+                    setReservations(list);
 
-                // Mock reservations
-                const resvs: Reservation[] = Array.from({ length: 18 }).map((_, i) => {
-                    const sold = i % 3 !== 1;
-                    const seatNo = 12 + i;
-                    const dt = new Date();
-                    dt.setDate(dt.getDate() - (18 - i));
-                    return {
-                        id: `8101001258${92500 + i}`,
-                        seatId: `B${seatNo}`,
-                        total: (5000 + (i % 5) * 250).toLocaleString(),
-                        user: sold ? "ZOMBIE" : "PENDING_USER",
-                        status: sold ? "COMPLETE" : "UNPAID",
-                        date: dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-                        paymentMethod: (["Credit Card", "Bank Transfer", "QR Payment"] as const)[i % 3],
-                    };
-                });
-                setReservations(resvs);
+                    // ถ้าโหลด seat-stats ไม่สำเร็จ ให้ fallback คำนวณจาก reservations
+                    setSeatStats((prev) => {
+                        if (prev.total || prev.sold || prev.reserved || prev.available) return prev;
+                        const sold = list.filter(isSold).length;
+                        const reserved = list.length - sold;
+                        const capacity = ui.capacity ?? 0;
+                        const available = Math.max(0, Number(capacity) - list.length);
+                        return { total: capacity, sold, reserved, available };
+                    });
+                } catch (err) {
+                    console.error("load reservations error:", err);
+                    setReservations([]);
+                }
             } catch (e) {
                 console.error("load event detail error:", e);
                 setItem(null);
                 setTicketZones([]);
                 setReservations([]);
+                setSeatStats({ total: 0, sold: 0, reserved: 0, available: 0 });
             } finally {
                 setLoading(false);
             }
@@ -578,6 +621,7 @@ export default function AdminEventdetail() {
     const tzPageItems = useMemo(() => {
         const start = (tzPage - 1) * TICKETZONE_PAGE_SIZE;
         return ticketZones.slice(start, start + TICKETZONE_PAGE_SIZE);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tzPage, ticketZones]);
 
     useEffect(() => {
@@ -609,14 +653,6 @@ export default function AdminEventdetail() {
         setResvPage(1);
     }, [query, resvFilter]);
 
-    // Seat stats
-    const seatStats = useMemo(() => {
-        const sold = reservations.filter(isSold).length;
-        const reserved = reservations.length - sold;
-        const available = Math.max(0, (item?.capacity ?? 0) - reservations.length);
-        return { available, reserved, sold };
-    }, [reservations, item?.capacity]);
-
     return (
         <div className="bg-gray-100 min-h-screen">
             <Sidebar />
@@ -634,9 +670,9 @@ export default function AdminEventdetail() {
                         </Link>
                         <ChevronRight className="mx-2 h-5 w-5 text-gray-500" />
                         <span className="truncate">
-                            {item?.title ?? (loading ? "Loading..." : "Not found")}
+              {item?.title ?? (loading ? "Loading..." : "Not found")}
                             {id ? ` (ID: ${id})` : ""}
-                        </span>
+            </span>
                     </div>
                 </div>
 
@@ -682,23 +718,23 @@ export default function AdminEventdetail() {
                                             <div>
                                                 <span className="text-gray-500">Show Date:</span>
                                                 <span className="ml-2 text-gray-800">
-                                                    {item.showStart
-                                                        ? item.showEnd && item.showEnd !== item.showStart
-                                                            ? `${fmtDateTime(item.showStart)} → ${fmtDateTime(item.showEnd)}`
-                                                            : fmtDateTime(item.showStart)
-                                                        : "-"}
-                                                </span>
+                          {item.showStart
+                              ? item.showEnd && item.showEnd !== item.showStart
+                                  ? `${fmtDateTime(item.showStart)} → ${fmtDateTime(item.showEnd)}`
+                                  : fmtDateTime(item.showStart)
+                              : "-"}
+                        </span>
                                             </div>
 
                                             <div>
                                                 <span className="text-gray-500">Sale Period:</span>
                                                 <span className="ml-2 text-gray-800">
-                                                    {item.saleStart
-                                                        ? item.saleEnd && item.saleEnd !== item.saleStart
-                                                            ? `${fmtDateTime(item.saleStart)} → ${fmtDateTime(item.saleEnd)}`
-                                                            : fmtDateTime(item.saleStart)
-                                                        : "-"}
-                                                </span>
+                          {item.saleStart
+                              ? item.saleEnd && item.saleEnd !== item.saleStart
+                                  ? `${fmtDateTime(item.saleStart)} → ${fmtDateTime(item.saleEnd)}`
+                                  : fmtDateTime(item.saleStart)
+                              : "-"}
+                        </span>
                                             </div>
 
                                             <div>
@@ -708,7 +744,7 @@ export default function AdminEventdetail() {
                                             {item.capacity != null && (
                                                 <div>
                                                     <span className="text-gray-500">Capacity:</span>
-                                                    <span className="ml-2 text-gray-800">{item.capacity}</span>
+                                                    <span className="ml-2 text-gray-800">{fmtInt(item.capacity)}</span>
                                                 </div>
                                             )}
                                         </div>
@@ -753,8 +789,8 @@ export default function AdminEventdetail() {
                                         {tzPageItems.map((z, i) => (
                                             <tr key={`${z.zone}-${i}`} className="border-b border-gray-100">
                                                 <td className="py-3 px-4 text-gray-800">{z.zone}</td>
-                                                <td className="py-3 px-4 text-gray-800">{z.row}</td>
-                                                <td className="py-3 px-4 text-gray-800">{z.column}</td>
+                                                <td className="py-3 px-4 text-gray-800">{fmtInt(z.row)}</td>
+                                                <td className="py-3 px-4 text-gray-800">{fmtInt(z.column)}</td>
                                                 <td className="py-3 px-4 text-gray-800">{z.sale}</td>
                                                 <td className="py-3 px-4 text-gray-800">{z.price}</td>
                                             </tr>
@@ -795,7 +831,7 @@ export default function AdminEventdetail() {
                                 options={[
                                     { label: "All", value: "all" },
                                     { label: "Reserved", value: "reserved" },
-                                    { label: "Sold", value: "sold" }
+                                    { label: "Sold", value: "sold" },
                                 ]}
                                 value={resvFilter}
                                 onChange={(val) => setResvFilter(val as ResvFilter)}
@@ -845,13 +881,13 @@ export default function AdminEventdetail() {
                                             <td className="py-3 px-4 text-gray-800">{r.user}</td>
                                             <td className="py-3 px-4 text-gray-800">{r.paymentMethod}</td>
                                             <td className="py-3 px-4">
-                                                <span
-                                                    className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                        r.status === "COMPLETE" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"
-                                                    }`}
-                                                >
-                                                    {r.status === "COMPLETE" ? "SOLD" : "RESERVED"}
-                                                </span>
+                          <span
+                              className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  r.status === "COMPLETE" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"
+                              }`}
+                          >
+                            {r.status === "COMPLETE" ? "SOLD" : "RESERVED"}
+                          </span>
                                             </td>
                                         </tr>
                                     ))}
@@ -868,7 +904,12 @@ export default function AdminEventdetail() {
                         </div>
 
                         <div className="bg-white rounded-b-lg shadow-sm">
-                            <PaginationControls currentPage={resvPage} totalPages={resvTotalPages} onPageChange={setResvPage} showPageNumbers />
+                            <PaginationControls
+                                currentPage={resvPage}
+                                totalPages={resvTotalPages}
+                                onPageChange={setResvPage}
+                                showPageNumbers
+                            />
                         </div>
                     </div>
                 </div>

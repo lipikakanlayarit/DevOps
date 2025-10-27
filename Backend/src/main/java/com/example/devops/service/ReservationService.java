@@ -51,6 +51,11 @@ public class ReservationService {
             throw new IllegalArgumentException("quantity and seats count mismatch");
         }
 
+        // ❗️ต้องมี userId (แก้ปัญหา reserved.user_id เป็น NULL)
+        if (userId == null) {
+            throw new IllegalArgumentException("AUTH_REQUIRED: userId is required (send Authorization Bearer token or X-User-Id)");
+        }
+
         // === คำนวณ seat_id ทั้งหมดจาก payload (ก่อนเซฟ) ===
         List<Long> seatIdsToReserve = new ArrayList<>();
         if (req.getSeats() != null) {
@@ -86,7 +91,7 @@ public class ReservationService {
 
         // 1) create reserved (UNPAID)
         Reserved r = new Reserved();
-        r.setUserId(userId);
+        r.setUserId(userId); // ✅ จุดสำคัญ: บันทึก userId ลง DB
         r.setEventId(req.getEventId());
         r.setTicketTypeId(null);
         r.setQuantity(req.getQuantity());

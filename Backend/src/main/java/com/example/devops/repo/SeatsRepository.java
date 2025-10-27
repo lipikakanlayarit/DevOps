@@ -140,7 +140,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
     List<Object[]> findZoneRowColForSeatIds(@Param("eventId") Long eventId,
                                             @Param("seatIds") Long[] seatIds);
 
-    // ==================== เพิ่มสำหรับ Admin: คำนวณ Sale ต่อโซน ====================
+    // ==================== สำหรับ Admin: นับต่อ "โซน" ====================
 
     /** จำนวนที่นั่งทั้งหมดในโซน */
     @Query(value = """
@@ -153,7 +153,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
 
     /** จำนวนที่นั่งที่ขายแล้ว (PAID) ในโซน */
     @Query(value = """
-        SELECT COALESCE(COUNT(*), 0)
+        SELECT COALESCE(COUNT(DISTINCT rs.seat_id), 0)
           FROM reserved_seats rs
           JOIN reserved rsv ON rsv.reserved_id = rs.reserved_id
           JOIN seats s      ON s.seat_id = rs.seat_id
@@ -162,4 +162,75 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
            AND UPPER(COALESCE(rsv.payment_status, '')) = 'PAID'
         """, nativeQuery = true)
     int countSoldSeatsInZone(@Param("zoneId") Long zoneId);
+
+    /** จำนวนที่นั่งที่ "จองค้าง/ยังไม่จ่าย" หรือ "ถูกล็อกอยู่" ในโซน (ไม่นับซ้ำ) */
+    @Query(value = """
+        SELECT COUNT(*) FROM (
+            -- reserved but not paid
+            SELECT DISTINCT rs.seat_id
+              FROM reserved_seats rs
+              JOIN reserved rsv ON rsv.reserved_id = rs.reserved_id
+              JOIN seats s      ON s.seat_id = rs.seat_id
+              JOIN seat_rows sr ON sr.row_id = s.row_id
+             WHERE sr.zone_id = :zoneId
+               AND UPPER(COALESCE(rsv.payment_status, 'UNPAID')) <> 'PAID'
+            UNION
+            -- locked seats (not expired)
+            SELECT DISTINCT l.seat_id
+              FROM seat_locks l
+              JOIN seats s      ON s.seat_id = l.seat_id
+              JOIN seat_rows sr ON sr.row_id = s.row_id
+             WHERE sr.zone_id = :zoneId
+               AND UPPER(COALESCE(l.status,'LOCKED')) = 'LOCKED'
+               AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        ) x
+        """, nativeQuery = true)
+    int countReservedSeatsInZone(@Param("zoneId") Long zoneId);
+
+    // ==================== สำหรับ Admin: นับภาพรวม "อีเวนต์" ====================
+
+    @Query(value = """
+        SELECT COUNT(*)
+          FROM seats s
+          JOIN seat_rows r ON r.row_id = s.row_id
+          JOIN seat_zones z ON z.zone_id = r.zone_id
+         WHERE z.event_id = :eventId
+        """, nativeQuery = true)
+    long countTotalSeatsByEvent(@Param("eventId") Long eventId);
+
+    @Query(value = """
+        SELECT COUNT(DISTINCT rs.seat_id)
+          FROM reserved_seats rs
+          JOIN reserved rsv ON rsv.reserved_id = rs.reserved_id
+          JOIN seats s      ON s.seat_id = rs.seat_id
+          JOIN seat_rows r  ON r.row_id = s.row_id
+          JOIN seat_zones z ON z.zone_id = r.zone_id
+         WHERE z.event_id = :eventId
+           AND UPPER(COALESCE(rsv.payment_status,'UNPAID')) = 'PAID'
+        """, nativeQuery = true)
+    long countSoldSeatsByEvent(@Param("eventId") Long eventId);
+
+    /** reserved (ยังไม่จ่าย) ∪ locked (ยังไม่หมดอายุ) แบบไม่ซ้ำกัน */
+    @Query(value = """
+        SELECT COUNT(*) FROM (
+            SELECT DISTINCT rs.seat_id
+              FROM reserved_seats rs
+              JOIN reserved rsv ON rsv.reserved_id = rs.reserved_id
+              JOIN seats s      ON s.seat_id = rs.seat_id
+              JOIN seat_rows r  ON r.row_id = s.row_id
+              JOIN seat_zones z ON z.zone_id = r.zone_id
+             WHERE z.event_id = :eventId
+               AND UPPER(COALESCE(rsv.payment_status,'UNPAID')) <> 'PAID'
+            UNION
+            SELECT DISTINCT l.seat_id
+              FROM seat_locks l
+              JOIN seats s      ON s.seat_id = l.seat_id
+              JOIN seat_rows r  ON r.row_id = s.row_id
+              JOIN seat_zones z ON z.zone_id = r.zone_id
+             WHERE z.event_id = :eventId
+               AND UPPER(COALESCE(l.status,'LOCKED')) = 'LOCKED'
+               AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        ) x
+        """, nativeQuery = true)
+    long countReservedSeatSlotsByEvent(@Param("eventId") Long eventId);
 }
