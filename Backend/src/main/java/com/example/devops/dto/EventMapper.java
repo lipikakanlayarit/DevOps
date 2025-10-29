@@ -1,4 +1,3 @@
-// src/main/java/com/example/devops/dto/EventMapper.java
 package com.example.devops.dto;
 
 import com.example.devops.model.EventsNam;
@@ -28,8 +27,8 @@ public class EventMapper {
                 ? String.valueOf(ev.getCover_updated_at().toEpochMilli())
                 : (updatedAt != null ? String.valueOf(updatedAt.toEpochMilli()) : null);
 
-        // เส้นทางรูปปกให้สอดคล้องกับ EventController (/api/events/{id}/cover)
-        String coverUrl = "/api/events/" + ev.getId() + "/cover" + (ver != null ? ("?v=" + ver) : "");
+        // ✅ เปลี่ยนเป็น public route ให้ตรงกับ PublicEventsController
+        String coverUrl = "/api/public/events/" + ev.getId() + "/cover" + (ver != null ? ("?v=" + ver) : "");
 
         // คำนวณสถานะขายที่มีผลจริง
         var eff = statusService.computeEffectiveStatus(

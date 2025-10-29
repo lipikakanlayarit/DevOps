@@ -1,4 +1,3 @@
-import React from "react";
 import CategoryRadio from "./CategoryRadio";
 import OrderToggle from "./OrderToggle";
 import SearchBar from "./SearchBar";

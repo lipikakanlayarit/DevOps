@@ -1,6 +1,8 @@
 -- =========================================================
 --  V20251025_1200__init_base_schema.sql
---  INITIAL SCHEMA (no seed) - derived from butcon_postgres_INIT.sql
+--  INITIAL SCHEMA (no seed)
+--  + Compatibility layer for seed: reservations / reservation_tickets
+--  + Fix: replace RULE reservation_tickets_ins with INSTEAD OF TRIGGER
 -- =========================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS categories (
     );
 
 ALTER TABLE categories
-    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS is_active  BOOLEAN NOT NULL DEFAULT TRUE,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
@@ -64,7 +66,7 @@ CREATE TABLE IF NOT EXISTS events_nam (
                                           event_id BIGSERIAL PRIMARY KEY,
                                           organizer_id BIGINT REFERENCES organizers(organizer_id) ON DELETE CASCADE,
     event_name VARCHAR(200) NOT NULL,
-    description VARCHAR(255),
+    description TEXT,                         -- ใช้ TEXT
     category_id BIGINT REFERENCES categories(category_id) ON DELETE SET NULL,
     start_datetime TIMESTAMPTZ,
     end_datetime TIMESTAMPTZ,
@@ -79,19 +81,18 @@ CREATE TABLE IF NOT EXISTS events_nam (
 
 DO $$
 BEGIN
-BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN event_id TYPE BIGINT';          EXCEPTION WHEN others THEN NULL; END;
-BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN organizer_id TYPE BIGINT';      EXCEPTION WHEN others THEN NULL; END;
-BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN category_id TYPE BIGINT';       EXCEPTION WHEN others THEN NULL; END;
-BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN description TYPE VARCHAR(255)'; EXCEPTION WHEN others THEN NULL; END;
-BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN cover_image TYPE BYTEA';        EXCEPTION WHEN others THEN NULL; END;
+  -- casts ที่จำเป็นเท่านั้น
+BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN event_id TYPE BIGINT';     EXCEPTION WHEN others THEN NULL; END;
+BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN organizer_id TYPE BIGINT'; EXCEPTION WHEN others THEN NULL; END;
+BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN category_id TYPE BIGINT';  EXCEPTION WHEN others THEN NULL; END;
+BEGIN EXECUTE 'ALTER TABLE events_nam ALTER COLUMN cover_image TYPE BYTEA';   EXCEPTION WHEN others THEN NULL; END;
 END$$;
 
 DO $$
 BEGIN
 BEGIN
 EXECUTE 'ALTER TABLE events_nam ALTER COLUMN status SET DEFAULT ''PENDING''';
-EXCEPTION WHEN others THEN NULL;
-END;
+EXCEPTION WHEN others THEN NULL; END;
 END $$;
 
 UPDATE events_nam SET status = 'PENDING' WHERE status IS NULL;
@@ -143,44 +144,27 @@ CREATE TABLE IF NOT EXISTS ticket_types (
     updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
--- ✅ ทำให้ idempotent
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute
-    WHERE attrelid = 'ticket_types'::regclass
-      AND attname  = 'created_at'
-      AND NOT attisdropped
-  ) THEN
-    EXECUTE 'ALTER TABLE ticket_types ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()';
-END IF;
+    WHERE attrelid = 'ticket_types'::regclass AND attname='created_at' AND NOT attisdropped
+  ) THEN EXECUTE 'ALTER TABLE ticket_types ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()'; END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute
-    WHERE attrelid = 'ticket_types'::regclass
-      AND attname  = 'updated_at'
-      AND NOT attisdropped
-  ) THEN
-    EXECUTE 'ALTER TABLE ticket_types ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW()';
-END IF;
+    WHERE attrelid = 'ticket_types'::regclass AND attname='updated_at' AND NOT attisdropped
+  ) THEN EXECUTE 'ALTER TABLE ticket_types ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW()'; END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute
-    WHERE attrelid = 'ticket_types'::regclass
-      AND attname  = 'min_per_order'
-      AND NOT attisdropped
-  ) THEN
-    EXECUTE 'ALTER TABLE ticket_types ADD COLUMN min_per_order INT';
-END IF;
+    WHERE attrelid = 'ticket_types'::regclass AND attname='min_per_order' AND NOT attisdropped
+  ) THEN EXECUTE 'ALTER TABLE ticket_types ADD COLUMN min_per_order INT'; END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute
-    WHERE attrelid = 'ticket_types'::regclass
-      AND attname  = 'max_per_order'
-      AND NOT attisdropped
-  ) THEN
-    EXECUTE 'ALTER TABLE ticket_types ADD COLUMN max_per_order INT';
-END IF;
+    WHERE attrelid = 'ticket_types'::regclass AND attname='max_per_order' AND NOT attisdropped
+  ) THEN EXECUTE 'ALTER TABLE ticket_types ADD COLUMN max_per_order INT'; END IF;
 END
 $$;
 
@@ -190,7 +174,7 @@ SET created_at    = COALESCE(created_at, NOW()),
     min_per_order = COALESCE(min_per_order, 1),
     max_per_order = COALESCE(max_per_order, 1);
 
--- =================== RESERVED / PAYMENTS ===================
+-- =================== RESERVED / PAYMENTS (core tables) ===================
 CREATE TABLE IF NOT EXISTS reserved (
                                         reserved_id BIGSERIAL PRIMARY KEY,
                                         user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
@@ -203,8 +187,6 @@ CREATE TABLE IF NOT EXISTS reserved (
     notes TEXT
     );
 
--- ❌ เดิมมี ; คั่นกลาง → ทำให้ "ADD COLUMN payment_method ..." หลุดจาก ALTER
--- ✅ แก้ให้รวมอยู่ในคำสั่ง ALTER TABLE เดียวกัน
 ALTER TABLE reserved
     ADD COLUMN IF NOT EXISTS registration_datetime TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS payment_datetime      TIMESTAMPTZ,
@@ -320,7 +302,7 @@ CREATE TABLE IF NOT EXISTS zone_ticket_types (
     ticket_type_id BIGINT REFERENCES ticket_types(ticket_type_id) ON DELETE CASCADE
     );
 
--- =================== TRIGGERS ===================
+-- =================== TRIGGERS (updated_at) ===================
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='tg_set_updated_at') THEN
@@ -371,7 +353,7 @@ CREATE INDEX IF NOT EXISTS idx_seat_zones_event_id ON seat_zones(event_id);
 CREATE INDEX IF NOT EXISTS idx_seat_rows_zone_id   ON seat_rows(zone_id);
 CREATE INDEX IF NOT EXISTS idx_seats_row_id        ON seats(row_id);
 
--- =================== VIEWS ===================
+-- =================== VIEWS (public) ===================
 CREATE OR REPLACE VIEW public_events_on_sale AS
 SELECT e.*
 FROM events_nam e
@@ -437,3 +419,131 @@ SELECT
 FROM events_nam;
 
 GRANT SELECT ON public.events_nam_pretty TO PUBLIC;
+
+-- =================== COMPAT LAYER for seed ===================
+-- reservations (VIEW) <-> reserved (TABLE)
+CREATE OR REPLACE VIEW reservations AS
+SELECT
+    r.reserved_id           AS reservation_id,
+    r.user_id,
+    r.event_id,
+    r.ticket_type_id,
+    r.quantity,
+    r.total_amount,
+    r.payment_status        AS status,
+    r.confirmation_code     AS reserve_code,
+    r.registration_datetime AS created_at,
+    r.payment_method
+FROM reserved r;
+
+-- passthrough insert into base table
+CREATE OR REPLACE RULE reservations_ins AS
+ON INSERT TO reservations DO INSTEAD
+INSERT INTO reserved (
+  user_id,
+  event_id,
+  ticket_type_id,
+  quantity,
+  total_amount,
+  payment_status,
+  confirmation_code,
+  registration_datetime,
+  payment_method
+)
+VALUES (
+  NEW.user_id,
+  NEW.event_id,
+  NEW.ticket_type_id,
+  COALESCE(NEW.quantity, 1),
+  COALESCE(NEW.total_amount, 0),
+  COALESCE(NEW.status, 'PAID'),
+  NEW.reserve_code,
+  COALESCE(NEW.created_at, NOW()),
+  NEW.payment_method
+)
+RETURNING
+  reserved_id           AS reservation_id,
+  user_id,
+  event_id,
+  ticket_type_id,
+  quantity,
+  total_amount,
+  payment_status        AS status,
+  confirmation_code     AS reserve_code,
+  registration_datetime AS created_at,
+  payment_method;
+
+-- reservation_tickets (VIEW) <-> reserved_seats (TABLE)
+-- SELECT รูปแบบตั๋ว + ที่นั่ง
+CREATE OR REPLACE VIEW reservation_tickets AS
+SELECT
+    r.reserved_id                                  AS reservation_id,
+    COALESCE(r.ticket_type_id, ztt.ticket_type_id) AS ticket_type_id,
+    sr.row_label                                   AS seat_row,
+    s.seat_number                                  AS seat_col,
+    COALESCE(tt.price, z.price, r.total_amount, 0) AS price,
+    rs.reserved_seat_id                            AS reservation_ticket_id  -- ใช้สำหรับ ORDER BY
+FROM reserved r
+         LEFT JOIN reserved_seats rs ON rs.reserved_id = r.reserved_id
+         LEFT JOIN seats       s  ON s.seat_id = rs.seat_id
+         LEFT JOIN seat_rows   sr ON sr.row_id = s.row_id
+         LEFT JOIN seat_zones  z  ON z.zone_id = sr.zone_id
+         LEFT JOIN zone_ticket_types ztt ON ztt.zone_id = z.zone_id
+         LEFT JOIN ticket_types tt ON tt.ticket_type_id = COALESCE(r.ticket_type_id, ztt.ticket_type_id);
+
+-- ===== Replace RULE with INSTEAD OF TRIGGER on the VIEW =====
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_rules
+    WHERE schemaname = 'public'
+      AND tablename  = 'reservation_tickets'
+      AND rulename   = 'reservation_tickets_ins'
+  ) THEN
+    EXECUTE 'DROP RULE reservation_tickets_ins ON reservation_tickets';
+END IF;
+END $$;
+
+-- Trigger function for INSERT on reservation_tickets view
+CREATE OR REPLACE FUNCTION reservation_tickets_ins_tf()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- ถ้าไม่ได้ส่งตำแหน่งที่นั่ง ก็ไม่ต้องทำอะไร
+  IF NEW.seat_row IS NULL OR NEW.seat_col IS NULL THEN
+    RETURN NULL;  -- INSTEAD OF trigger on view
+END IF;
+
+  -- map (seat_row, seat_col) -> seat_id แล้ว insert ลง reserved_seats
+INSERT INTO reserved_seats (reserved_id, seat_id)
+SELECT
+    NEW.reservation_id,
+    s.seat_id
+FROM reserved r
+         JOIN ticket_types tt
+              ON tt.ticket_type_id = COALESCE(r.ticket_type_id, NEW.ticket_type_id)
+         JOIN seat_zones z
+              ON z.event_id = tt.event_id
+         JOIN seat_rows sr
+              ON sr.zone_id = z.zone_id
+                  AND sr.row_label = NEW.seat_row
+         JOIN seats s
+              ON s.row_id = sr.row_id
+                  AND s.seat_number = NEW.seat_col
+WHERE r.reserved_id = NEW.reservation_id
+    LIMIT 1
+ON CONFLICT (reserved_id, seat_id) DO NOTHING;  -- ป้องกัน insert ซ้ำ
+
+RETURN NULL;  -- view insert ends here
+END;
+$$;
+
+-- Bind the INSTEAD OF INSERT trigger to the view
+DROP TRIGGER IF EXISTS trg_reservation_tickets_ins ON reservation_tickets;
+
+CREATE TRIGGER trg_reservation_tickets_ins
+    INSTEAD OF INSERT ON reservation_tickets
+    FOR EACH ROW
+    EXECUTE FUNCTION reservation_tickets_ins_tf();

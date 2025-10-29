@@ -5,10 +5,10 @@ import com.example.devops.repo.EventsNamRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
-import org.springframework.boot.CommandLineRunner;
 
 import java.io.InputStream;
 import java.time.Instant;
@@ -18,13 +18,13 @@ import java.util.Optional;
 
 @Slf4j
 @Component
-@Profile("dev") // รันเฉพาะ dev
+@Profile("dev") // รันเฉพาะโปรไฟล์ dev
 @RequiredArgsConstructor
 public class ImageSeeder implements CommandLineRunner {
 
     private final EventsNamRepository eventsRepo;
 
-    @Value("${app.seed.images:true}") // เปิด/ปิด seeder ด้วย flag
+    @Value("${app.seed.images:true}") // ปิด/เปิด seeder ด้วย flag
     private boolean enableSeeding;
 
     @Override
@@ -34,6 +34,7 @@ public class ImageSeeder implements CommandLineRunner {
             return;
         }
 
+        // map: ชื่ออีเวนต์ -> ไฟล์รูป (ไม่ต้องใส่นามสกุลก็ได้ เดี๋ยวลองหลายแบบให้)
         Map<String, String> targets = new LinkedHashMap<>();
         targets.put("BUTCON Music Fest 2025", "pic_seed/seed1");
         targets.put("Startup Seminar 2025",  "pic_seed/seed2");
@@ -41,7 +42,7 @@ public class ImageSeeder implements CommandLineRunner {
         targets.forEach(this::seedCoverIfMissingSmart);
     }
 
-    /** พยายามเปิดไฟล์หลายแบบ: ไม่มีนามสกุล, .jpeg, .jpg, .png และกำหนด mime ให้เหมาะ */
+    /** ลองเปิดหลายรูปแบบ (no-ext, .jpeg, .jpg, .png) แล้วกำหนด mime ให้เหมาะ */
     private void seedCoverIfMissingSmart(String eventName, String baseClasspath) {
         try {
             Optional<EventsNam> opt = eventsRepo.findTopByEventNameOrderByIdDesc(eventName);
@@ -57,7 +58,7 @@ public class ImageSeeder implements CommandLineRunner {
                 return;
             }
 
-            String[] candidates = new String[] {
+            String[] candidates = {
                     baseClasspath,
                     baseClasspath + ".jpeg",
                     baseClasspath + ".jpg",
@@ -65,14 +66,14 @@ public class ImageSeeder implements CommandLineRunner {
             };
 
             byte[] bytes = null;
-            String chosenPath = null;
+            String chosen = null;
             String mime = null;
 
             for (String c : candidates) {
                 byte[] b = readAllBytesFromClasspath(c);
                 if (b != null && b.length > 0) {
                     bytes = b;
-                    chosenPath = c;
+                    chosen = c;
                     mime = c.endsWith(".png") ? "image/png" : "image/jpeg";
                     break;
                 }
@@ -89,7 +90,7 @@ public class ImageSeeder implements CommandLineRunner {
             eventsRepo.save(e);
 
             log.info("ImageSeeder: seeded cover for \"{}\" from {} (id={}) bytes={} type={}",
-                    e.getEventName(), chosenPath, e.getId(), bytes.length, mime);
+                    e.getEventName(), chosen, e.getId(), bytes.length, mime);
 
         } catch (Exception ex) {
             log.error("ImageSeeder error for \"{}\": {}", eventName, ex.getMessage(), ex);
@@ -103,8 +104,7 @@ public class ImageSeeder implements CommandLineRunner {
             try (InputStream in = res.getInputStream()) {
                 return in.readAllBytes();
             }
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
         return null;
     }
 }

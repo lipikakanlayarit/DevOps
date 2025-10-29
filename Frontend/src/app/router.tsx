@@ -1,4 +1,3 @@
-// src/router.tsx
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
@@ -20,13 +19,14 @@ import Ticketdetail from "@/pages/Ticketdetail";
 import EventDashboard from "@/pages/Eventdashboard";
 import Organizationmnge from "@/pages/Organizationmnge";
 
-// ---------- Payment Page (NEW) ----------
-import Payment from "@/pages/payment"; // <<-- เพิ่ม import
+// ---------- Payment Page ----------
+import Payment from "@/pages/payment";
 
 // ---------- Admin Pages ----------
 import Admin from "@/pages/admin";
 import AdminEventdetail from "@/pages/admin-eventdetail";
 import EventPermission from "@/pages/admin-permission";
+import AdminUserMnge from "@/pages/admin-usermange.tsx"; // <<== เพิ่มอันนี้
 
 // ---------- Guards ----------
 import RequireAuth from "@/features/auth/RequireAuth";
@@ -37,9 +37,7 @@ export const router = createBrowserRouter([
         path: "/",
         element: <RootLayout />,
         children: [
-            /* ===========================
-               Public Pages
-               =========================== */
+            // Public
             { index: true, element: <Landding /> },
             { path: "home", element: <Home /> },
             { path: "login", element: <Login /> },
@@ -48,9 +46,7 @@ export const router = createBrowserRouter([
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
 
-            /* ===========================
-               Auth Required
-               =========================== */
+            // Auth required
             {
                 element: (
                     <RequireAuth>
@@ -59,33 +55,19 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { path: "profile", element: <Profile /> },
-
-                    // ✅ Event select (ซื้อบัตร/เลือกที่นั่ง)
                     { path: "eventselect", element: <Eventselect /> },
                     { path: "eventselect/:eventId", element: <Eventselect /> },
-
-                    // ✅ Create Event
                     { path: "eventdetail", element: <Eventdetail /> },
-
-                    // ✅ Edit Event
                     { path: "eventdetail/:eventId", element: <Eventdetail /> },
-
-                    // ✅ Ticket Detail (สำหรับ setup ticket)
                     { path: "ticketdetail", element: <Ticketdetail /> },
                     { path: "ticketdetail/:eventId", element: <Ticketdetail /> },
-
-                    // ✅ Dashboard per event
                     { path: "eventdashboard", element: <EventDashboard /> },
                     { path: "eventdashboard/:eventId", element: <EventDashboard /> },
-
-                    // ✅ Payment (NEW)
-                    { path: "payment/:reservedId", element: <Payment /> }, // <<-- เพิ่มเส้นทาง
+                    { path: "payment/:reservedId", element: <Payment /> },
                 ],
             },
 
-            /* ===========================
-               Organizer / Admin
-               =========================== */
+            // Organizer / Admin
             {
                 path: "organizationmnge",
                 element: (
@@ -95,9 +77,7 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            /* ===========================
-               Admin Section
-               =========================== */
+            // Admin Section
             {
                 path: "admin",
                 element: (
@@ -107,6 +87,7 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { index: true, element: <Admin /> },
+                    { path: "usermnge", element: <AdminUserMnge /> }, // <<== เส้นทางที่ต้องการ
                     { path: "users", element: <div>Admin Users Management</div> },
                     { path: "settings", element: <div>Admin Settings</div> },
                     { path: "eventdetail", element: <AdminEventdetail /> },
@@ -114,9 +95,7 @@ export const router = createBrowserRouter([
                 ],
             },
 
-            /* ===========================
-               Fallback (404)
-               =========================== */
+            // 404
             { path: "*", element: <NotFound /> },
         ],
     },
