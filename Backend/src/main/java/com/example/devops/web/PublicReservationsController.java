@@ -2,32 +2,27 @@ package com.example.devops.web;
 
 import com.example.devops.dto.ReservationRequest;
 import com.example.devops.dto.ReservedResponse;
+import com.example.devops.model.User;
 import com.example.devops.repo.EventsNamRepository;
 import com.example.devops.repo.UserRepository;
 import com.example.devops.service.ReservationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/public/reservations")
 @CrossOrigin(
-        origins = {
-                "http://localhost:5173",
-                "http://localhost:3000",
-                "http://localhost:4173"
-        },
+        origins = { "http://localhost:5173", "http://localhost:3000", "http://localhost:4173" },
         allowCredentials = "true"
 )
 public class PublicReservationsController {
@@ -47,9 +42,6 @@ public class PublicReservationsController {
         this.userRepo = userRepo;
     }
 
-    /* ============================================================
-       POST /api/public/reservations
-       ============================================================ */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createReservation(
             @RequestBody ReservationRequest req,
@@ -64,15 +56,29 @@ public class PublicReservationsController {
         if (req.getQuantity() == null || req.getQuantity() <= 0)
             return bad("BAD_REQUEST", "quantity must be > 0");
 
-        int seatCount = (req.getSeats() != null) ? req.getSeats().size() : 0;
-        if (seatCount != req.getQuantity())
+        final List<ReservationRequest.SeatPick> picks = Optional.ofNullable(req.getSeats()).orElseGet(List::of);
+        if (picks.size() != req.getQuantity())
             return bad("BAD_REQUEST", "quantity and seats count mismatch");
 
-        // ✅ หา userId จาก Header หรือ JWT (Authorization: Bearer ...)
-        Long userId = resolveUserId(userIdHeader, authHeader);
+        // 🔐 validate picks (no negative, no duplicates)
+        Set<String> uniq = new HashSet<>();
+        for (ReservationRequest.SeatPick p : picks) {
+            if (p == null || p.getZoneId() == null)
+                return bad("BAD_REQUEST", "each seat requires zoneId,row,col");
+            if (p.getRow() == null || p.getCol() == null || p.getRow() < 0 || p.getCol() < 0)
+                return bad("BAD_REQUEST", "row/col must be >= 0");
+            String key = p.getZoneId() + ":" + p.getRow() + ":" + p.getCol();
+            if (!uniq.add(key))
+                return bad("BAD_REQUEST", "duplicate seat in request: " + key);
+        }
 
+        Long userId = resolveUserId(userIdHeader, authHeader);
         log.info("Create reservation: eventId={}, quantity={}, seatCount={}, userId={}",
-                req.getEventId(), req.getQuantity(), seatCount, userId);
+                req.getEventId(), req.getQuantity(), picks.size(), userId);
+
+        if (userId == null) {
+            return unauthorized("AUTH_REQUIRED", "User authentication required (JWT or X-User-Id).");
+        }
 
         try {
             ReservedResponse created = reservationService.createReservation(userId, req);
@@ -82,9 +88,6 @@ public class PublicReservationsController {
         }
     }
 
-    /* ============================================================
-       GET /api/public/reservations/{reservedId}
-       ============================================================ */
     @GetMapping(value = "/{reservedId}", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getReservation(@PathVariable Long reservedId) {
         if (reservedId == null || reservedId <= 0)
@@ -98,10 +101,6 @@ public class PublicReservationsController {
         }
     }
 
-    /* ============================================================
-       POST /api/public/reservations/{reservedId}/pay
-       body: { "method": "Credit Card" | "Bank Transfer" | "QR Payment" }
-       ============================================================ */
     @PostMapping(
             value = "/{reservedId}/pay",
             consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -126,7 +125,7 @@ public class PublicReservationsController {
         }
     }
 
-    /* ===================== helpers (JSON error) ===================== */
+    // ===== helpers =====
     private ResponseEntity<Map<String, Object>> bad(String code, String msg) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("error", code);
@@ -141,10 +140,37 @@ public class PublicReservationsController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(m);
     }
 
-    /* ===================== userId resolver ===================== */
-    private Long resolveUserId(Long userIdHeader, String authHeader) {
-        if (userIdHeader != null) return userIdHeader;
+    private ResponseEntity<Map<String, Object>> unauthorized(String code, String msg) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("error", code);
+        m.put("message", msg);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(m);
+    }
 
+    private Long resolveUserId(Long userIdHeader, String authHeader) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()) {
+                String principal = safeTrim(auth.getName());
+                if (principal != null) {
+                    Optional<User> uByName = userRepo.findByUsernameIgnoreCase(principal);
+                    if (uByName.isPresent()) return uByName.get().getId();
+                    Optional<User> uByEmail = userRepo.findByEmailIgnoreCase(principal);
+                    if (uByEmail.isPresent()) return uByEmail.get().getId();
+                }
+            }
+        } catch (Exception e) {
+            log.debug("resolveUserId: SecurityContext lookup failed: {}", e.getMessage());
+        }
+
+        Long fromJwt = resolveFromJwt(authHeader);
+        if (fromJwt != null) return fromJwt;
+
+        if (userIdHeader != null) return userIdHeader;
+        return null;
+    }
+
+    private Long resolveFromJwt(String authHeader) {
         try {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
             String token = authHeader.substring(7);
@@ -155,35 +181,30 @@ public class PublicReservationsController {
             @SuppressWarnings("unchecked")
             Map<String, Object> claims = objectMapper.readValue(payloadJson, Map.class);
 
-            // 1️⃣ จาก userId claim
             Object userIdClaim = claims.get("userId");
             if (userIdClaim != null) {
-                try {
-                    return Long.parseLong(String.valueOf(userIdClaim));
-                } catch (NumberFormatException ignore) {}
+                try { return Long.parseLong(String.valueOf(userIdClaim)); } catch (NumberFormatException ignore) {}
             }
 
-            // 2️⃣ จาก email
-            String email = optString(claims.get("email"));
+            String email = safeTrim(claims.get("email"));
             if (email != null) {
-                Optional<com.example.devops.model.User> u = userRepo.findByEmailIgnoreCase(email);
+                Optional<User> u = userRepo.findByEmailIgnoreCase(email);
                 if (u.isPresent()) return u.get().getId();
             }
 
-            // 3️⃣ จาก username/sub
-            String username = optString(claims.get("sub"));
-            if (username == null) username = optString(claims.get("username"));
+            String username = safeTrim(claims.get("sub"));
+            if (username == null) username = safeTrim(claims.get("username"));
             if (username != null) {
-                Optional<com.example.devops.model.User> u = userRepo.findByUsernameIgnoreCase(username);
+                Optional<User> u = userRepo.findByUsernameIgnoreCase(username);
                 if (u.isPresent()) return u.get().getId();
             }
         } catch (Exception e) {
-            log.warn("resolveUserId: cannot extract from JWT: {}", e.getMessage());
+            log.warn("resolveUserId/JWT: {}", e.getMessage());
         }
         return null;
     }
 
-    private String optString(Object o) {
+    private String safeTrim(Object o) {
         if (o == null) return null;
         String s = String.valueOf(o).trim();
         return s.isEmpty() ? null : s;

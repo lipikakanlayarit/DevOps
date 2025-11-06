@@ -1,21 +1,22 @@
+// src/components/SeatMap.tsx
 import React, { useEffect, useState } from "react";
 
 export type Zone = {
     id: number | string;
     name: string;
-    rows: number;
-    cols: number;
+    rows: number | string;
+    cols: number | string;
     price?: number | null;
-    /** เก้าอี้ที่ถูกจองแล้ว (0-based index) */
     occupied?: Array<{ r: number; c: number }>;
-    /** สีของโซน (UI เท่านั้น) */
     color?: string;
+    dbZoneId?: number | null;
+    ticketTypeId?: number | null;
 };
 
 const ROW_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 type Props = {
-    eventId?: number; // ✅ ถ้ามี ให้ fetch setup เองได้
+    eventId?: number;
     zones?: Zone[];
     selected?: Array<{ zoneId: Zone["id"]; r: number; c: number }>;
     onPick?: (zoneId: Zone["id"], r: number, c: number) => void;
@@ -23,6 +24,27 @@ type Props = {
     effectiveStatus?: "ONSALE" | "OFFSALE" | "UPCOMING";
     aisleEvery?: number;
 };
+
+type FetchedSetup = {
+    seatRows: number | string;
+    seatColumns: number | string;
+    zones: Array<{
+        id: number | string;
+        name?: string;
+        code?: string;
+        rows?: number | string;
+        cols?: number | string;
+        price?: number | null;
+        occupiedSeats?: Array<{ r: number; c: number }>;
+    }>;
+    // BE ส่ง r/c แบบ 1-based → เราจะ -1 ให้เป็น 0-based
+    occupiedSeatMap?: Array<{ seatId: number; zoneId: number | string; r: number; c: number }>;
+};
+
+function toInt(v: unknown, fallback = 0): number {
+    const n = typeof v === "string" ? parseInt(v, 10) : typeof v === "number" ? v : NaN;
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 
 export default function SeatMap({
                                     eventId,
@@ -36,48 +58,50 @@ export default function SeatMap({
     const [zones, setZones] = useState<Zone[]>(propZones);
     const purchasable = (effectiveStatus || "OFFSALE").toUpperCase() === "ONSALE";
 
-    // ✅ sync กับ propZones เมื่อ parent อัปเดต
     useEffect(() => {
         setZones(propZones);
     }, [propZones]);
 
-    // ✅ ถ้ามี eventId ให้ fetch setup เอง (ใช้กรณีเอาคอมโพเนนต์ไป standalone)
     useEffect(() => {
         if (!eventId) return;
         fetch(`/api/public/events/${eventId}/tickets/setup?t=${Date.now()}`, {
             credentials: "include",
             headers: { Accept: "application/json" },
         })
-            .then((r) => r.json())
+            .then(async (r) => r.json() as Promise<FetchedSetup>)
             .then((data) => {
-                // data.zones = zone array
-                // data.occupiedSeatMap = [{ seatId, zoneId, r, c }]
-                const zonesWithOcc = (data.zones || []).map((z: any, idx: number) => {
-                    const occFromFlat = (data.occupiedSeatMap || [])
-                        .filter((o: any) => String(o.zoneId) === String(z.id))
-                        .map((o: any) => ({ r: o.r, c: o.c }));
-                    const occupied = [
-                        ...(z.occupiedSeats || []),
-                        ...occFromFlat,
-                    ].reduce((acc: Array<{ r: number; c: number }>, cur: { r: number; c: number }) => {
+                const globalRows = toInt(data.seatRows, 0);
+                const globalCols = toInt(data.seatColumns, 0);
+
+                const zonesWithOcc: Zone[] = (data.zones || []).map((z, idx) => {
+                    // 🔧 สำคัญ: BE ส่ง 1-based → แปลงเป็น 0-based ให้ตรงกับ rIdx/cIdx ที่ใช้วาด
+                    const occFromFlat =
+                        (data.occupiedSeatMap || [])
+                            .filter((o) => String(o.zoneId) === String(z.id))
+                            .map((o) => ({ r: (o.r ?? 1) - 1, c: (o.c ?? 1) - 1 })) ?? [];
+
+                    const occupied = [...(z.occupiedSeats || []), ...occFromFlat].reduce<
+                        Array<{ r: number; c: number }>
+                    >((acc, cur) => {
                         if (!acc.some((p) => p.r === cur.r && p.c === cur.c)) acc.push(cur);
                         return acc;
                     }, []);
+
                     return {
                         id: z.id,
                         name: z.name ?? z.code ?? `ZONE-${idx + 1}`,
-                        rows: z.rows ?? data.seatRows ?? 0,
-                        cols: z.cols ?? data.seatColumns ?? 0,
+                        rows: toInt(z.rows, globalRows),
+                        cols: toInt(z.cols, globalCols),
                         price: z.price ?? null,
                         occupied,
-                    } as Zone;
+                    };
                 });
+
                 setZones(zonesWithOcc);
             })
             .catch((err) => console.error("Fetch seat setup failed:", err));
     }, [eventId]);
 
-    // ✅ กันเคส zoneId เป็น number บ้าง string บ้าง
     const sameId = (a: Zone["id"], b: Zone["id"]) => String(a) === String(b);
 
     const isSelected = (zoneId: Zone["id"], r: number, c: number) =>
@@ -89,7 +113,6 @@ export default function SeatMap({
 
     return (
         <div className="relative">
-            {/* overlay เมื่อซื้อไม่ได้ */}
             {!purchasable && (
                 <div className="absolute inset-0 z-10 grid place-items-center bg-black/35 rounded-xl">
                     <div className="px-3 py-1.5 rounded-full bg-white text-xs font-semibold shadow">
@@ -99,22 +122,21 @@ export default function SeatMap({
             )}
 
             <div className={`${!purchasable ? "pointer-events-none opacity-60" : ""}`}>
-                {/* ป้าย STAGE */}
                 <div className="mx-auto mb-3 w-full max-w-[520px]">
                     <div className="mx-auto w-full rounded-lg bg-black text-white text-center font-semibold py-2">
                         STAGE
                     </div>
                 </div>
 
-                {/* โซนต่าง ๆ */}
                 <div className="grid gap-8">
                     {zones.map((z) => {
-                        const aisleEveryCols = Math.max(1, (aisleEvery ?? Math.floor((z.cols || 1) / 2)) || 1);
+                        const rows = toInt(z.rows, 0);
+                        const cols = toInt(z.cols, 0);
+                        const aisleEveryCols = Math.max(1, (aisleEvery ?? Math.floor((cols || 1) / 2)) || 1);
                         const baseColor = z.color || "#a88df1";
 
                         return (
                             <div key={String(z.id)} className="rounded-2xl p-4 shadow border bg-white">
-                                {/* ชื่อโซน + ราคา */}
                                 <div className="mb-4 font-semibold text-lg text-gray-800">
                                     {z.name}{" "}
                                     {typeof z.price === "number" && (
@@ -125,28 +147,21 @@ export default function SeatMap({
                                 <div className="overflow-x-auto -mx-4 px-4">
                                     <div className="flex justify-center min-w-max">
                                         <div className="inline-block">
-                                            {Array.from({ length: z.rows }).map((_, rIdx) => {
+                                            {Array.from({ length: rows }).map((_, rIdx) => {
                                                 const rowLabel = ROW_LABELS[rIdx] || String.fromCharCode(65 + rIdx);
 
                                                 return (
                                                     <div key={rIdx} className="flex items-center gap-3 mb-3">
-                                                        {/* label ซ้าย */}
                                                         <div className="w-6 text-center text-xs md:text-sm font-medium text-gray-700 flex-shrink-0">
                                                             {rowLabel}
                                                         </div>
 
-                                                        {/* ที่นั่ง */}
                                                         <div className="flex gap-2">
-                                                            {Array.from({ length: z.cols }).map((__, cIdx) => {
+                                                            {Array.from({ length: cols }).map((__, cIdx) => {
                                                                 const taken = z.occupied?.some((o) => o.r === rIdx && o.c === cIdx) ?? false;
                                                                 const chosen = isSelected(z.id, rIdx, cIdx);
                                                                 const shouldAisle = aisleEveryCols > 0 && cIdx > 0 && cIdx % aisleEveryCols === 0;
-                                                                const style = taken
-                                                                    ? {}
-                                                                    : {
-                                                                        backgroundColor: baseColor,
-                                                                        borderColor: baseColor,
-                                                                    };
+                                                                const style = taken ? {} : { backgroundColor: baseColor, borderColor: baseColor };
 
                                                                 return (
                                                                     <React.Fragment key={cIdx}>
@@ -180,7 +195,6 @@ export default function SeatMap({
                                                             })}
                                                         </div>
 
-                                                        {/* label ขวา */}
                                                         <div className="w-6 text-center text-xs md:text-sm font-medium text-gray-700 flex-shrink-0">
                                                             {rowLabel}
                                                         </div>

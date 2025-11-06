@@ -50,11 +50,14 @@ public class TicketController {
         List<Map<String, Object>> zoneMaps =
                 (List<Map<String, Object>>) m.getOrDefault("zones", List.of());
 
+        // ✅ ส่ง rows/cols ต่อโซนให้ FE พรีฟิลได้ตรง
         List<TicketSetupResponse.ZonePrice> zones = zoneMaps.stream()
                 .map(z -> TicketSetupResponse.ZonePrice.builder()
                         .code((String) z.getOrDefault("code", ""))
                         .name((String) z.getOrDefault("name", ""))
-                        .price(toBigDecimal(z.get("price")))   // ✅ BigDecimal เท่านั้น
+                        .price(toBigDecimal(z.get("price")))
+                        .rows(toInteger(z.get("rows")))  // <— เพิ่ม
+                        .cols(toInteger(z.get("cols")))  // <— เพิ่ม
                         .build())
                 .toList();
 

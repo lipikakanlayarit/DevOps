@@ -1,7 +1,8 @@
+// src/pages/Eventselect.tsx
 "use client";
 
 import { Calendar, Clock, MapPin, Ticket } from "lucide-react";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Footer from "@/components/Footer";
 import SeatMap from "@/components/SeatMap";
 import type { Zone } from "@/components/SeatMap";
@@ -82,13 +83,11 @@ const fmtDateTime = (iso?: string) =>
         : "-";
 
 /** ✅ ใช้ baseURL ของ axios เสมอ (รองรับ dev/prod/proxy) */
-const API_PREFIX =
-    ((api as any)?.defaults?.baseURL as string | undefined)?.replace(/\/+$/, "") || "/api";
+const RAW_BASE = (api as any)?.defaults?.baseURL as string | undefined;
+const API_PREFIX = (RAW_BASE?.replace(/\/+$/, "") || "/api") as string;
 
 const coverPath = (id: number | string, updatedAt?: string | null) =>
-    `${API_PREFIX}/public/events/${id}/cover${
-        updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ""
-    }`;
+    `${API_PREFIX}/public/events/${id}/cover${updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ""}`;
 
 function useQuery() {
     const { search } = useLocation();
@@ -107,7 +106,8 @@ export default function Eventselect() {
     const navigate = useNavigate();
 
     // รองรับทั้ง /eventselect/:eventId และ /eventselect?eventId=...
-    const eventId = params.eventId ?? query.get("eventId") ?? undefined;
+    const eventIdParam = params.eventId ?? query.get("eventId") ?? undefined;
+    const eventId = eventIdParam ? Number(eventIdParam) : undefined;
 
     const [showDetails, setShowDetails] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -120,17 +120,22 @@ export default function Eventselect() {
     }>({});
 
     const [submitting, setSubmitting] = useState(false);
-
-    // ที่ผู้ใช้เลือก
     const [selectedSeats, setSelectedSeats] = useState<PickedSeat[]>([]);
 
-    /** -------------------------------
-     *  ฟังก์ชันแม็พ setup → zones UI
-     *  ------------------------------- */
-    const mapSetupToUI = useCallback((setup: SetupResponse | undefined | null): UIZone[] => {
-        // ✅ รวมทั้ง PAID และ LOCKED จาก BE (0-based แล้ว)
-        const occupiedFromBE = setup?.occupiedSeatMap ?? [];
+    // ป้องกัน setState หลัง unmount
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
+    /** -------------------------------
+     *  ฟังก์ชันแม็พ setup → zones UI (stable)
+     *  ------------------------------- */
+    const mapSetupToUI = useCallback((setup?: SetupResponse | null): UIZone[] => {
+        const occupiedFromBE = setup?.occupiedSeatMap ?? [];
         // group by zoneId (จริงจาก DB)
         const zoneOccupied = occupiedFromBE.reduce((acc, o) => {
             const zId = Number(o.zoneId);
@@ -140,7 +145,6 @@ export default function Eventselect() {
         }, {} as Record<number, { r: number; c: number }[]>);
 
         return (setup?.zones ?? []).map((z: SetupZone, idx: number) => {
-            // ดึง zone_id จริงเป็น number
             let dbZoneId: number | null = null;
             if (typeof z.id === "number") dbZoneId = z.id;
             else if (typeof z.id === "string" && /^\d+$/.test(z.id)) dbZoneId = Number(z.id);
@@ -151,7 +155,6 @@ export default function Eventselect() {
                 rows: z.rows ?? setup?.seatRows ?? 0,
                 cols: z.cols ?? setup?.seatColumns ?? 0,
                 price: z.price ?? null,
-                // ✅ ใช้ occupied ที่คำนวณจาก occupiedSeatMap เป็นหลัก
                 occupied: zoneOccupied[dbZoneId ?? -1] ?? z.occupiedSeats ?? [],
                 ticketTypeId: z.ticketTypeId ?? null,
                 color: ZONE_COLORS[idx % ZONE_COLORS.length],
@@ -161,7 +164,7 @@ export default function Eventselect() {
     }, []);
 
     /** -------------------------------
-     *  โหลด event + setup ครั้งแรก
+     *  โหลด event + setup ครั้งแรก (stable)
      *  ------------------------------- */
     useEffect(() => {
         if (!eventId) return;
@@ -173,7 +176,7 @@ export default function Eventselect() {
                     api.get<EventDetail>(`/public/events/${eventId}`),
                     api.get<SetupResponse>(`/public/events/${eventId}/tickets/setup`),
                 ]);
-                if (cancelled) return;
+                if (cancelled || !mountedRef.current) return;
 
                 const ev = evRes.data;
                 const setup = setupRes.data;
@@ -185,6 +188,7 @@ export default function Eventselect() {
                 });
                 setZones(mapSetupToUI(setup));
             } catch (err) {
+                // ไม่ setState ซ้ำๆ
                 console.error("Failed to load event/setup:", err);
             }
         })();
@@ -203,6 +207,7 @@ export default function Eventselect() {
             const { data: setup } = await api.get<SetupResponse>(
                 `/public/events/${eventId}/tickets/setup?t=${Date.now()}`
             );
+            if (!mountedRef.current) return;
             setSetupTimes((prev) => ({
                 salesStartDatetime: setup?.salesStartDatetime ?? prev.salesStartDatetime ?? null,
                 salesEndDatetime: setup?.salesEndDatetime ?? prev.salesEndDatetime ?? null,
@@ -215,7 +220,7 @@ export default function Eventselect() {
 
     /** -------------------------------
      *  refetch เมื่อหน้า “กลับมาแอคทีฟ”
-     *  รวม pageshow กัน BFCache
+     *  รวม pageshow กัน BFCache (stable handlers)
      *  ------------------------------- */
     useEffect(() => {
         const onVisibility = () => {
@@ -246,21 +251,17 @@ export default function Eventselect() {
         return coverPath(event.id, event.coverUpdatedAt ?? event.updatedAt ?? null);
     }, [event]);
 
-    const scrollToDateSelection = () => {
-        const element = document.getElementById("date-selection");
-        if (element) element.scrollIntoView({ behavior: "smooth" });
-    };
+    const handleDateClick = useCallback((date: string) => {
+        setSelectedDate((prev) => (prev === date ? null : date));
+    }, []);
 
     useEffect(() => {
-        if (selectedDate) {
-            const el = document.getElementById("seat-map-section");
-            if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 100);
-        }
+        if (!selectedDate) return;
+        const el = document.getElementById("seat-map-section");
+        if (!el) return;
+        const t = setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 100);
+        return () => clearTimeout(t);
     }, [selectedDate]);
-
-    const handleDateClick = (date: string) => {
-        setSelectedDate((prev) => (prev === date ? null : date));
-    };
 
     // ✅ Helper: เช็กว่า (zoneId, r, c) ถูกยึดแล้วหรือยัง จาก zones[].occupied
     const isOccupied = useCallback(
@@ -272,36 +273,41 @@ export default function Eventselect() {
         [zones]
     );
 
-    const onPickSeat = (zoneId: Zone["id"], r: number, c: number) => {
-        const zone = zones.find((z) => String(z.id) === String(zoneId));
-        if (!zone) return;
+    const onPickSeat = useCallback(
+        (zoneId: Zone["id"], r: number, c: number) => {
+            const zone = zones.find((z) => String(z.id) === String(zoneId));
+            if (!zone) return;
 
-        // ❌ กันเลือกทับ X ที่ BE แจ้งมา
-        if (isOccupied(zoneId, r, c)) {
-            alert("ที่นั่งนี้ถูกจองไปแล้ว");
-            return;
-        }
+            if (isOccupied(zoneId, r, c)) {
+                alert("ที่นั่งนี้ถูกจองไปแล้ว");
+                return;
+            }
 
-        const price = zone.price ?? 0;
-        setSelectedSeats((prev) => {
-            const i = prev.findIndex((s) => String(s.zoneId) === String(zoneId) && s.row === r && s.col === c);
-            if (i >= 0) return prev.filter((_, idx) => idx !== i);
-            return [
-                ...prev,
-                {
-                    zoneId,
-                    dbZoneId: zone.dbZoneId ?? null,
-                    row: r,
-                    col: c,
-                    zoneName: zone.name,
-                    price,
-                    ticketTypeId: zone.ticketTypeId ?? null,
-                },
-            ];
-        });
-    };
+            const price = zone.price ?? 0;
+            setSelectedSeats((prev) => {
+                const i = prev.findIndex((s) => String(s.zoneId) === String(zoneId) && s.row === r && s.col === c);
+                if (i >= 0) return prev.filter((_, idx) => idx !== i);
+                return [
+                    ...prev,
+                    {
+                        zoneId,
+                        dbZoneId: zone.dbZoneId ?? null,
+                        row: r,
+                        col: c,
+                        zoneName: zone.name,
+                        price,
+                        ticketTypeId: zone.ticketTypeId ?? null,
+                    },
+                ];
+            });
+        },
+        [zones, isOccupied]
+    );
 
-    const getTotalPrice = () => selectedSeats.reduce((t, s) => t + (s.price || 0), 0);
+    const getTotalPrice = useCallback(
+        () => selectedSeats.reduce((t, s) => t + (s.price || 0), 0),
+        [selectedSeats]
+    );
     const rowLabel = (r: number) => String.fromCharCode("A".charCodeAt(0) + r);
 
     // ✅ สถานะ (ONSALE / UPCOMING / OFFSALE)
@@ -315,16 +321,43 @@ export default function Eventselect() {
         return "OFFSALE";
     }, [setupTimes?.salesStartDatetime, setupTimes?.salesEndDatetime]);
 
+    /* ------------------------------
+       Date card (useMemo, stable)
+       ------------------------------ */
+    const dateCards = useMemo(() => {
+        const d = event?.startDatetime ? new Date(event.startDatetime) : null;
+        if (!d)
+            return [
+                {
+                    key: "show",
+                    labelDay: "Show",
+                    day: "-",
+                    month: "-",
+                    time: "-",
+                },
+            ];
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        return [
+            {
+                key: "show",
+                labelDay: dayNames[d.getDay()],
+                day: d.getDate().toString(),
+                month: monthNames[d.getMonth()],
+                time: `${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`,
+            },
+        ];
+    }, [event?.startDatetime]);
+
     /* ==============================
        ✅ Go to Payment Handler
        ============================== */
-    const handleGoToPayment = async () => {
+    const handleGoToPayment = useCallback(async () => {
         if (selectedSeats.length === 0 || !eventId) {
             alert("กรุณาเลือกที่นั่งก่อนดำเนินการชำระเงิน");
             return;
         }
 
-        // ต้องมี dbZoneId ครบทุกที่นั่ง
         const invalid = selectedSeats.find((s) => !s.dbZoneId || Number.isNaN(Number(s.dbZoneId)));
         if (invalid) {
             alert("ไม่พบรหัสโซน (zone_id) สำหรับบางที่นั่ง — โปรดรีเฟรชหรือเลือกใหม่");
@@ -334,18 +367,19 @@ export default function Eventselect() {
         try {
             setSubmitting(true);
 
-            // 🔄 ดึง setup ล่าสุดแบบ in-place เพื่อใช้ตรวจชนทันที (ไม่พึ่ง state)
+            // 🔄 ดึง setup ล่าสุดแบบ in-place เพื่อใช้ตรวจชนทันที
             const { data: latestSetup } = await api.get<SetupResponse>(
                 `/public/events/${eventId}/tickets/setup?t=${Date.now()}`
             );
             const latestZones = mapSetupToUI(latestSetup);
 
-            // อัปเดต state ให้ UI ทันสมัยด้วย
-            setSetupTimes((prev) => ({
-                salesStartDatetime: latestSetup?.salesStartDatetime ?? prev.salesStartDatetime ?? null,
-                salesEndDatetime: latestSetup?.salesEndDatetime ?? prev.salesEndDatetime ?? null,
-            }));
-            setZones(latestZones);
+            if (mountedRef.current) {
+                setSetupTimes((prev) => ({
+                    salesStartDatetime: latestSetup?.salesStartDatetime ?? prev.salesStartDatetime ?? null,
+                    salesEndDatetime: latestSetup?.salesEndDatetime ?? prev.salesEndDatetime ?? null,
+                }));
+                setZones(latestZones);
+            }
 
             // ถ้ามีตัวซ้ำกับ occupied ล่าสุด ให้ตัดออกก่อน
             const collided = selectedSeats.filter((s) => {
@@ -354,16 +388,18 @@ export default function Eventselect() {
             });
 
             if (collided.length > 0) {
-                setSelectedSeats((prev) =>
-                    prev.filter(
-                        (s) =>
-                            !collided.some(
-                                (c) => String(c.zoneId) === String(s.zoneId) && c.row === s.row && c.col === s.col
-                            )
-                    )
-                );
+                if (mountedRef.current) {
+                    setSelectedSeats((prev) =>
+                        prev.filter(
+                            (s) =>
+                                !collided.some(
+                                    (c) => String(c.zoneId) === String(s.zoneId) && c.row === s.row && c.col === s.col
+                                )
+                        )
+                    );
+                }
                 alert("มีบางที่นั่งถูกจองไปแล้ว ระบบได้ตัดที่นั่งนั้นออกให้ กรุณาเลือกใหม่");
-                return; // ให้ผู้ใช้กดอีกครั้งหลังเลือกใหม่
+                return;
             }
 
             const payload = {
@@ -372,13 +408,13 @@ export default function Eventselect() {
                 totalAmount: getTotalPrice(),
                 seats: selectedSeats.map((s) => ({
                     zoneId: Number(s.dbZoneId), // 👈 ส่ง zone_id จริงเท่านั้น
-                    row: s.row, // 0-based (BE แปลงเอง)
-                    col: s.col, // 0-based (BE แปลงเป็น seat_number = col+1)
+                    row: s.row, // 0-based
+                    col: s.col, // 0-based
                 })),
             };
 
             const { data } = await api.post("/public/reservations", payload);
-            const reservedId = data?.reservedId ?? data?.id;
+            const reservedId = (data as any)?.reservedId ?? (data as any)?.id;
             if (reservedId) {
                 navigate(`/payment/${reservedId}`);
             } else {
@@ -386,13 +422,12 @@ export default function Eventselect() {
             }
         } catch (err: any) {
             console.error("Reservation failed:", err);
-            const msg =
-                err?.response?.data?.error || err?.message || "เกิดข้อผิดพลาดในการสร้างรายการจอง";
+            const msg = err?.response?.data?.error || err?.message || "เกิดข้อผิดพลาดในการสร้างรายการจอง";
             alert(msg);
         } finally {
-            setSubmitting(false);
+            if (mountedRef.current) setSubmitting(false);
         }
-    };
+    }, [eventId, selectedSeats, getTotalPrice, mapSetupToUI, navigate]);
 
     const isOnSale = effectiveStatus === "ONSALE";
     const isUpcoming = effectiveStatus === "UPCOMING";
@@ -493,9 +528,7 @@ export default function Eventselect() {
                                             {zones.length > 0
                                                 ? zones
                                                     .map((z) =>
-                                                        typeof z.price === "number"
-                                                            ? `฿ ${z.price.toLocaleString()} (${z.name})`
-                                                            : `(${z.name})`
+                                                        typeof z.price === "number" ? `฿ ${z.price.toLocaleString()} (${z.name})` : `(${z.name})`
                                                     )
                                                     .join(" / ")
                                                 : "-"}
@@ -507,7 +540,11 @@ export default function Eventselect() {
                             {/* Actions */}
                             <div className="flex gap-4 pt-4">
                                 <button
-                                    onClick={() => (isOnSale ? scrollToDateSelection() : undefined)}
+                                    onClick={() => {
+                                        if (!isOnSale) return;
+                                        const element = document.getElementById("date-selection");
+                                        if (element) element.scrollIntoView({ behavior: "smooth" });
+                                    }}
                                     disabled={!isOnSale}
                                     className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                                     style={{
@@ -522,7 +559,7 @@ export default function Eventselect() {
                                     {isOnSale ? "Get Ticket" : isUpcoming ? "COMING SOON" : "OFFSALE"}
                                 </button>
                                 <button
-                                    onClick={() => setShowDetails(!showDetails)}
+                                    onClick={() => setShowDetails((v) => !v)}
                                     className="px-8 py-3 rounded-full font-semibold transition-all hover:opacity-90"
                                     style={{
                                         background: "var(--near-black-2, #1A1919)",
@@ -565,21 +602,7 @@ export default function Eventselect() {
             {/* Date cards + Seat map / Coming soon */}
             <section id="date-selection" className="px-6 py-8" style={{ background: "#DBDBDB" }}>
                 <div className="max-w-4xl mx-auto space-y-6">
-                    {useMemo(() => {
-                        const d = event?.startDatetime ? new Date(event.startDatetime) : null;
-                        if (!d) return [{ key: "show", labelDay: "Show", day: "-", month: "-", time: "-" }];
-                        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-                        return [
-                            {
-                                key: "show",
-                                labelDay: dayNames[d.getDay()],
-                                day: d.getDate().toString(),
-                                month: monthNames[d.getMonth()],
-                                time: `${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`,
-                            },
-                        ];
-                    }, [event?.startDatetime]).map((d) => (
+                    {dateCards.map((d) => (
                         <div
                             key={d.key}
                             className="overflow-hidden cursor-pointer transition-all hover:shadow-lg"
@@ -696,7 +719,7 @@ export default function Eventselect() {
                                             }))}
                                             onPick={onPickSeat}
                                             effectiveStatus={effectiveStatus}
-                                            aisleEvery={Math.max(1, Math.floor((zones[0]?.cols ?? 10) / 2))}
+                                            aisleEvery={Math.max(1, Math.floor((zones[0]?.cols as number) ?? 10 / 2))}
                                         />
 
                                         {/* Summary */}

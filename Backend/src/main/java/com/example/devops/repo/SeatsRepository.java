@@ -59,17 +59,56 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     List<Seats> findAllSeatsByEventId(@Param("eventId") Long eventId);
 
+    /* ==================== ⭐⭐⭐ แก้ไข: OCCUPIED (รวม RESERVED) ====================
+
+       ครอบคลุม 3 แหล่ง:
+       1) reserved_seats + reserved.payment_status IN ('RESERVED','PAID')
+       2) reservation_tickets VIEW (กรณียังไม่ได้เขียนลง reserved_seats)
+       3) seat_locks สถานะ LOCKED ที่ยังไม่หมดอายุ
+    */
     @Query(value = """
-        SELECT z.zone_id AS zone_id,
-               r.sort_order AS row_number,
-               s.seat_number AS seat_number
-          FROM reserved_seats rs
-          JOIN reserved rv ON rv.reserved_id = rs.reserved_id
-          JOIN seats s ON s.seat_id = rs.seat_id
-          JOIN seat_rows r ON r.row_id = s.row_id
-          JOIN seat_zones z ON z.zone_id = r.zone_id
-         WHERE z.event_id = :eventId
-           AND UPPER(rv.payment_status) = 'PAID'
+        WITH occ_rs AS (
+            SELECT z.zone_id,
+                   r.sort_order AS row_number,
+                   s.seat_number AS seat_number
+              FROM reserved_seats rs
+              JOIN reserved rv  ON rv.reserved_id = rs.reserved_id
+              JOIN seats    s   ON s.seat_id      = rs.seat_id
+              JOIN seat_rows r  ON r.row_id       = s.row_id
+              JOIN seat_zones z ON z.zone_id      = r.zone_id
+             WHERE z.event_id = :eventId
+               AND UPPER(COALESCE(rv.payment_status,'UNPAID')) IN ('RESERVED','PAID')
+        ),
+        occ_rt AS (
+            SELECT z.zone_id,
+                   sr.sort_order AS row_number,
+                   s.seat_number  AS seat_number
+              FROM reservation_tickets rt
+              JOIN reserved r          ON r.reserved_id = rt.reservation_id
+              JOIN ticket_types tt      ON tt.ticket_type_id = COALESCE(r.ticket_type_id, rt.ticket_type_id)
+              JOIN seat_zones z         ON z.event_id = tt.event_id
+              JOIN seat_rows sr         ON sr.zone_id = z.zone_id AND sr.row_label = rt.seat_row
+              JOIN seats s              ON s.row_id = sr.row_id AND s.seat_number = rt.seat_col::int
+             WHERE z.event_id = :eventId
+               AND UPPER(COALESCE(r.payment_status,'UNPAID')) IN ('RESERVED','PAID')
+        ),
+        occ_locks AS (
+            SELECT z2.zone_id,
+                   r2.sort_order AS row_number,
+                   s2.seat_number AS seat_number
+              FROM seat_locks l
+              JOIN seats    s2   ON s2.seat_id      = l.seat_id
+              JOIN seat_rows r2  ON r2.row_id       = s2.row_id
+              JOIN seat_zones z2 ON z2.zone_id      = r2.zone_id
+             WHERE z2.event_id = :eventId
+               AND UPPER(COALESCE(l.status,'LOCKED')) = 'LOCKED'
+               AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        )
+        SELECT * FROM occ_rs
+        UNION
+        SELECT * FROM occ_rt
+        UNION
+        SELECT * FROM occ_locks
         """, nativeQuery = true)
     List<Object[]> findOccupiedWithZoneRowColByEventId(@Param("eventId") Long eventId);
 
@@ -86,7 +125,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     void deleteByEventId(@Param("eventId") Long eventId);
 
-    // ==================== Public สำหรับ FE (สถานะที่นั่ง) ====================
+    // ==================== ⭐⭐⭐ แก้ไข: Public สำหรับ FE (รวม RESERVED) ====================
 
     @Query(value = """
         SELECT s.seat_id
@@ -96,7 +135,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
           JOIN reserved_seats rs ON rs.seat_id = s.seat_id
           JOIN reserved r ON r.reserved_id = rs.reserved_id
          WHERE sz.event_id = :eventId
-           AND UPPER(r.payment_status) = 'PAID'
+           AND UPPER(COALESCE(r.payment_status,'UNPAID')) IN ('RESERVED','PAID')
         """, nativeQuery = true)
     List<Long> findPaidTakenSeatIdsByEvent(@Param("eventId") Long eventId);
 
@@ -120,7 +159,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
           JOIN reserved_seats rs ON rs.seat_id = s.seat_id
           JOIN reserved r ON r.reserved_id = rs.reserved_id
          WHERE sz.event_id = :eventId
-           AND UPPER(r.payment_status) = 'PAID'
+           AND UPPER(COALESCE(r.payment_status,'UNPAID')) IN ('RESERVED','PAID')
            AND s.seat_id = ANY (:seatIds)
         """, nativeQuery = true)
     List<Long> findPaidTakenAmong(@Param("eventId") Long eventId,
@@ -140,9 +179,8 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
     List<Object[]> findZoneRowColForSeatIds(@Param("eventId") Long eventId,
                                             @Param("seatIds") Long[] seatIds);
 
-    // ==================== สำหรับ Admin: นับต่อ "โซน" ====================
+    // ==================== ⭐⭐⭐ แก้ไข: Admin - นับโซน (แยก RESERVED) ====================
 
-    /** จำนวนที่นั่งทั้งหมดในโซน */
     @Query(value = """
         SELECT COUNT(*)
           FROM seats s
@@ -151,7 +189,6 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     int countSeatsInZone(@Param("zoneId") Long zoneId);
 
-    /** จำนวนที่นั่งที่ขายแล้ว (PAID) ในโซน */
     @Query(value = """
         SELECT COALESCE(COUNT(DISTINCT rs.seat_id), 0)
           FROM reserved_seats rs
@@ -163,19 +200,16 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     int countSoldSeatsInZone(@Param("zoneId") Long zoneId);
 
-    /** จำนวนที่นั่งที่ "จองค้าง/ยังไม่จ่าย" หรือ "ถูกล็อกอยู่" ในโซน (ไม่นับซ้ำ) */
     @Query(value = """
         SELECT COUNT(*) FROM (
-            -- reserved but not paid
             SELECT DISTINCT rs.seat_id
               FROM reserved_seats rs
               JOIN reserved rsv ON rsv.reserved_id = rs.reserved_id
               JOIN seats s      ON s.seat_id = rs.seat_id
               JOIN seat_rows sr ON sr.row_id = s.row_id
              WHERE sr.zone_id = :zoneId
-               AND UPPER(COALESCE(rsv.payment_status, 'UNPAID')) <> 'PAID'
+               AND UPPER(COALESCE(rsv.payment_status, 'UNPAID')) = 'RESERVED'
             UNION
-            -- locked seats (not expired)
             SELECT DISTINCT l.seat_id
               FROM seat_locks l
               JOIN seats s      ON s.seat_id = l.seat_id
@@ -187,7 +221,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     int countReservedSeatsInZone(@Param("zoneId") Long zoneId);
 
-    // ==================== สำหรับ Admin: นับภาพรวม "อีเวนต์" ====================
+    // ==================== ⭐⭐⭐ แก้ไข: Admin - นับอีเวนต์ (แยก RESERVED) ====================
 
     @Query(value = """
         SELECT COUNT(*)
@@ -210,7 +244,6 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
         """, nativeQuery = true)
     long countSoldSeatsByEvent(@Param("eventId") Long eventId);
 
-    /** reserved (ยังไม่จ่าย) ∪ locked (ยังไม่หมดอายุ) แบบไม่ซ้ำกัน */
     @Query(value = """
         SELECT COUNT(*) FROM (
             SELECT DISTINCT rs.seat_id
@@ -220,7 +253,7 @@ public interface SeatsRepository extends JpaRepository<Seats, Long> {
               JOIN seat_rows r  ON r.row_id = s.row_id
               JOIN seat_zones z ON z.zone_id = r.zone_id
              WHERE z.event_id = :eventId
-               AND UPPER(COALESCE(rsv.payment_status,'UNPAID')) <> 'PAID'
+               AND UPPER(COALESCE(rsv.payment_status,'UNPAID')) = 'RESERVED'
             UNION
             SELECT DISTINCT l.seat_id
               FROM seat_locks l

@@ -19,7 +19,7 @@ type ZoneItem = {
 type TicketSetupDto = {
     seatRows: number;
     seatColumns: number;
-    zones: { code: string; name: string; price?: number }[];
+    zones: { code: string; name: string; price?: number; rows?: number; cols?: number }[];
     minPerOrder?: number;
     maxPerOrder?: number;
     active?: boolean;
@@ -27,44 +27,23 @@ type TicketSetupDto = {
     salesEndDatetime?: string | null;
 };
 
-/**
- * แปลง local date + time → UTC ISO string
- * @param date - "YYYY-MM-DD" ในเขต local time
- * @param time - "HH:mm" ในเขต local time
- * @returns ISO8601 string ในรูปแบบ UTC (เช่น "2025-01-15T10:30:00.000Z")
- */
+/** local date+time -> UTC ISO */
 const toIsoUTC = (date: string, time: string): string | null => {
     if (!date || !time) return null;
-
-    // รวม date + time เป็น local datetime string
     const localDateTimeStr = `${date}T${time}:00`;
-
-    // สร้าง Date object ซึ่งจะ interpret เป็น local time
     const localDate = new Date(localDateTimeStr);
-
-    // แปลงเป็น UTC ISO string
     return localDate.toISOString();
 };
 
-/**
- * แปลง UTC ISO string → local date และ time
- * @param isoString - ISO8601 string (UTC)
- * @returns { date: "YYYY-MM-DD", time: "HH:mm" } ในเขต local time
- */
+/** UTC ISO -> local date/time */
 const fromIsoUTCToLocal = (isoString: string): { date: string; time: string } => {
     const d = new Date(isoString);
-
-    // ได้ local date/time โดยอัตโนมัติ
     const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-
-    return {
-        date: `${year}-${month}-${day}`,
-        time: `${hours}:${minutes}`
-    };
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return { date: `${year}-${month}-${day}`, time: `${hours}:${minutes}` };
 };
 
 export default function TicketDetail() {
@@ -82,7 +61,9 @@ export default function TicketDetail() {
         try {
             const raw = localStorage.getItem(`event:${eid}`);
             if (raw) setCachedEvent(JSON.parse(raw));
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
     }, [hasId, eid]);
 
     // ---------- zones ----------
@@ -91,10 +72,10 @@ export default function TicketDetail() {
     ]);
 
     const addZone = () => {
-        setZones(prev => [
+        setZones((prev) => [
             ...prev,
             {
-                id: prev.length ? Math.max(...prev.map(z => z.id)) + 1 : 1,
+                id: prev.length ? Math.max(...prev.map((z) => z.id)) + 1 : 1,
                 seatRow: "",
                 seatColumn: "",
                 zone: "",
@@ -103,11 +84,10 @@ export default function TicketDetail() {
         ]);
     };
 
-    const removeZone = (id: number) =>
-        setZones(prev => prev.filter(z => z.id !== id));
+    const removeZone = (id: number) => setZones((prev) => prev.filter((z) => z.id !== id));
 
     const setZoneField = (idx: number, field: keyof ZoneItem, value: string) => {
-        setZones(prev => {
+        setZones((prev) => {
             const next = [...prev];
             next[idx] = { ...next[idx], [field]: value };
             return next;
@@ -134,19 +114,19 @@ export default function TicketDetail() {
 
         (async () => {
             try {
-                const { data } = await api.get<TicketSetupDto>(
-                    `/events/${eid}/tickets/setup`
-                );
+                const { data } = await api.get<TicketSetupDto>(`/events/${eid}/tickets/setup`);
                 if (ignore || !data) return;
 
                 setHasExisting(true);
 
-                const row = data.seatRows ?? 0;
-                const col = data.seatColumns ?? 0;
-                const list = (data.zones ?? []).map((z, i) => ({
+                const globalRow = data.seatRows ?? 0;
+                const globalCol = data.seatColumns ?? 0;
+
+                // ✅ ใช้ rows/cols ของโซน ถ้าไม่มี -> fallback เป็น global สำหรับ "ทุกโซน"
+                const list: ZoneItem[] = (data.zones ?? []).map((z, i) => ({
                     id: i + 1,
-                    seatRow: i === 0 ? String(row) : "",
-                    seatColumn: i === 0 ? String(col) : "",
+                    seatRow: String((z.rows ?? globalRow) || ""),
+                    seatColumn: String((z.cols ?? globalCol) || ""),
                     zone: z.code || z.name || "",
                     price: z.price != null ? String(z.price) : "",
                 }));
@@ -154,24 +134,32 @@ export default function TicketDetail() {
                 setZones(
                     list.length
                         ? list
-                        : [{ id: 1, seatRow: String(row || ""), seatColumn: String(col || ""), zone: "", price: "" }]
+                        : [
+                            {
+                                id: 1,
+                                seatRow: String(globalRow || ""),
+                                seatColumn: String(globalCol || ""),
+                                zone: "",
+                                price: "",
+                            },
+                        ]
                 );
 
-                // Advanced
                 setLimits({
                     min: typeof data.minPerOrder === "number" ? String(data.minPerOrder) : "1",
                     max: typeof data.maxPerOrder === "number" ? String(data.maxPerOrder) : "1",
                 });
-                setStatus(typeof data.active === "boolean" ? (data.active ? "available" : "unavailable") : "available");
+                setStatus(
+                    typeof data.active === "boolean" ? (data.active ? "available" : "unavailable") : "available"
+                );
 
-                // แปลง UTC → Local time สำหรับ prefill
                 if (data.salesStartDatetime) {
                     const local = fromIsoUTCToLocal(data.salesStartDatetime);
-                    setSales(v => ({ ...v, startDate: local.date, startTime: local.time }));
+                    setSales((v) => ({ ...v, startDate: local.date, startTime: local.time }));
                 }
                 if (data.salesEndDatetime) {
                     const local = fromIsoUTCToLocal(data.salesEndDatetime);
-                    setSales(v => ({ ...v, endDate: local.date, endTime: local.time }));
+                    setSales((v) => ({ ...v, endDate: local.date, endTime: local.time }));
                 }
             } catch {
                 setHasExisting(false);
@@ -181,7 +169,9 @@ export default function TicketDetail() {
             }
         })();
 
-        return () => { ignore = true; };
+        return () => {
+            ignore = true;
+        };
     }, [hasId, eid]);
 
     // ---------- Save / Update ----------
@@ -194,40 +184,46 @@ export default function TicketDetail() {
         try {
             if (!zones.length) return alert("กรุณาเพิ่มอย่างน้อย 1 โซน");
 
+            // ค่ากลางต้องครบ
             const rowsN = Number(zones[0].seatRow);
             const colsN = Number(zones[0].seatColumn);
             if (!Number.isFinite(rowsN) || rowsN <= 0 || !Number.isFinite(colsN) || colsN <= 0) {
                 return alert("Seat Row/Seat Column ต้องเป็นตัวเลขและมากกว่า 0");
             }
-            if (zones.find(z => !z.zone.trim())) {
+            if (zones.find((z) => !z.zone.trim())) {
                 return alert("กรุณากรอกชื่อ Zone ให้ครบ");
             }
 
-            // validate Advanced
             const minN = limits.min ? Number(limits.min) : NaN;
             const maxN = limits.max ? Number(limits.max) : NaN;
             if (!Number.isFinite(minN) || minN < 1) return alert("Minimum ticket ต้องเป็นเลขตั้งแต่ 1 ขึ้นไป");
             if (!Number.isFinite(maxN) || maxN < 1) return alert("Maximum ticket ต้องเป็นเลขตั้งแต่ 1 ขึ้นไป");
             if (minN > maxN) return alert("Minimum ต้องไม่มากกว่า Maximum");
 
-            // Sales Period - แปลงจาก local → UTC
             const salesStart = toIsoUTC(sales.startDate, sales.startTime);
             const salesEnd = toIsoUTC(sales.endDate, sales.endTime);
-
             if (!salesStart || !salesEnd) return alert("กรุณากำหนดช่วงเวลา Sales Period ให้ครบ");
             if (new Date(salesStart) >= new Date(salesEnd)) {
                 return alert("Sales End ต้องมากกว่า Sales Start");
             }
 
-            // payload
+            // ✅ ส่ง rows/cols ให้ทุกโซนเสมอ: ว่าง -> ใช้ global
             const payload: TicketSetupDto = {
                 seatRows: rowsN,
                 seatColumns: colsN,
-                zones: zones.map(z => ({
-                    code: z.zone.trim(),
-                    name: z.zone.trim(),
-                    price: z.price === "" ? undefined : Number(z.price)
-                })),
+                zones: zones.map((z) => {
+                    const zr = Number(z.seatRow);
+                    const zc = Number(z.seatColumn);
+                    const rows = Number.isFinite(zr) && zr > 0 ? zr : rowsN;
+                    const cols = Number.isFinite(zc) && zc > 0 ? zc : colsN;
+                    return {
+                        code: z.zone.trim(),
+                        name: z.zone.trim(),
+                        price: z.price === "" ? undefined : Number(z.price),
+                        rows,
+                        cols,
+                    };
+                }),
                 minPerOrder: minN,
                 maxPerOrder: maxN,
                 active: status === "available",
@@ -236,7 +232,6 @@ export default function TicketDetail() {
             };
 
             setSaving(true);
-
             if (hasExisting) {
                 await api.put(`/events/${eid}/tickets/setup`, payload);
             } else {
@@ -548,7 +543,7 @@ export default function TicketDetail() {
                     <div className="flex justify-end gap-3">
                         <Link
                             to="/organizationmnge"
-                            className="rounded-full bg-[#FA3A2B] px-5 py-3 text-white font-medium shadow-sm hover:bg-[#e23325] transition-colors"
+                            className="rounded-full bg-[#FA3A2B] px-5 py-3 text-white font-medium shadowสม hover:bg-[#e23325] transition-colors"
                         >
                             Cancel
                         </Link>
