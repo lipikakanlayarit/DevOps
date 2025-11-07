@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="th"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Reserved.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">backend</a> &gt; <a href="index.source.html" class="el_package">com.example.devops.model</a> &gt; <span class="el_source">Reserved.java</span></div><h1>Reserved.java</h1><pre class="source lang-java linenums">package com.example.devops.model;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+
+@Entity
+@Table(name = &quot;reserved&quot;)
+<span class="nc" id="L9">public class Reserved {</span>
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  @Column(name = &quot;reserved_id&quot;)
+  private Long reserved_id;
+
+  @Column(name = &quot;user_id&quot;)
+  private Long user_id;
+
+  @Column(name = &quot;event_id&quot;)
+  private Long event_id;
+
+  @Column(name = &quot;ticket_type_id&quot;)
+  private Long ticket_type_id;
+
+  @Column(name = &quot;quantity&quot;)
+  private Integer quantity;
+
+  @Column(name = &quot;total_amount&quot;)
+  private BigDecimal total_amount;
+
+  @Column(name = &quot;payment_status&quot;)
+  private String payment_status;
+
+  @Column(name = &quot;registration_datetime&quot;)
+  private Instant registration_datetime;
+
+  @Column(name = &quot;payment_datetime&quot;)
+  private Instant payment_datetime;
+
+  @Column(name = &quot;confirmation_code&quot;)
+  private String confirmation_code;
+
+  @Column(name = &quot;notes&quot;)
+  private String notes;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

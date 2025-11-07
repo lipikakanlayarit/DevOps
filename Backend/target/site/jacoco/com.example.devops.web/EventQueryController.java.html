@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="th"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EventQueryController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">backend</a> &gt; <a href="index.source.html" class="el_package">com.example.devops.web</a> &gt; <span class="el_source">EventQueryController.java</span></div><h1>EventQueryController.java</h1><pre class="source lang-java linenums">package com.example.devops.web;
+
+import com.example.devops.model.EventsNam;
+import com.example.devops.repo.EventsNamRepository;
+import com.example.devops.repo.OrganizerRepo;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+
+@RestController
+@RequestMapping(&quot;/api/events&quot;)
+<span class="nc" id="L15">@RequiredArgsConstructor</span>
+public class EventQueryController {
+
+    private final EventsNamRepository eventsNamRepository;
+    private final OrganizerRepo organizerRepo;
+
+    @GetMapping(&quot;/mine&quot;)
+    public ResponseEntity&lt;?&gt; getMyEvents(Authentication auth) {
+<span class="nc bnc" id="L23" title="All 2 branches missed.">        if (auth == null) {</span>
+<span class="nc" id="L24">            return ResponseEntity.status(401).body(Map.of(&quot;error&quot;, &quot;unauthorized&quot;));</span>
+        }
+
+<span class="nc" id="L27">        String key = Optional.ofNullable(auth.getName()).orElse(&quot;&quot;).trim();</span>
+<span class="nc" id="L28">        Long orgId = organizerRepo.findIdByEmailOrUsernameIgnoreCase(key).orElse(null);</span>
+<span class="nc bnc" id="L29" title="All 2 branches missed.">        if (orgId == null) {</span>
+<span class="nc" id="L30">            return ResponseEntity.ok(List.of());</span>
+        }
+
+        // ต้องมีเมธอดนี้ใน EventsNamRepository:
+        // List&lt;EventsNam&gt; findByOrganizerIdOrderByIdDesc(Long organizerId);
+<span class="nc" id="L35">        List&lt;EventsNam&gt; list = eventsNamRepository.findByOrganizerIdOrderByIdDesc(orgId);</span>
+
+<span class="nc" id="L37">        List&lt;Map&lt;String, Object&gt;&gt; result = list.stream().map(ev -&gt; {</span>
+<span class="nc" id="L38">            Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L39">            map.put(&quot;id&quot;,             ev.getId());</span>
+<span class="nc" id="L40">            map.put(&quot;eventName&quot;,      ev.getEventName());</span>
+<span class="nc" id="L41">            map.put(&quot;status&quot;,         ev.getStatus());</span>
+<span class="nc" id="L42">            map.put(&quot;categoryId&quot;,     ev.getCategoryId());</span>
+<span class="nc" id="L43">            map.put(&quot;startDateTime&quot;,  ev.getStartDatetime());</span>
+<span class="nc" id="L44">            map.put(&quot;endDateTime&quot;,    ev.getEndDatetime());</span>
+<span class="nc" id="L45">            map.put(&quot;venue&quot;,          ev.getVenueName());</span>
+<span class="nc" id="L46">            return map;</span>
+<span class="nc" id="L47">        }).toList();</span>
+
+<span class="nc" id="L49">        return ResponseEntity.ok(result);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>
