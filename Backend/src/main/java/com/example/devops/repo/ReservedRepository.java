@@ -1,13 +1,12 @@
 package com.example.devops.repo;
 
 import com.example.devops.model.Reserved;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -31,36 +30,142 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
     @Query("SELECT r FROM Reserved r WHERE r.eventId = :eventId AND UPPER(r.paymentStatus) = 'PAID'")
     List<Reserved> findPaidByEventId(@Param("eventId") Long eventId);
 
-    /** ✅ สำหรับตารางแสดงผล: join & aggregate seat label ต่อใบจอง (alias เป็น `user`) */
+    /* ===============================================================
+       ✅ สรุปรายการจองของอีเวนต์ + seat_label + expire_at (5 นาที)
+       - รวม label จาก reserved_seats หรือ reservation_tickets
+       - เพิ่ม registration_ts และ expire_at เพื่อให้ Frontend ตัด EXPIRED ได้
+       - expire_at = LEAST(registration_datetime + interval '5 minutes', ev.sales_end_datetime)
+       =============================================================== */
     @Transactional(readOnly = true)
     @Query(value = """
+        WITH lbl_rs AS (
+            SELECT t.reserved_id,
+                   STRING_AGG(t.label, ', ' ORDER BY t.sort_order, t.seat_number) AS seat_label
+            FROM (
+                SELECT DISTINCT
+                       rv.reserved_id,
+                       sr.sort_order,
+                       s.seat_number,
+                       (sr.row_label || s.seat_number::text) AS label
+                  FROM reserved rv
+                  JOIN reserved_seats rs ON rs.reserved_id = rv.reserved_id
+                  JOIN seats s           ON s.seat_id      = rs.seat_id
+                  JOIN seat_rows sr      ON sr.row_id      = s.row_id
+                 WHERE rv.event_id = :eventId
+            ) t
+            GROUP BY t.reserved_id
+        ),
+        lbl_rt AS (
+            SELECT t.reserved_id,
+                   STRING_AGG(t.label, ', ' ORDER BY t.seat_row, t.seat_col_int) AS seat_label
+            FROM (
+                SELECT DISTINCT
+                       r.reserved_id                AS reserved_id,
+                       rt.seat_row                  AS seat_row,
+                       (rt.seat_col)::int           AS seat_col_int,
+                       (rt.seat_row || rt.seat_col) AS label
+                  FROM reserved r
+                  JOIN reservation_tickets rt ON rt.reservation_id = r.reserved_id
+                 WHERE r.event_id = :eventId
+            ) t
+            GROUP BY t.reserved_id
+        )
         SELECT 
             rv.reserved_id            AS id,
             rv.confirmation_code      AS reserved_code,
-            rv.payment_status         AS status,
+            UPPER(COALESCE(rv.payment_status,'UNPAID')) AS status,
             rv.total_amount           AS total,
             rv.payment_method         AS payment_method,
             COALESCE(u.username, '-') AS user,
-            rv.registration_datetime  AS date,
-            STRING_AGG(
-              COALESCE(s.seat_label, CONCAT('R', sr.sort_order, 'S', s.seat_number))::text,
-              ',' ORDER BY sr.sort_order, s.seat_number
-            ) AS seat_label
+            TO_CHAR(rv.registration_datetime, 'DD Mon YYYY') AS date,
+            COALESCE(lbl_rs.seat_label, lbl_rt.seat_label, '-') AS seat_label,
+            rv.registration_datetime  AS registration_ts,
+            LEAST(
+                rv.registration_datetime + INTERVAL '5 minutes',
+                ev.sales_end_datetime
+            )                         AS expire_at
         FROM reserved rv
-        LEFT JOIN users u           ON u.user_id = rv.user_id
-        LEFT JOIN reserved_seats rs ON rs.reserved_id = rv.reserved_id
-        LEFT JOIN seats s           ON s.seat_id = rs.seat_id
-        LEFT JOIN seat_rows sr      ON sr.row_id = s.row_id
+        LEFT JOIN users u   ON u.user_id = rv.user_id
+        LEFT JOIN lbl_rs    ON lbl_rs.reserved_id = rv.reserved_id
+        LEFT JOIN lbl_rt    ON lbl_rt.reserved_id = rv.reserved_id
+        LEFT JOIN events_nam ev ON ev.event_id = rv.event_id
         WHERE rv.event_id = :eventId
-        GROUP BY rv.reserved_id, rv.confirmation_code, rv.payment_status, rv.total_amount, 
-                 rv.payment_method, u.username, rv.registration_datetime
-        ORDER BY rv.reserved_id
+        ORDER BY rv.reserved_id DESC
         """, nativeQuery = true)
     List<Map<String, Object>> findReservationsByEvent(@Param("eventId") Long eventId);
 
+    /** ✅ alias เพื่อความเข้ากันได้ (ใช้ชื่อเดิมได้) */
+    @Transactional(readOnly = true)
+    @Query(value = """
+        WITH lbl_rs AS (
+            SELECT t.reserved_id,
+                   STRING_AGG(t.label, ', ' ORDER BY t.sort_order, t.seat_number) AS seat_label
+            FROM (
+                SELECT DISTINCT
+                       rv.reserved_id,
+                       sr.sort_order,
+                       s.seat_number,
+                       (sr.row_label || s.seat_number::text) AS label
+                  FROM reserved rv
+                  JOIN reserved_seats rs ON rs.reserved_id = rv.reserved_id
+                  JOIN seats s           ON s.seat_id      = rs.seat_id
+                  JOIN seat_rows sr      ON sr.row_id      = s.row_id
+                 WHERE rv.event_id = :eventId
+            ) t
+            GROUP BY t.reserved_id
+        ),
+        lbl_rt AS (
+            SELECT t.reserved_id,
+                   STRING_AGG(t.label, ', ' ORDER BY t.seat_row, t.seat_col_int) AS seat_label
+            FROM (
+                SELECT DISTINCT
+                       r.reserved_id                AS reserved_id,
+                       rt.seat_row                  AS seat_row,
+                       (rt.seat_col)::int           AS seat_col_int,
+                       (rt.seat_row || rt.seat_col) AS label
+                  FROM reserved r
+                  JOIN reservation_tickets rt ON rt.reservation_id = r.reserved_id
+                 WHERE r.event_id = :eventId
+            ) t
+            GROUP BY t.reserved_id
+        )
+        SELECT 
+            rv.reserved_id            AS id,
+            rv.confirmation_code      AS reserved_code,
+            UPPER(COALESCE(rv.payment_status,'UNPAID')) AS status,
+            rv.total_amount           AS total,
+            rv.payment_method         AS payment_method,
+            COALESCE(u.username, '-') AS user,
+            TO_CHAR(rv.registration_datetime, 'DD Mon YYYY') AS date,
+            COALESCE(lbl_rs.seat_label, lbl_rt.seat_label, '-') AS seat_label,
+            rv.registration_datetime  AS registration_ts,
+            LEAST(
+                rv.registration_datetime + INTERVAL '5 minutes',
+                ev.sales_end_datetime
+            )                         AS expire_at
+        FROM reserved rv
+        LEFT JOIN users u   ON u.user_id = rv.user_id
+        LEFT JOIN lbl_rs    ON lbl_rs.reserved_id = rv.reserved_id
+        LEFT JOIN lbl_rt    ON lbl_rt.reserved_id = rv.reserved_id
+        LEFT JOIN events_nam ev ON ev.event_id = rv.event_id
+        WHERE rv.event_id = :eventId
+        ORDER BY rv.reserved_id DESC
+        """, nativeQuery = true)
+    List<Map<String, Object>> findReservationSummaryByEvent(@Param("eventId") Long eventId);
+
     // ----------------------------------------------------------------------
-    // ✅ ใหม่: ดึง Ticket History ของ user (แก้ cast ::text เพื่อกัน error integer '-')
-    // ใช้กับ Modal "Ticket History" ในหน้า Admin -> User Management
+    // ✅ รวมยอดเงินจากใบจองที่ชำระแล้ว (ใช้ใน Dashboard)
+    // ----------------------------------------------------------------------
+    @Query(value = """
+        SELECT COALESCE(SUM(rv.total_amount), 0)
+          FROM reserved rv
+         WHERE rv.event_id = :eventId
+           AND UPPER(COALESCE(rv.payment_status,'UNPAID')) = 'PAID'
+        """, nativeQuery = true)
+    BigDecimal sumPaidAmountByEvent(@Param("eventId") Long eventId);
+
+    // ----------------------------------------------------------------------
+    // ✅ Ticket History ของ user (ยังคงไว้ถ้ามีใช้งานที่อื่น)
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     @Query(value = """
@@ -85,7 +190,9 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
         """, nativeQuery = true)
     List<Map<String, Object>> findUserTicketHistory(@Param("userId") Long userId);
 
-    // (ถ้าจะใช้ลบ reservation + mapping ที่นั่งในธุรกรรมเดียวกัน เพิ่มเมธอดช่วยได้ตามนี้)
+    // ----------------------------------------------------------------------
+    // ✅ ลบใบจองแบบ Hard Delete
+    // ----------------------------------------------------------------------
     @Modifying
     @Transactional
     @Query(value = "DELETE FROM reserved WHERE reserved_id = :reservedId", nativeQuery = true)
