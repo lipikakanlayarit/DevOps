@@ -1,5 +1,5 @@
 // src/components/Sidebar.tsx
-import { Calendar, Users, BarChart3, Shield } from "lucide-react";
+import { Calendar, Users, Shield } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 interface NavItemProps {
@@ -48,6 +48,7 @@ export default function Sidebar() {
     return (
         <aside className="fixed left-0 top-[60px] h-[calc(100vh-60px)] w-64 bg-[#1D1D1D] z-40 overflow-y-auto">
             <div className="p-6 space-y-8">
+
                 <SidebarSection title="Event Management">
                     <NavItem
                         to="/admin"
@@ -56,6 +57,7 @@ export default function Sidebar() {
                     >
                         Event Manager
                     </NavItem>
+
                     <NavItem
                         to="/admin/permissions"
                         icon={<Shield className="w-5 h-5" />}
@@ -67,20 +69,14 @@ export default function Sidebar() {
 
                 <SidebarSection title="User Management">
                     <NavItem
-                        to="/admin/usermnge" // << เปลี่ยนเป็นเส้นทางใหม่
+                        to="/admin/usermnge"
                         icon={<Users className="w-5 h-5" />}
                         isActive={isActive("/admin/usermnge")}
                     >
                         User Management
                     </NavItem>
-                    <NavItem
-                        to="/admin/settings"
-                        icon={<BarChart3 className="w-5 h-5" />}
-                        isActive={isActive("/admin/settings")}
-                    >
-                        Dashboard
-                    </NavItem>
                 </SidebarSection>
+
             </div>
         </aside>
     );

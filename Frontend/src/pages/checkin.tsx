@@ -191,7 +191,7 @@ export default function CheckinConfirmPage() {
                         </div>
 
                         <p className="text-xs text-slate-400">
-                            * ถ้ามี API สำหรับบันทึก Check-in จริง ให้เชื่อมต่อในปุ่มด้านบน (ส่ง reservedId + seatId)
+                            {/** ถ้ามี API สำหรับบันทึก Check-in จริง ให้เชื่อมต่อในปุ่มด้านบน (ส่ง reservedId + seatId)*/}
                         </p>
                     </div>
                 )}
