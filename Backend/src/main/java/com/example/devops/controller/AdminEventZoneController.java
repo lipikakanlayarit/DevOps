@@ -1,4 +1,3 @@
-// src/main/java/com/example/devops/controller/AdminEventZoneController.java
 package com.example.devops.controller;
 
 import com.example.devops.model.SeatZones;
@@ -8,6 +7,7 @@ import com.example.devops.repo.SeatZonesRepository;
 import com.example.devops.repo.SeatsRepository;
 import com.example.devops.repo.ZoneTicketTypesRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,18 +26,23 @@ public class AdminEventZoneController {
     private final ZoneTicketTypesRepository zttRepo;
     private final ReservedRepository reservedRepo;
 
+    // ✅ ใช้สำหรับ query รายการใบจองแบบ custom (รวมที่นั่งด้วย STRING_AGG)
+    private final JdbcTemplate jdbc;
+
     public AdminEventZoneController(
             SeatZonesRepository seatZonesRepo,
             SeatRowsRepository seatRowsRepo,
             SeatsRepository seatsRepo,
             ZoneTicketTypesRepository zttRepo,
-            ReservedRepository reservedRepo
+            ReservedRepository reservedRepo,
+            JdbcTemplate jdbc
     ) {
         this.seatZonesRepo = seatZonesRepo;
         this.seatRowsRepo = seatRowsRepo;
         this.seatsRepo = seatsRepo;
         this.zttRepo = zttRepo;
         this.reservedRepo = reservedRepo;
+        this.jdbc = jdbc;
     }
 
     /**
@@ -105,26 +110,48 @@ public class AdminEventZoneController {
 
     /**
      * ✅ รายการใบจองของอีเวนต์ (ตาราง Reservations)
+     *      - รวมที่นั่งทุกตัวในใบจองเดียวกันด้วย STRING_AGG (ไม่ใช้ DISTINCT)
+     *      - ทำให้กรณีคนละโซนแต่เลขซ้ำ แสดงได้เป็น "A1, A1" ตามที่ต้องการ
      * GET /api/admin/events/{eventId}/reservations
      */
     @GetMapping("/{eventId}/reservations")
     public ResponseEntity<?> listReservations(@PathVariable("eventId") Long eventId) {
-        List<Map<String, Object>> raw = reservedRepo.findReservationsByEvent(eventId);
 
+        String sql = """
+            SELECT
+              rv.reserved_id AS id,
+              rv.confirmation_code AS reserved_code,
+              UPPER(COALESCE(rv.payment_status,'UNPAID')) AS status,
+              rv.total_amount AS total,
+              COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username, '') AS username,
+              TO_CHAR((rv.registration_datetime AT TIME ZONE 'Asia/Bangkok'),'DD Mon YYYY') AS date,
+              -- ⭐ รวมที่นั่งทุกตัว (ไม่ตัดซ้ำ) → จะได้ "A1, A1" ถ้าคนละโซนแต่เลขซ้ำ
+              STRING_AGG(sr.row_label || s.seat_number::text, ', '
+                         ORDER BY sz.zone_name, sr.row_label, s.seat_number) AS seat_label,
+              rv.payment_method
+            FROM reserved rv
+            JOIN events_nam ev      ON ev.event_id = rv.event_id
+            LEFT JOIN users u       ON u.user_id = rv.user_id
+            LEFT JOIN reserved_seats rs ON rs.reserved_id = rv.reserved_id
+            LEFT JOIN seats s            ON s.seat_id    = rs.seat_id
+            LEFT JOIN seat_rows sr       ON sr.row_id    = s.row_id
+            LEFT JOIN seat_zones sz      ON sz.zone_id   = sr.zone_id
+            WHERE rv.event_id = ?
+            GROUP BY
+              rv.reserved_id, rv.confirmation_code, rv.payment_status, rv.total_amount,
+              u.first_name, u.last_name, u.username, rv.registration_datetime, rv.payment_method
+            ORDER BY rv.reserved_id DESC
+        """;
+
+        List<Map<String, Object>> raw = jdbc.queryForList(sql, eventId);
+
+        // map ให้เข้ากับ FE เดิม
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> r : raw) {
             Map<String, Object> m = new LinkedHashMap<>();
-
-            // id: ใช้ confirmation_code ถ้ามี ไม่งั้นใช้ reserved_id
             String code = r.get("reserved_code") != null ? String.valueOf(r.get("reserved_code")) : null;
             String idStr = (code != null && !code.trim().isEmpty()) ? code : String.valueOf(r.get("id"));
-
-            // user: รองรับทั้ง alias "user" และ "username"
-            Object userObj = r.get("user");
-            if (userObj == null) userObj = r.get("username");
-            String user = userObj != null ? String.valueOf(userObj) : "-";
-
-            // status
+            String user = r.get("username") != null ? String.valueOf(r.get("username")) : "-";
             String status = r.get("status") != null ? String.valueOf(r.get("status")) : "UNPAID";
 
             m.put("id", idStr);
@@ -134,7 +161,6 @@ public class AdminEventZoneController {
             m.put("status", status);
             m.put("date", r.get("date"));
             m.put("payment_method", r.get("payment_method"));
-
             out.add(m);
         }
         return ResponseEntity.ok(out);

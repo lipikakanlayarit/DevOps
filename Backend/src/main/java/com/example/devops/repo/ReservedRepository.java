@@ -33,8 +33,10 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
     /* ===============================================================
        ✅ สรุปรายการจองของอีเวนต์ + seat_label + expire_at (5 นาที)
        - รวม label จาก reserved_seats หรือ reservation_tickets
+       - เอา DISTINCT ออกเพื่อไม่ตัดซ้ำ (ให้ขึ้น A1, A1 ได้)
        - เพิ่ม registration_ts และ expire_at เพื่อให้ Frontend ตัด EXPIRED ได้
        - expire_at = LEAST(registration_datetime + interval '5 minutes', ev.sales_end_datetime)
+       - เวลาทั้งหมดแสดงตาม Asia/Bangkok
        =============================================================== */
     @Transactional(readOnly = true)
     @Query(value = """
@@ -42,7 +44,7 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
             SELECT t.reserved_id,
                    STRING_AGG(t.label, ', ' ORDER BY t.sort_order, t.seat_number) AS seat_label
             FROM (
-                SELECT DISTINCT
+                SELECT
                        rv.reserved_id,
                        sr.sort_order,
                        s.seat_number,
@@ -59,7 +61,7 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
             SELECT t.reserved_id,
                    STRING_AGG(t.label, ', ' ORDER BY t.seat_row, t.seat_col_int) AS seat_label
             FROM (
-                SELECT DISTINCT
+                SELECT
                        r.reserved_id                AS reserved_id,
                        rt.seat_row                  AS seat_row,
                        (rt.seat_col)::int           AS seat_col_int,
@@ -77,9 +79,9 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
             rv.total_amount           AS total,
             rv.payment_method         AS payment_method,
             COALESCE(u.username, '-') AS user,
-            TO_CHAR(rv.registration_datetime, 'DD Mon YYYY') AS date,
+            TO_CHAR((rv.registration_datetime AT TIME ZONE 'Asia/Bangkok'), 'DD Mon YYYY') AS date,
             COALESCE(lbl_rs.seat_label, lbl_rt.seat_label, '-') AS seat_label,
-            rv.registration_datetime  AS registration_ts,
+            (rv.registration_datetime AT TIME ZONE 'Asia/Bangkok') AS registration_ts,
             LEAST(
                 rv.registration_datetime + INTERVAL '5 minutes',
                 ev.sales_end_datetime
@@ -101,7 +103,7 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
             SELECT t.reserved_id,
                    STRING_AGG(t.label, ', ' ORDER BY t.sort_order, t.seat_number) AS seat_label
             FROM (
-                SELECT DISTINCT
+                SELECT
                        rv.reserved_id,
                        sr.sort_order,
                        s.seat_number,
@@ -118,7 +120,7 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
             SELECT t.reserved_id,
                    STRING_AGG(t.label, ', ' ORDER BY t.seat_row, t.seat_col_int) AS seat_label
             FROM (
-                SELECT DISTINCT
+                SELECT
                        r.reserved_id                AS reserved_id,
                        rt.seat_row                  AS seat_row,
                        (rt.seat_col)::int           AS seat_col_int,
@@ -136,9 +138,9 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
             rv.total_amount           AS total,
             rv.payment_method         AS payment_method,
             COALESCE(u.username, '-') AS user,
-            TO_CHAR(rv.registration_datetime, 'DD Mon YYYY') AS date,
+            TO_CHAR((rv.registration_datetime AT TIME ZONE 'Asia/Bangkok'), 'DD Mon YYYY') AS date,
             COALESCE(lbl_rs.seat_label, lbl_rt.seat_label, '-') AS seat_label,
-            rv.registration_datetime  AS registration_ts,
+            (rv.registration_datetime AT TIME ZONE 'Asia/Bangkok') AS registration_ts,
             LEAST(
                 rv.registration_datetime + INTERVAL '5 minutes',
                 ev.sales_end_datetime
