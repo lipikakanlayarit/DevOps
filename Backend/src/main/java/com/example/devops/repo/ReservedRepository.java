@@ -32,11 +32,6 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
 
     /* ===============================================================
        ✅ สรุปรายการจองของอีเวนต์ + seat_label + expire_at (5 นาที)
-       - รวม label จาก reserved_seats หรือ reservation_tickets
-       - เอา DISTINCT ออกเพื่อไม่ตัดซ้ำ (ให้ขึ้น A1, A1 ได้)
-       - เพิ่ม registration_ts และ expire_at เพื่อให้ Frontend ตัด EXPIRED ได้
-       - expire_at = LEAST(registration_datetime + interval '5 minutes', ev.sales_end_datetime)
-       - เวลาทั้งหมดแสดงตาม Asia/Bangkok
        =============================================================== */
     @Transactional(readOnly = true)
     @Query(value = """
@@ -167,7 +162,7 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
     BigDecimal sumPaidAmountByEvent(@Param("eventId") Long eventId);
 
     // ----------------------------------------------------------------------
-    // ✅ Ticket History ของ user (ยังคงไว้ถ้ามีใช้งานที่อื่น)
+    // ✅ Ticket History ของ user (ตาราง compat view reservations)
     // ----------------------------------------------------------------------
     @Transactional(readOnly = true)
     @Query(value = """
@@ -199,4 +194,21 @@ public interface ReservedRepository extends JpaRepository<Reserved, Long> {
     @Transactional
     @Query(value = "DELETE FROM reserved WHERE reserved_id = :reservedId", nativeQuery = true)
     void deleteReservationHard(@Param("reservedId") Long reservedId);
+
+    // ----------------------------------------------------------------------
+    // ✅ เมธอดสำหรับ "claim" ใบจองของ guest → user
+    // ----------------------------------------------------------------------
+    @Modifying
+    @Transactional
+    @Query(value = """
+        UPDATE reserved
+           SET user_id = :userId,
+               guest_claimed_at = NOW(),
+               created_as_guest = FALSE
+         WHERE user_id IS NULL
+           AND created_as_guest = TRUE
+           AND guest_email IS NOT NULL
+           AND LOWER(guest_email) = LOWER(:email)
+        """, nativeQuery = true)
+    int claimAllByEmail(@Param("email") String email, @Param("userId") Long userId);
 }

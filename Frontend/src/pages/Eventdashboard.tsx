@@ -9,23 +9,23 @@ import { Input } from "@/components/inputtxt";
 import { Search, CircleDollarSign, Ticket, Users } from "lucide-react";
 
 /* =========================
-   Types for real dashboard
+   Types
    ========================= */
 type ReservationRow = {
-    id: number | string;           // reserved_id (หรือ reserved_seat_id ก็ได้ถ้าหลังบ้านเปลี่ยน)
+    id: number | string;
     reserved_code: string | null;
-    status: string;                // PAID/UNPAID (raw from backend)
-    total: number;                 // fallback ถ้าไม่ส่ง unit_price
+    status: string;                // PAID/UNPAID (raw)
+    total: number;                 // fallback ถ้าไม่มี unit_price
     payment_method?: string | null;
-    user: string;                  // ชื่อ/ยูส จากหลังบ้าน
-    date?: string;                 // 'DD Mon YYYY'
-    seat_label: string;            // ex. "supervip A1"
-    registration_ts?: string;      // ISO datetime
-    expire_at?: string;            // ISO datetime
+    user: string;
+    date?: string;
+    seat_label: string;
+    registration_ts?: string;
+    expire_at?: string;
 
     // seat-level
-    seat_id?: number | string;     // 👈 ระบุที่นั่ง
-    unit_price?: number;           // 👈 ราคา/ที่นั่ง (โซน)
+    seat_id?: number | string;
+    unit_price?: number;
 };
 
 type DashboardResponse = {
@@ -76,14 +76,11 @@ function buildApiUrl(path: string): string {
 /* === Local attendance store (per event, seat-level) === */
 const checkedKey = (eventId: string | number) => `evt:${eventId}:checked:v2`;
 
-// คีย์ต่อแถว (seat-level ถ้ามี seat_id)
 function rowKey(r: ReservationRow): string {
     const rid = String(r.id ?? "");
     const sid = r.seat_id != null ? String(r.seat_id) : "";
     return sid ? `${rid}:${sid}` : rid;
 }
-
-// คีย์จาก reservedId + seatId ใน query
 function makeKey(reservedId?: string | number | null, seatId?: string | number | null): string {
     const rid = reservedId != null ? String(reservedId) : "";
     const sid = seatId != null ? String(seatId) : "";
@@ -170,8 +167,6 @@ export default function EventDashboard() {
     // attendance + highlight
     const [checkedSet, setCheckedSet] = useState<Set<string>>(() => loadCheckedSet(eventId || "0"));
     const [highlightKey, setHighlightKey] = useState<string | null>(null);
-
-    const GRID_COLS = "grid-cols-[0.9fr_0.8fr_0.9fr_0.5fr_1.2fr]";
 
     useEffect(() => {
         if (!eventId) {
@@ -288,19 +283,13 @@ export default function EventDashboard() {
         return { paidCount: paid, pendingCount: pendingActive, paidPct: p1, pendingPct: p2 };
     }, [rows]);
 
-    // attendance derived (seat-level)
-    const { attendees, noShows, checkedInCount } = useMemo(() => {
+    // attendance derived (seat-level) — นับเฉพาะแถวที่เช็คอินจริง (localStorage)
+    const checkedInCount = useMemo(() => {
         const paidRows = rows.filter((r) => normalizePaid(r.status) === "COMPLETE");
-        const att = paidRows.filter((r) => checkedSet.has(rowKey(r)));
-        const noS = paidRows.filter((r) => !checkedSet.has(rowKey(r)));
-        return {
-            attendees: att,
-            noShows: noS,
-            checkedInCount: att.length,
-        };
+        return paidRows.filter((r) => checkedSet.has(rowKey(r))).length;
     }, [rows, checkedSet]);
 
-    // Undo handler (seat-level key)
+    // Undo handler (seat-level key) — ใช้ removeChecked เพื่อลด warning unused
     function handleUndoCheckinKey(key: string) {
         if (!eventId) return;
         removeChecked(eventId, key);
@@ -377,7 +366,7 @@ export default function EventDashboard() {
                             <div className="overflow-x-auto">
                                 {/* Head */}
                                 <div
-                                    className={`min-w-[900px] grid ${GRID_COLS} px-4 md:px-6 py-3 text-[11px] md:text-xs font-bold tracking-wide uppercase text-slate-500 bg-slate-50 border-b border-slate-200`}
+                                    className={`min-w-[900px] grid grid-cols-[0.9fr_0.8fr_0.9fr_0.5fr_1.2fr] px-4 md:px-6 py-3 text-[11px] md:text-xs font-bold tracking-wide uppercase text-slate-500 bg-slate-50 border-b border-slate-200`}
                                 >
                                     <div className="text-left">Reserve ID</div>
                                     <div className="text-left">Seat(s)</div>
@@ -399,8 +388,7 @@ export default function EventDashboard() {
                                         return (
                                             <div
                                                 key={loading ? `skeleton-${idx}` : `${rowKey(r)}-${idx}`}
-                                                className={`grid ${GRID_COLS} px-4 md:px-6 py-3 md:py-4 text-sm items-center hover:bg-slate-50 transition-colors
-                          ${isHL ? "bg-emerald-50/40 ring-2 ring-emerald-300/70" : ""}`}
+                                                className={`grid grid-cols-[0.9fr_0.8fr_0.9fr_0.5fr_1.2fr] px-4 md:px-6 py-3 md:py-4 text-sm items-center hover:bg-slate-50 transition-colors ${isHL ? "bg-emerald-50/40 ring-2 ring-emerald-300/70" : ""}`}
                                             >
                                                 {/* Reserve ID */}
                                                 <div className="truncate text-slate-700 font-mono text-medium text-left">
@@ -442,16 +430,23 @@ export default function EventDashboard() {
                         </section>
                     </div>
 
-                    {/* ===== Attendance Card (ใต้ตาราง) ===== */}
+                    {/* ===== Attendance Card ===== */}
                     <section className="mt-6 bg-white rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
                         <div className="px-5 py-4 border-b flex items-center gap-2">
                             <Users className="w-5 h-5 text-slate-700" />
                             <h3 className="text-base font-semibold text-slate-800">Attendance (Check-in)</h3>
                             <div className="ml-auto text-sm text-slate-600">
-                                Checked-in: <b>{checkedInCount}</b> / Paid: <b>{paidCount}</b>
+                                Checked-in: <b>{checkedInCount}</b> / Paid:{" "}
+                                <b>{rows.filter((r) => normalizePaid(r.status) === "COMPLETE").length}</b>
                                 {"  "}
                                 <span className="text-slate-400">•</span>{" "}
-                                No-show: <b>{Math.max(0, paidCount - checkedInCount)}</b>
+                                No-show:{" "}
+                                <b>
+                                    {Math.max(
+                                        0,
+                                        rows.filter((r) => normalizePaid(r.status) === "COMPLETE").length - checkedInCount
+                                    )}
+                                </b>
                             </div>
                         </div>
 
@@ -459,33 +454,38 @@ export default function EventDashboard() {
                             {/* Attended */}
                             <div className="p-5 border-r md:border-r-slate-200">
                                 <div className="text-sm font-semibold text-emerald-700 mb-3">เข้าร่วมแล้ว</div>
-                                {attendees.length === 0 ? (
+                                {rows
+                                    .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                    .filter((r) => checkedSet.has(rowKey(r))).length === 0 ? (
                                     <div className="text-sm text-slate-500">ยังไม่มีผู้เข้าร่วมเช็คอิน</div>
                                 ) : (
                                     <ul className="space-y-2">
-                                        {attendees.map((r) => (
-                                            <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
-                                                    <div className="text-xs text-slate-500">
-                                                        <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                        {rows
+                                            .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                            .filter((r) => checkedSet.has(rowKey(r)))
+                                            .map((r) => (
+                                                <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
+                                                        <div className="text-xs text-slate-500">
+                                                            <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                            IN
-                          </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleUndoCheckinKey(rowKey(r))}
-                                                        className="text-xs px-2 py-1 rounded-md border bg-white hover:bg-slate-50"
-                                                        title="ยกเลิกการเช็คอิน"
-                                                    >
-                                                        Undo
-                                                    </button>
-                                                </div>
-                                            </li>
-                                        ))}
+                                                    <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                              IN
+                            </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleUndoCheckinKey(rowKey(r))}
+                                                            className="text-xs px-2 py-1 rounded-md border bg-white hover:bg-slate-50"
+                                                            title="ยกเลิกการเช็คอิน"
+                                                        >
+                                                            Undo
+                                                        </button>
+                                                    </div>
+                                                </li>
+                                            ))}
                                     </ul>
                                 )}
                             </div>
@@ -493,23 +493,28 @@ export default function EventDashboard() {
                             {/* No-show (Paid but not checked-in) */}
                             <div className="p-5">
                                 <div className="text-sm font-semibold text-amber-700 mb-3">ยังไม่เช็คอิน</div>
-                                {noShows.length === 0 ? (
+                                {rows
+                                    .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                    .filter((r) => !checkedSet.has(rowKey(r))).length === 0 ? (
                                     <div className="text-sm text-slate-500">ทุกคนที่ชำระเงินแล้วได้เช็คอินครบ</div>
                                 ) : (
                                     <ul className="space-y-2">
-                                        {noShows.map((r) => (
-                                            <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
-                                                    <div className="text-xs text-slate-500">
-                                                        <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                        {rows
+                                            .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                            .filter((r) => !checkedSet.has(rowKey(r)))
+                                            .map((r) => (
+                                                <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
+                                                        <div className="text-xs text-slate-500">
+                                                            <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
-                          WAIT
-                        </span>
-                                            </li>
-                                        ))}
+                                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                            WAIT
+                          </span>
+                                                </li>
+                                            ))}
                                     </ul>
                                 )}
                             </div>

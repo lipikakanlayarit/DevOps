@@ -8,24 +8,24 @@ import { CheckCircle2, Ticket, User2, MapPin, AlertTriangle, Tag } from "lucide-
 
 type ReservedResponse = {
     reservedId: number;
-    userId?: number;
-    eventId?: number;
-    ticketTypeId?: number;
-    quantity?: number;
-    totalAmount?: number;
-    paymentStatus?: "UNPAID" | "PAID" | string;
-    registrationDatetime?: string;
-    paymentDatetime?: string;
-    confirmationCode?: string;
-    notes?: string;
+    userId?: number | null;
+    eventId?: number | null;
+    ticketTypeId?: number | null;
+    quantity?: number | null;
+    totalAmount?: number | null;
+    paymentStatus?: "UNPAID" | "PAID" | string | null;
+    registrationDatetime?: string | null;
+    paymentDatetime?: string | null;
+    confirmationCode?: string | null;
+    notes?: string | null;
     paymentMethod?: string | null;
-    userFullName?: string;
+    userFullName?: string | null;
 
     // seat-level
-    seatId?: number;
-    seatLabel?: string;   // ex. "supervip A1"
-    zoneName?: string;
-    unitPrice?: number;   // price per seat/zone
+    seatId?: number | null;
+    seatLabel?: string | null; // e.g. "VIP A1"
+    zoneName?: string | null;
+    unitPrice?: number | null; // zone price
 };
 
 export default function CheckinConfirmPage() {
@@ -70,7 +70,7 @@ export default function CheckinConfirmPage() {
         try {
             setConfirming(true);
 
-            // TODO: เรียก API เช็คอินจริงถ้ามี
+            // TODO: ถ้ามี API เช็คอินจริง ให้เรียกที่นี่
             // await api.post("/organizer/checkin", { reservedId: data.reservedId, seatId: data.seatId ?? Number(seatIdFromQuery) });
 
             // ✅ fallback eventId/seatId จาก query หาก API ไม่ส่งกลับมา
@@ -88,6 +88,7 @@ export default function CheckinConfirmPage() {
             qp.set("checked", String(data.reservedId));
             if (targetSeatId != null && !Number.isNaN(targetSeatId)) qp.set("seatId", String(targetSeatId));
 
+            // หมายเหตุ: จะนับว่าเช็คอินแล้วก็ต่อเมื่อ Dashboard รับ query นี้แล้วบันทึกลง localStorage
             navigate(`/eventdashboard/${targetEventId}?${qp.toString()}`, { replace: true });
         } finally {
             setConfirming(false);
@@ -131,7 +132,6 @@ export default function CheckinConfirmPage() {
                                 <span className="text-slate-500">Event ID</span>
                                 <span className="font-semibold">
                   {(data.eventId ?? eventIdFromQuery) || "-"}
-                                    {/* วงเล็บนี้แก้ TS5076 */}
                 </span>
                             </div>
 

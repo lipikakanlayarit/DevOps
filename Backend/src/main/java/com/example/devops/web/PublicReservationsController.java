@@ -73,11 +73,15 @@ public class PublicReservationsController {
         }
 
         Long userId = resolveUserId(userIdHeader, authHeader);
-        log.info("Create reservation: eventId={}, quantity={}, seatCount={}, userId={}",
-                req.getEventId(), req.getQuantity(), picks.size(), userId);
 
+        // ✅ โหมด Guest ก็อนุญาต (ต้องส่ง guestEmail)
         if (userId == null) {
-            return unauthorized("AUTH_REQUIRED", "User authentication required (JWT or X-User-Id).");
+            if (req.getGuestEmail() == null || req.getGuestEmail().isBlank()) {
+                return bad("AUTH_REQUIRED_OR_GUEST_EMAIL", "Provide Authorization/JWT or guestEmail for guest reservation.");
+            }
+            log.info("[GUEST RESERVATION] eventId={}, qty={}, guestEmail={}", req.getEventId(), req.getQuantity(), req.getGuestEmail());
+        } else {
+            log.info("[USER RESERVATION] eventId={}, qty={}, userId={}", req.getEventId(), req.getQuantity(), userId);
         }
 
         try {
@@ -140,13 +144,6 @@ public class PublicReservationsController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(m);
     }
 
-    private ResponseEntity<Map<String, Object>> unauthorized(String code, String msg) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("error", code);
-        m.put("message", msg);
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(m);
-    }
-
     private Long resolveUserId(Long userIdHeader, String authHeader) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -160,14 +157,19 @@ public class PublicReservationsController {
                 }
             }
         } catch (Exception e) {
-            log.debug("resolveUserId: SecurityContext lookup failed: {}", e.getMessage());
+            // ignore
         }
 
         Long fromJwt = resolveFromJwt(authHeader);
         if (fromJwt != null) return fromJwt;
-
         if (userIdHeader != null) return userIdHeader;
         return null;
+    }
+
+    private String safeTrim(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o).trim();
+        return s.isEmpty() ? null : s;
     }
 
     private Long resolveFromJwt(String authHeader) {
@@ -199,14 +201,8 @@ public class PublicReservationsController {
                 if (u.isPresent()) return u.get().getId();
             }
         } catch (Exception e) {
-            log.warn("resolveUserId/JWT: {}", e.getMessage());
+            // ignore
         }
         return null;
-    }
-
-    private String safeTrim(Object o) {
-        if (o == null) return null;
-        String s = String.valueOf(o).trim();
-        return s.isEmpty() ? null : s;
     }
 }

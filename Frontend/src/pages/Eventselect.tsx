@@ -1,7 +1,7 @@
 // src/pages/Eventselect.tsx
 "use client";
 
-import { Calendar, Clock, MapPin, Ticket } from "lucide-react";
+import { Calendar, Clock, MapPin, Ticket, Mail } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Footer from "@/components/Footer";
 import SeatMap from "@/components/SeatMap";
@@ -122,6 +122,22 @@ export default function Eventselect() {
     const [submitting, setSubmitting] = useState(false);
     const [selectedSeats, setSelectedSeats] = useState<PickedSeat[]>([]);
 
+    /** ⭐️ รองรับแขก (ยังไม่ล็อกอิน) – ส่ง guestEmail เมื่อไม่มี token */
+    const [guestEmail, setGuestEmail] = useState("");
+    const [guestEmailTouched, setGuestEmailTouched] = useState(false);
+    const authToken =
+        localStorage.getItem("accessToken") ||
+        localStorage.getItem("token") ||
+        sessionStorage.getItem("accessToken") ||
+        sessionStorage.getItem("token");
+    const isAuthenticated = !!authToken;
+
+    const emailRegex = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/, []);
+    const guestEmailValid = useMemo(
+        () => (isAuthenticated ? true : emailRegex.test(guestEmail.trim())),
+        [isAuthenticated, guestEmail, emailRegex]
+    );
+
     // ป้องกัน setState หลัง unmount
     const mountedRef = useRef(true);
     useEffect(() => {
@@ -188,7 +204,6 @@ export default function Eventselect() {
                 });
                 setZones(mapSetupToUI(setup));
             } catch (err) {
-                // ไม่ setState ซ้ำๆ
                 console.error("Failed to load event/setup:", err);
             }
         })();
@@ -250,10 +265,6 @@ export default function Eventselect() {
         if (!event) return null;
         return coverPath(event.id, event.coverUpdatedAt ?? event.updatedAt ?? null);
     }, [event]);
-
-    const handleDateClick = useCallback((date: string) => {
-        setSelectedDate((prev) => (prev === date ? null : date));
-    }, []);
 
     useEffect(() => {
         if (!selectedDate) return;
@@ -364,6 +375,15 @@ export default function Eventselect() {
             return;
         }
 
+        // ถ้ายังไม่ล็อกอิน ต้องกรอก guestEmail ให้ผ่านเงื่อนไขของ BE
+        if (!isAuthenticated) {
+            setGuestEmailTouched(true);
+            if (!guestEmailValid) {
+                alert("กรุณากรอกอีเมลให้ถูกต้องเพื่อดำเนินการจองในฐานะแขก");
+                return;
+            }
+        }
+
         try {
             setSubmitting(true);
 
@@ -402,7 +422,7 @@ export default function Eventselect() {
                 return;
             }
 
-            const payload = {
+            const payload: any = {
                 eventId: Number(eventId),
                 quantity: selectedSeats.length,
                 totalAmount: getTotalPrice(),
@@ -413,6 +433,11 @@ export default function Eventselect() {
                 })),
             };
 
+            // เพิ่ม guestEmail เมื่อผู้ใช้ยังไม่ล็อกอิน
+            if (!isAuthenticated) {
+                payload.guestEmail = guestEmail.trim();
+            }
+
             const { data } = await api.post("/public/reservations", payload);
             const reservedId = (data as any)?.reservedId ?? (data as any)?.id;
             if (reservedId) {
@@ -422,12 +447,25 @@ export default function Eventselect() {
             }
         } catch (err: any) {
             console.error("Reservation failed:", err);
-            const msg = err?.response?.data?.error || err?.message || "เกิดข้อผิดพลาดในการสร้างรายการจอง";
+            const msg =
+                err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                err?.message ||
+                "เกิดข้อผิดพลาดในการสร้างรายการจอง";
             alert(msg);
         } finally {
             if (mountedRef.current) setSubmitting(false);
         }
-    }, [eventId, selectedSeats, getTotalPrice, mapSetupToUI, navigate]);
+    }, [
+        eventId,
+        selectedSeats,
+        getTotalPrice,
+        mapSetupToUI,
+        navigate,
+        isAuthenticated,
+        guestEmail,
+        guestEmailValid,
+    ]);
 
     const isOnSale = effectiveStatus === "ONSALE";
     const isUpcoming = effectiveStatus === "UPCOMING";
@@ -611,7 +649,9 @@ export default function Eventselect() {
                                 borderRadius: "var(--card-radius, 8px)",
                                 boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
                             }}
-                            onClick={() => handleDateClick(d.key)}
+                            onClick={() =>
+                                setSelectedDate((prev) => (prev === d.key ? null : d.key))
+                            }
                         >
                             <div className="flex">
                                 <div
@@ -719,7 +759,7 @@ export default function Eventselect() {
                                             }))}
                                             onPick={onPickSeat}
                                             effectiveStatus={effectiveStatus}
-                                            aisleEvery={Math.max(1, Math.floor((zones[0]?.cols as number) ?? 10 / 2))}
+                                            aisleEvery={Math.max(1, Math.floor(((zones[0]?.cols as number) ?? 10) / 2))}
                                         />
 
                                         {/* Summary */}
@@ -734,6 +774,38 @@ export default function Eventselect() {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* ⭐️ Guest email (เฉพาะยังไม่ล็อกอิน) */}
+                                    {selectedSeats.length > 0 && !isAuthenticated && (
+                                        <div className="flex justify-center">
+                                            <div
+                                                className="p-4 w-full max-w-4xl"
+                                                style={{
+                                                    background: "var(--white, #FFFFFF)",
+                                                    borderRadius: "var(--card-radius, 8px)",
+                                                    boxShadow: "var(--shadow-1, 0 8px 24px rgba(0,0,0,.15))",
+                                                    border: "1px solid #e5e7eb",
+                                                }}
+                                            >
+                                                <label className="block text-sm font-medium mb-1 text-neutral-800">
+                          <span className="inline-flex items-center gap-2">
+                            <Mail className="w-4 h-4" /> Email สำหรับรับลิงก์ชำระเงิน (ยังไม่ล็อกอิน)
+                          </span>
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    value={guestEmail}
+                                                    onChange={(e) => setGuestEmail(e.target.value)}
+                                                    onBlur={() => setGuestEmailTouched(true)}
+                                                    className="w-full px-3 py-2 rounded border text-neutral-900"
+                                                    placeholder="you@example.com"
+                                                />
+                                                {guestEmailTouched && !guestEmailValid && (
+                                                    <div className="text-sm text-red-600 mt-1">กรุณากรอกอีเมลให้ถูกต้อง</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Ticket summary panel */}
                                     {selectedSeats.length > 0 && (
@@ -812,7 +884,7 @@ export default function Eventselect() {
                               </span>
                                                         </div>
                                                         <button
-                                                            disabled={submitting}
+                                                            disabled={submitting || (!isAuthenticated && !guestEmailValid)}
                                                             onClick={handleGoToPayment}
                                                             className="w-full px-6 py-3 rounded-full font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                                                             style={{
@@ -824,8 +896,15 @@ export default function Eventselect() {
                                                                 cursor: "pointer",
                                                             }}
                                                         >
-                                                            {submitting ? "Processing..." : `Go to Payment - ${selectedSeats.length} Tickets`}
+                                                            {submitting
+                                                                ? "Processing..."
+                                                                : `Go to Payment - ${selectedSeats.length} Ticket${selectedSeats.length > 1 ? "s" : ""}`}
                                                         </button>
+                                                        {!isAuthenticated && (
+                                                            <div className="text-xs text-neutral-600 mt-2">
+                                                                * ยังไม่ได้ล็อกอิน ระบบจะสร้างรายการจองด้วยอีเมลที่ระบุด้านบน
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

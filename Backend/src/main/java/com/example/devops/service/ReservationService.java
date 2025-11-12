@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.Array;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -48,7 +49,7 @@ public class ReservationService {
     }
 
     /* ===========================
-       CREATE RESERVATION (fixed)
+       CREATE RESERVATION (guest-friendly)
        =========================== */
     @Transactional
     public ReservedResponse createReservation(Long userId, ReservationRequest req) {
@@ -59,8 +60,12 @@ public class ReservationService {
         if (picks.size() != req.getQuantity()) {
             throw new IllegalArgumentException("quantity and seats count mismatch");
         }
-        if (userId == null) {
-            throw new IllegalArgumentException("AUTH_REQUIRED: userId is required (send Authorization Bearer token or X-User-Id)");
+
+        final boolean isGuest = (userId == null);
+        if (isGuest) {
+            if (req.getGuestEmail() == null || req.getGuestEmail().isBlank()) {
+                throw new IllegalArgumentException("AUTH_REQUIRED_OR_GUEST_EMAIL: Provide Authorization/JWT or guestEmail for guest reservation.");
+            }
         }
 
         // === Map FE (row/col 0-based) -> DB seat_id (row sort_order 0-based, seat_number 1-based) และกัน seat ซ้ำ ===
@@ -75,24 +80,19 @@ public class ReservationService {
             }
 
             final long zoneId = sp.getZoneId();
-            final int rowNo  = sp.getRow();       // ✅ DB uses 0-based sort_order
-            final int seatNo1 = sp.getCol() + 1;  // ✅ DB seat_number is 1-based
+            final int rowNo  = sp.getRow();       // DB uses 0-based sort_order
+            final int seatNo1 = sp.getCol() + 1;  // DB seat_number is 1-based
 
-            // กันซ้ำใน request (ยึด 0-based ให้ตรงกับ DB row sort_order)
             String key = zoneId + ":" + rowNo + ":" + seatNo1;
             if (!dupGuard.add(key)) {
                 throw new IllegalArgumentException("Duplicate seat in request: " + key);
             }
 
-            // 1) ใช้เมธอดตาม zone/sort_order/seat_number เป็นหลัก (rowNo คือ 0-based)
             Long seatId = seatsRepo.findSeatIdByZoneRowCol(zoneId, rowNo, seatNo1);
-
-            // 2) Fallback ด้วย rowLabel (A,B,...) กรณีข้อมูล row sort_order ผิด/ไม่ครบ
             if (seatId == null) {
-                char rowChar = (char) ('A' + sp.getRow()); // 0->A,1->B
+                char rowChar = (char) ('A' + sp.getRow());
                 seatId = seatsRepo.findSeatIdFlexible(zoneId, null, String.valueOf(rowChar), seatNo1);
             }
-
             if (seatId == null) {
                 throw new IllegalArgumentException("Seat not found for zone=" + zoneId + " row=" + rowNo + " col=" + seatNo1);
             }
@@ -101,13 +101,10 @@ public class ReservationService {
 
         // === ตรวจที่นั่งว่าง: PAID / RESERVED + LOCKED โดยคนอื่น ===
         if (!seatIdsToReserve.isEmpty()) {
-            // paid/reserved
-            List<Long> takenPaidOrReserved = seatsRepo.findPaidTakenAmong(req.getEventId(),
-                    seatIdsToReserve.toArray(Long[]::new));
+            List<Long> takenPaidOrReserved = seatsRepo.findPaidTakenAmong(req.getEventId(), seatIdsToReserve.toArray(Long[]::new));
             if (!takenPaidOrReserved.isEmpty()) {
                 throw new IllegalArgumentException("Some seats are already taken (paid/reserved): " + takenPaidOrReserved);
             }
-            // locked
             List<Long> lockedNow = seatsRepo.findLockedSeatIdsByEvent(req.getEventId());
             for (Long sid : seatIdsToReserve) {
                 if (lockedNow.contains(sid)) {
@@ -116,16 +113,16 @@ public class ReservationService {
             }
         }
 
-        // 1) ล็อกที่นั่งทั้งหมด (ต้องได้ครบ)
-        int locked = lockSeats(userId, req.getEventId(), seatIdsToReserve, DEFAULT_LOCK_TIMEOUT_MINUTES);
+        // 1) ล็อกที่นั่งทั้งหมด (ต้องได้ครบ) — guest = ส่ง NULL (ไม่ใช่ 0)
+        Long lockerUserId = isGuest ? null : userId;
+        int locked = lockSeats(lockerUserId, req.getEventId(), seatIdsToReserve, DEFAULT_LOCK_TIMEOUT_MINUTES);
         if (locked != seatIdsToReserve.size()) {
-            // ให้ fail เพื่อ rollback การล็อกที่เพิ่งทำ (transactional)
             throw new IllegalStateException("Requested " + seatIdsToReserve.size() + " seats but locked " + locked);
         }
 
         // 2) สร้าง reserved
         Reserved r = new Reserved();
-        r.setUserId(userId);
+        r.setUserId(isGuest ? null : userId);
         r.setEventId(req.getEventId());
         r.setTicketTypeId(null);
         r.setQuantity(req.getQuantity());
@@ -136,6 +133,17 @@ public class ReservationService {
         r.setConfirmationCode("RSV-" + System.currentTimeMillis());
         r.setNotes("Seat lock expires in " + DEFAULT_LOCK_TIMEOUT_MINUTES + " minutes");
         r.setPaymentMethod(null);
+
+        if (isGuest) {
+            r.setGuestEmail(req.getGuestEmail().trim());
+            r.setCreatedAsGuest(true);
+            r.setGuestClaimedAt(null);
+        } else {
+            r.setGuestEmail(null);
+            r.setCreatedAsGuest(false);
+            r.setGuestClaimedAt(null);
+        }
+
         r = reservedRepo.save(r);
 
         // 3) map seats -> reserved_seats (seat_status = 'PENDING')
@@ -149,8 +157,8 @@ public class ReservationService {
             mapped += jdbc.update(insertRsSql, r.getReservedId(), seatId);
         }
 
-        log.info("✅ Created reservation {} with {} locked seats (expires in {} min), mapped {} seats",
-                r.getReservedId(), locked, DEFAULT_LOCK_TIMEOUT_MINUTES, mapped);
+        log.info("✅ Created reservation {} (guest?={}) with {} locked seats (expires in {} min), mapped {} seats",
+                r.getReservedId(), isGuest, locked, DEFAULT_LOCK_TIMEOUT_MINUTES, mapped);
 
         return ReservedResponse.from(r);
     }
@@ -179,7 +187,6 @@ public class ReservationService {
         }
 
         if (!"PAID".equalsIgnoreCase(r.getPaymentStatus())) {
-            // 1) อัปเดตใบจองเป็น PAID
             r.setPaymentStatus("PAID");
             r.setPaymentDatetime(Instant.now());
             r.setConfirmationCode(("CONF-" + UUID.randomUUID().toString().replace("-", "")).substring(0, 12).toUpperCase());
@@ -188,11 +195,9 @@ public class ReservationService {
             r = reservedRepo.save(r);
             reservedRepo.flush();
 
-            // 2) ดึง seat_ids ที่จอง
             String seatListSql = "SELECT seat_id FROM reserved_seats WHERE reserved_id = ?";
             List<Long> seatIds = jdbc.queryForList(seatListSql, Long.class, reservedId);
 
-            // 3) เปลี่ยน seat_status -> CONFIRMED
             String confirmSql = """
                 UPDATE reserved_seats
                    SET seat_status = 'CONFIRMED'
@@ -200,10 +205,9 @@ public class ReservationService {
             """;
             jdbc.update(confirmSql, reservedId);
 
-            // 4) ปลดล็อกจาก seat_locks
-            unlockSeats(r.getUserId(), seatIds);
+            // ปลดล็อค รองรับ user_id = NULL
+            unlockSeatsNullableUser(r.getUserId(), seatIds);
 
-            // 5) บันทึก payment
             Payments p = new Payments();
             p.setReservedId(r.getReservedId());
             p.setAmount(r.getTotalAmount() != null ? r.getTotalAmount() : BigDecimal.ZERO);
@@ -217,7 +221,6 @@ public class ReservationService {
             log.info("💰 Payment confirmed for reservation {} (method: {}, seats: {}, set CONFIRMED + unlocked)",
                     reservedId, normalized, seatIds.size());
         } else {
-            // ถ้าจ่ายแล้ว แต่อยากปรับวิธีชำระ
             if (normalized != null && (r.getPaymentMethod() == null || !normalized.equals(r.getPaymentMethod()))) {
                 r.setPaymentMethod(normalized);
                 reservedRepo.save(r);
@@ -232,31 +235,30 @@ public class ReservationService {
        =========================== */
 
     @Transactional
-    public int lockSeats(Long userId, Long eventId, List<Long> seatIds, int timeoutMinutes) {
+    public int lockSeats(Long lockerUserId, Long eventId, List<Long> seatIds, int timeoutMinutes) {
         if (seatIds == null || seatIds.isEmpty()) return 0;
 
         Instant expiresAt = Instant.now().plus(Duration.ofMinutes(timeoutMinutes));
         Instant lockedAt = Instant.now();
 
-        // ตรวจรายการที่ lock ได้จริง (ยังไม่ถูกคนอื่นจอง/ล็อก)
         String checkSql = """
-            SELECT s.seat_id
-              FROM seats s
-             WHERE s.seat_id = ANY (?)
-               AND NOT EXISTS (
-                   SELECT 1
-                     FROM reserved_seats rs
-                    WHERE rs.seat_id = s.seat_id
-                      AND rs.seat_status IN ('LOCKED','PENDING','CONFIRMED')
-               )
-               AND NOT EXISTS (
-                   SELECT 1
-                     FROM seat_locks sl
-                    WHERE sl.seat_id    = s.seat_id
-                      AND sl.status     = 'LOCKED'
-                      AND sl.expires_at > NOW()
-                      AND sl.user_id   <> ?
-               )
+        SELECT s.seat_id
+          FROM seats s
+         WHERE s.seat_id = ANY (?)
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM reserved_seats rs
+                WHERE rs.seat_id = s.seat_id
+                  AND rs.seat_status IN ('LOCKED','PENDING','CONFIRMED')
+           )
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM seat_locks sl
+                WHERE sl.seat_id    = s.seat_id
+                  AND sl.status     = 'LOCKED'
+                  AND sl.expires_at > NOW()
+                  AND (sl.user_id IS DISTINCT FROM ?)
+           )
         """;
 
         List<Long> availableSeats;
@@ -266,7 +268,11 @@ public class ReservationService {
                     ps -> {
                         Array array = ps.getConnection().createArrayOf("BIGINT", seatIds.toArray());
                         ps.setArray(1, array);
-                        ps.setLong(2, userId);
+                        if (lockerUserId == null) {
+                            ps.setNull(2, Types.BIGINT);
+                        } else {
+                            ps.setLong(2, lockerUserId);
+                        }
                     },
                     (rs, rowNum) -> rs.getLong("seat_id")
             );
@@ -276,36 +282,93 @@ public class ReservationService {
         }
 
         if (availableSeats.isEmpty()) {
-            log.warn("⚠️ No available seats to lock for user {} (requested: {})", userId, seatIds.size());
+            log.warn("⚠️ No available seats to lock for user {} (requested: {})", lockerUserId, seatIds.size());
             return 0;
         }
 
         String lockSql = """
-            INSERT INTO seat_locks (seat_id, event_id, user_id, locked_at, expires_at, status)
-            VALUES (?, ?, ?, ?, ?, 'LOCKED')
-            ON CONFLICT (seat_id)
-            DO UPDATE SET
-                user_id    = EXCLUDED.user_id,
-                locked_at  = EXCLUDED.locked_at,
-                expires_at = EXCLUDED.expires_at,
-                status     = 'LOCKED'
+        INSERT INTO seat_locks (seat_id, event_id, user_id, locked_at, expires_at, status)
+        VALUES (?, ?, ?, ?, ?, 'LOCKED')
+        ON CONFLICT (seat_id)
+        DO UPDATE SET
+            user_id    = EXCLUDED.user_id,
+            locked_at  = EXCLUDED.locked_at,
+            expires_at = EXCLUDED.expires_at,
+            status     = 'LOCKED'
         """;
 
         int locked = 0;
         for (Long seatId : availableSeats) {
             try {
-                jdbc.update(lockSql, seatId, eventId, userId,
-                        Timestamp.from(lockedAt), Timestamp.from(expiresAt));
+                jdbc.update(conn -> {
+                    var ps = conn.prepareStatement(lockSql);
+                    ps.setLong(1, seatId);
+                    ps.setLong(2, eventId);
+                    if (lockerUserId == null) {
+                        ps.setNull(3, Types.BIGINT); // guest = NULL
+                    } else {
+                        ps.setLong(3, lockerUserId);
+                    }
+                    ps.setTimestamp(4, Timestamp.from(lockedAt));
+                    ps.setTimestamp(5, Timestamp.from(expiresAt));
+                    return ps;
+                });
                 locked++;
             } catch (Exception e) {
                 log.error("❌ Failed to lock seat {}: {}", seatId, e.getMessage());
             }
         }
 
-        log.info("🔒 Locked {} seats for user {} (expires in {} min)", locked, userId, timeoutMinutes);
+        log.info("🔒 Locked {} seats for user {} (expires in {} min)", locked, (lockerUserId == null ? "GUEST(NULL)" : lockerUserId), timeoutMinutes);
         return locked;
     }
 
+    /**
+     * ปลดล็อกที่นั่ง รองรับกรณี userId = NULL (guest)
+     * ใช้พารามิเตอร์แบบ typed null เพื่อหลีกเลี่ยง "could not determine data type of parameter"
+     */
+    @Transactional
+    public void unlockSeatsNullableUser(Long userId, List<Long> seatIds) {
+        if (seatIds == null || seatIds.isEmpty()) return;
+
+        final String sql = """
+            UPDATE seat_locks
+               SET status = 'UNLOCKED',
+                   expires_at = NOW()
+             WHERE seat_id = ANY (?)
+               AND status = 'LOCKED'
+               AND (
+                    (? IS NULL AND user_id IS NULL)
+                    OR user_id = ?
+                   )
+        """;
+
+        try {
+            jdbc.update(conn -> {
+                var ps = conn.prepareStatement(sql);
+
+                // #1 seat_id array
+                Array array = conn.createArrayOf("BIGINT", seatIds.toArray());
+                ps.setArray(1, array);
+
+                // #2 typed nullable for '? IS NULL'
+                if (userId == null) ps.setNull(2, Types.BIGINT);
+                else ps.setLong(2, userId);
+
+                // #3 comparison with user_id
+                if (userId == null) ps.setNull(3, Types.BIGINT);
+                else ps.setLong(3, userId);
+
+                return ps;
+            });
+
+            log.info("🔓 Unlocked seats for user {}", (userId == null ? "GUEST(NULL)" : userId));
+        } catch (Exception e) {
+            log.error("❌ Failed to unlock seats: {}", e.getMessage());
+        }
+    }
+
+    /* คงเมธอดเดิมไว้ (ถ้าส่วนอื่นเรียกใช้อยู่) */
     @Transactional
     public void unlockSeats(Long userId, List<Long> seatIds) {
         if (seatIds == null || seatIds.isEmpty()) return;
@@ -371,7 +434,6 @@ public class ReservationService {
         String sql = "SELECT seat_id FROM reserved_seats WHERE reserved_id = ?";
         List<Long> seatIds = jdbc.queryForList(sql, Long.class, reservedId);
 
-        // mark reserved seats as CANCELLED
         String cancelSeatsSql = """
             UPDATE reserved_seats
                SET seat_status = 'CANCELLED'
@@ -379,8 +441,7 @@ public class ReservationService {
         """;
         jdbc.update(cancelSeatsSql, reservedId);
 
-        // unlock
-        unlockSeats(r.getUserId(), seatIds);
+        unlockSeatsNullableUser(r.getUserId(), seatIds);
 
         r.setPaymentStatus("CANCELLED");
         r.setNotes("Cancelled by user/system");

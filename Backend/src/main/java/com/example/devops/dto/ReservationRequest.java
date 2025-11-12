@@ -19,13 +19,16 @@ public class ReservationRequest {
     private BigDecimal totalAmount;
     private List<SeatPick> seats;
 
+    /** ✅ ใช้สำหรับโหมด Guest */
+    private String guestEmail;
+
     @Getter
     @Setter
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
     public static class SeatPick {
-        /** zone_id จริงจาก seat_zones */
+        /** zone_id จริงจาก seat_zones (สำหรับ validation/ตรวจสิทธิ์ฝั่ง FE; ฝั่ง DB จะใช้ seat_row/seat_col ผ่าน VIEW) */
         private Long zoneId;
 
         /** แถว (0-based, FE -> DB mapping: 0 → 'A') */

@@ -3,6 +3,7 @@ package com.example.devops.model;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -18,7 +19,7 @@ public class Reserved {
     private Long reservedId;
 
     @Column(name = "user_id")
-    private Long userId;
+    private Long userId; // อาจเป็น null ถ้าเป็น guest
 
     @Column(name = "event_id")
     private Long eventId;
@@ -50,4 +51,14 @@ public class Reserved {
     /** ✅ วิธีการชำระเงิน */
     @Column(name = "payment_method")
     private String paymentMethod; // Credit Card | Bank Transfer | QR Payment | null
+
+    /** ✅ Guest fields */
+    @Column(name = "guest_email")
+    private String guestEmail;        // email ที่ใช้ตอนเป็น guest
+
+    @Column(name = "guest_claimed_at")
+    private Instant guestClaimedAt;   // เวลา claim เข้า user
+
+    @Column(name = "created_as_guest")
+    private Boolean createdAsGuest;   // true ถ้าสร้างตอนเป็น guest
 }

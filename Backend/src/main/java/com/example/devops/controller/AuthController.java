@@ -5,6 +5,7 @@ import com.example.devops.model.Organizer;
 import com.example.devops.repo.UserRepository;
 import com.example.devops.repo.OrganizerRepo;
 import com.example.devops.security.JwtTokenUtil;
+import com.example.devops.service.GuestClaimService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -26,18 +27,20 @@ public class AuthController {
     private final OrganizerRepo organizerRepo;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenUtil jwtUtil;
+    private final GuestClaimService guestClaimService; // ✅ เพิ่ม
 
-    // Password validation pattern
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$");
 
     public AuthController(UserRepository userRepo,
                           OrganizerRepo organizerRepo,
                           PasswordEncoder passwordEncoder,
-                          JwtTokenUtil jwtUtil) {
+                          JwtTokenUtil jwtUtil,
+                          GuestClaimService guestClaimService) { // ✅ เพิ่ม
         this.userRepo = userRepo;
         this.organizerRepo = organizerRepo;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.guestClaimService = guestClaimService;        // ✅ เพิ่ม
     }
 
     /* ==================== LOGIN ==================== */
@@ -57,11 +60,15 @@ public class AuthController {
             User user = userOpt.get();
             if (passwordEncoder.matches(req.getPassword(), user.getPassword())) {
                 String token = jwtUtil.generateToken(user.getUsername(), user.getRole(), user.getEmail());
+
+                // ✅ เคลมใบจอง guest ทั้งหมดด้วย email นี้
+                try { guestClaimService.linkGuestReservationsToUser(user.getId(), user.getEmail()); } catch (Exception ignore) {}
+
                 return ResponseEntity.ok(buildAuthResponse(token, user.getId().toString(), user.getUsername(), user.getRole(), user.getEmail()));
             }
         }
 
-        // ถ้าไม่เจอ ลอง Organizer
+        // ถ้าไม่เจอ ลอง Organizer (ไม่เคลม guest สำหรับ organizer)
         var orgOpt = organizerRepo.findByUsernameIgnoreCase(identifier);
         if (orgOpt.isEmpty()) orgOpt = organizerRepo.findByEmailIgnoreCase(identifier);
 
@@ -86,7 +93,6 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Missing or invalid fields for user signup", "details", errors));
         }
 
-        // Validate password strength
         if (!PASSWORD_PATTERN.matcher(req.getPassword()).matches()) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "Password must be at least 8 characters with uppercase, lowercase, and number"
@@ -97,15 +103,12 @@ public class AuthController {
             String username = trimSafe(req.getUsername());
             String email = trimSafe(req.getEmail());
 
-            // Check duplicates in User table
             if (userRepo.findByUsernameIgnoreCase(username).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
             }
             if (userRepo.findByEmailIgnoreCase(email).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
             }
-
-            // Check duplicates in Organizer table
             if (organizerRepo.findByUsernameIgnoreCase(username).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username already taken by an organizer"));
             }
@@ -124,6 +127,10 @@ public class AuthController {
             user.setIdCardPassport(trimSafe(req.getIdCard()));
 
             userRepo.save(user);
+
+            // ✅ เคลมใบจอง guest ด้วย email นี้ทันที
+            try { guestClaimService.linkGuestReservationsToUser(user.getId(), user.getEmail()); } catch (Exception ignore) {}
+
             return ResponseEntity.ok(Map.of("message", "User created successfully"));
 
         } catch (Exception e) {
@@ -141,7 +148,6 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Missing or invalid fields for organizer signup", "details", errors));
         }
 
-        // Validate password strength
         if (!PASSWORD_PATTERN.matcher(req.getPassword()).matches()) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "Password must be at least 8 characters with uppercase, lowercase, and number"
@@ -152,15 +158,12 @@ public class AuthController {
             String username = trimSafe(req.getUsername());
             String email = trimSafe(req.getEmail());
 
-            // Check duplicates in Organizer table
             if (organizerRepo.findByUsernameIgnoreCase(username).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username already exists"));
             }
             if (organizerRepo.findByEmailIgnoreCase(email).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
             }
-
-            // Check duplicates in User table
             if (userRepo.findByUsernameIgnoreCase(username).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username already taken by a user"));
             }
@@ -188,8 +191,7 @@ public class AuthController {
         }
     }
 
-    /* ==================== DTO CLASSES ==================== */
-
+    // ===== DTOs & Utils =====
     public static class LoginRequest {
         @NotBlank private String username;
         @NotBlank private String password;
@@ -255,8 +257,6 @@ public class AuthController {
         public String getTaxId() { return taxId; }
         public void setTaxId(String taxId) { this.taxId = taxId; }
     }
-
-    /* ==================== UTILITIES ==================== */
 
     private static String trimSafe(String s) {
         return s == null ? "" : s.trim();
