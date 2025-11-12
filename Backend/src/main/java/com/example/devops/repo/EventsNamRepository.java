@@ -8,10 +8,16 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
+
+    /* =========================
+       Organizer / Listing
+       ========================= */
 
     @Query(value = """
         SELECT e.* 
@@ -35,6 +41,11 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
         ORDER BY e.event_id DESC
         """, nativeQuery = true)
     List<EventsNam> findAllByOrderByEventIdDesc();
+
+
+    /* =========================
+       Admin review actions
+       ========================= */
 
     /** ✅ อนุมัติอีเวนต์ */
     @Transactional
@@ -65,4 +76,44 @@ public interface EventsNamRepository extends JpaRepository<EventsNam, Long> {
     int reject(@Param("id") Long id,
                @Param("review") String review,
                @Param("adminId") Integer adminId);
+
+
+    /* =========================
+       Public landing queries
+       ========================= */
+
+    @Query(value = "SELECT * FROM public_events_on_sale ORDER BY event_id DESC", nativeQuery = true)
+    List<EventsNam> findOnSaleViaView();
+
+    @Query(value = "SELECT * FROM public_events_upcoming", nativeQuery = true)
+    List<EventsNam> findUpcomingViaView();
+
+    @Query(value = """
+        SELECT e.*
+        FROM events_nam e
+        WHERE UPPER(e.status) = 'APPROVED'
+          AND e.sales_start_datetime IS NOT NULL
+          AND e.sales_end_datetime   IS NOT NULL
+          AND e.sales_start_datetime <= :nowTs
+          AND e.sales_end_datetime   >= :nowTs
+        ORDER BY e.sales_start_datetime ASC, e.event_id ASC
+        """, nativeQuery = true)
+    List<EventsNam> findCurrentlyOnSale(@Param("nowTs") Instant nowTs);
+
+    @Query(value = """
+        SELECT e.*
+        FROM events_nam e
+        WHERE UPPER(e.status) = 'APPROVED'
+          AND e.sales_start_datetime IS NOT NULL
+          AND e.sales_start_datetime > :nowTs
+        ORDER BY e.sales_start_datetime ASC, e.event_id ASC
+        """, nativeQuery = true)
+    List<EventsNam> findUpcomingSales(@Param("nowTs") Instant nowTs);
+
+
+    /* =========================
+       ใช้กับ ImageSeeder: หา event ล่าสุดตามชื่อ
+       ========================= */
+
+    Optional<EventsNam> findTopByEventNameOrderByIdDesc(String eventName);
 }

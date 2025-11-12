@@ -91,6 +91,8 @@ export const authApi = {
 export const profileApi = {
     getProfile: () => api.get("/auth/me"),
 
+    getMyTickets: () => api.get("/profile/tickets"),
+    
     updateUser: (data: {
         email: string;
         firstName: string;

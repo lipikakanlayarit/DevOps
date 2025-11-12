@@ -2,13 +2,14 @@ package com.example.devops.web;
 
 import com.example.devops.dto.TicketSetupRequest;
 import com.example.devops.dto.TicketSetupResponse;
-import com.example.devops.model.SeatZones;
 import com.example.devops.service.TicketSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -23,10 +24,7 @@ public class TicketController {
 
     private final TicketSetupService ticketSetupService;
 
-    /**
-     * PREFILL: ดึงผังที่นั่ง/โซน/ราคาปัจจุบันของอีเวนต์
-     * ถ้ายังไม่เคยตั้งค่า จะคืน 200 + โครงว่าง (ไม่ 404)
-     */
+    /** PREFILL: ดึงผังที่นั่ง/โซน/ราคา/Advanced/SalesPeriod */
     @GetMapping("/setup")
     public ResponseEntity<?> getSetup(@PathVariable("eventId") Long eventId) {
         Map<String, Object> m = ticketSetupService.getSetup(eventId);
@@ -36,36 +34,54 @@ public class TicketController {
                             .seatRows(0)
                             .seatColumns(0)
                             .zones(List.of())
+                            .minPerOrder(null)
+                            .maxPerOrder(null)
+                            .active(null)
+                            .salesStartDatetime(null)
+                            .salesEndDatetime(null)
                             .build()
             );
         }
 
-        // Map → DTO
-        int seatRows = (Integer) m.getOrDefault("seatRows", 0);
-        int seatColumns = (Integer) m.getOrDefault("seatColumns", 0);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> zoneMaps = (List<Map<String, Object>>) m.getOrDefault("zones", List.of());
+        int seatRows = toInt(m.get("seatRows"), 0);
+        int seatColumns = toInt(m.get("seatColumns"), 0);
 
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> zoneMaps =
+                (List<Map<String, Object>>) m.getOrDefault("zones", List.of());
+
+        // ✅ ส่ง rows/cols ต่อโซนให้ FE พรีฟิลได้ตรง
         List<TicketSetupResponse.ZonePrice> zones = zoneMaps.stream()
                 .map(z -> TicketSetupResponse.ZonePrice.builder()
                         .code((String) z.getOrDefault("code", ""))
                         .name((String) z.getOrDefault("name", ""))
-                        .price((Integer) z.getOrDefault("price", null))
+                        .price(toBigDecimal(z.get("price")))
+                        .rows(toInteger(z.get("rows")))  // <— เพิ่ม
+                        .cols(toInteger(z.get("cols")))  // <— เพิ่ม
                         .build())
                 .toList();
+
+        Integer minPerOrder = toInteger(m.get("minPerOrder"));
+        Integer maxPerOrder = toInteger(m.get("maxPerOrder"));
+        Boolean active = toBoolean(m.get("active"));
+        Instant salesStart = toInstant(m.get("salesStartDatetime"));
+        Instant salesEnd   = toInstant(m.get("salesEndDatetime"));
 
         return ResponseEntity.ok(
                 TicketSetupResponse.builder()
                         .seatRows(seatRows)
                         .seatColumns(seatColumns)
                         .zones(zones)
+                        .minPerOrder(minPerOrder)
+                        .maxPerOrder(maxPerOrder)
+                        .active(active)
+                        .salesStartDatetime(salesStart)
+                        .salesEndDatetime(salesEnd)
                         .build()
         );
     }
 
-    /**
-     * CREATE/REGENERATE: ลบของเก่าและสร้างผังใหม่ตาม payload
-     */
+    /** CREATE/REGENERATE */
     @PostMapping("/setup")
     public ResponseEntity<?> setupTickets(@PathVariable("eventId") Long eventId,
                                           @RequestBody @jakarta.validation.Valid TicketSetupRequest request,
@@ -77,9 +93,7 @@ public class TicketController {
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * UPDATE: (ตอนนี้ใช้วิธี regenerate ทั้งชุดเหมือน POST)
-     */
+    /** UPDATE */
     @PutMapping("/setup")
     public ResponseEntity<?> updateTickets(@PathVariable("eventId") Long eventId,
                                            @RequestBody @jakarta.validation.Valid TicketSetupRequest request,
@@ -91,20 +105,44 @@ public class TicketController {
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * ใช้เรนเดอร์เก้าอี้เป็นกริดในหน้าอื่น
-     */
+    /** เรนเดอร์เก้าอี้เป็นกริด */
     @GetMapping("/grid")
     public ResponseEntity<?> getSeatGrid(@PathVariable("eventId") Long eventId) {
         return ResponseEntity.ok(ticketSetupService.getSeatGrid(eventId));
     }
 
-    /**
-     * ดึงรายการโซนทั้งหมดของอีเวนต์ (ตามลำดับ sort)
-     */
+    /** ดึงโซนทั้งหมดของอีเวนต์ */
     @GetMapping("/zones")
     public ResponseEntity<?> getZones(@PathVariable("eventId") Long eventId) {
-        List<SeatZones> zones = ticketSetupService.getZones(eventId);
-        return ResponseEntity.ok(zones);
+        Map<String, Object> data = ticketSetupService.getSetup(eventId);
+        return ResponseEntity.ok(data.get("zones"));
+    }
+
+    /* ================= Helpers ================ */
+    private static int toInt(Object v, int def) {
+        if (v instanceof Number n) return n.intValue();
+        try { return v != null ? Integer.parseInt(v.toString()) : def; }
+        catch (Exception e) { return def; }
+    }
+    private static Integer toInteger(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.intValue();
+        try { return Integer.valueOf(v.toString()); } catch (Exception e) { return null; }
+    }
+    private static BigDecimal toBigDecimal(Object v) {
+        if (v == null) return null;
+        if (v instanceof BigDecimal b) return b;
+        if (v instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return new BigDecimal(v.toString());
+    }
+    private static Boolean toBoolean(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        return Boolean.valueOf(v.toString());
+    }
+    private static Instant toInstant(Object v) {
+        if (v == null) return null;
+        if (v instanceof Instant i) return i;
+        try { return Instant.parse(v.toString()); } catch (Exception e) { return null; }
     }
 }

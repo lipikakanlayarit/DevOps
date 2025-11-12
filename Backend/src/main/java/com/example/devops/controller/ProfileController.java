@@ -1,35 +1,35 @@
 package com.example.devops.controller;
 
-import com.example.devops.model.User;
 import com.example.devops.model.Organizer;
-import com.example.devops.repo.UserRepository;
+import com.example.devops.model.User;
 import com.example.devops.repo.OrganizerRepo;
+import com.example.devops.repo.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 @RestController
-@RequestMapping("/api/profile")
+@RequestMapping(path = "/api/profile", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ProfileController {
 
     private final UserRepository userRepo;
     private final OrganizerRepo organizerRepo;
-    private final PasswordEncoder passwordEncoder;
+    private final JdbcTemplate jdbc;
 
     public ProfileController(UserRepository userRepo,
                              OrganizerRepo organizerRepo,
-                             PasswordEncoder passwordEncoder) {
+                             JdbcTemplate jdbc) {
         this.userRepo = userRepo;
         this.organizerRepo = organizerRepo;
-        this.passwordEncoder = passwordEncoder;
+        this.jdbc = jdbc;
     }
 
     /* ==================== GET PROFILE ==================== */
@@ -38,128 +38,157 @@ public class ProfileController {
         if (auth == null || auth.getPrincipal() == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
-
         String username = auth.getName();
 
-        // ค้นหาใน User ก่อน
         var userOpt = userRepo.findByUsernameIgnoreCase(username);
-        if (userOpt.isPresent()) {
-            User user = userOpt.get();
-            return ResponseEntity.ok(buildUserResponse(user));
-        }
+        if (userOpt.isPresent()) return ResponseEntity.ok(buildUserResponse(userOpt.get()));
 
-        // ถ้าไม่เจอ ค้นหาใน Organizer
         var orgOpt = organizerRepo.findByUsernameIgnoreCase(username);
-        if (orgOpt.isPresent()) {
-            Organizer org = orgOpt.get();
-            return ResponseEntity.ok(buildOrganizerResponse(org));
-        }
+        if (orgOpt.isPresent()) return ResponseEntity.ok(buildOrganizerResponse(orgOpt.get()));
 
         return ResponseEntity.status(404).body(Map.of("error", "User not found"));
     }
 
-    /* ==================== UPDATE USER PROFILE ==================== */
-    @PutMapping("/user")
-    public ResponseEntity<?> updateUserProfile(
-            @Valid @RequestBody UpdateUserRequest req,
-            BindingResult br,
-            Authentication auth) {
-
-        if (br.hasErrors()) {
-            var errors = br.getFieldErrors().stream()
-                    .map(f -> Map.of("field", f.getField(), "message", f.getDefaultMessage()))
-                    .toList();
-            return ResponseEntity.badRequest().body(Map.of("error", "Validation failed", "details", errors));
-        }
-
-        if (auth == null) {
+    /* ==================== MY TICKETS (seat-level) ==================== */
+    @GetMapping("/my-tickets")
+    public ResponseEntity<?> getMyTickets(Authentication auth, HttpServletRequest request) {
+        if (auth == null || auth.getPrincipal() == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
         }
 
         String username = auth.getName();
-        var userOpt = userRepo.findByUsernameIgnoreCase(username);
+        Long userId = userRepo.findByUsernameIgnoreCase(username).map(User::getId).orElse(null);
+        if (userId == null) return ResponseEntity.ok(List.of());
 
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.status(404).body(Map.of("error", "User not found"));
+        // แสดงเฉพาะ:
+        //  - จ่ายแล้ว (PAID)
+        //  - หรือยังไม่จ่าย แต่ยังอยู่ในช่วงจ่ายได้ (ภายใน 5 นาทีหลังจอง และไม่เกิน sales_end_datetime)
+        // กรณีหมดหน้าต่างชำระแล้วจะไม่ติดมาในผลลัพธ์
+        String sql = """
+            SELECT
+                r.reserved_id                              AS reserveId,
+                r.confirmation_code                         AS confirmationCode,
+                UPPER(COALESCE(r.payment_status,'UNPAID'))  AS paymentStatus,
+                r.total_amount                              AS total,
+                ev.event_id                                 AS eventId,
+                ev.event_name                               AS title,
+                ev.venue_name                               AS venue,
+                to_char(ev.start_datetime AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS showDate,
+                COALESCE(sz.description, sz.zone_name,'')   AS zoneName,
+                sr.row_label                                AS rowLabel,
+                s.seat_number                               AS seatNumber,
+                s.seat_id                                   AS seatId,
+                COALESCE(sz.price, 0)                       AS unitPrice,
+                LEAST(r.registration_datetime + INTERVAL '5 minutes', ev.sales_end_datetime) AS expire_at
+            FROM reserved r
+            JOIN events_nam ev         ON ev.event_id = r.event_id
+            LEFT JOIN reserved_seats rs ON rs.reserved_id = r.reserved_id
+            LEFT JOIN seats s            ON s.seat_id = rs.seat_id
+            LEFT JOIN seat_rows sr       ON sr.row_id = s.row_id
+            LEFT JOIN seat_zones sz      ON sz.zone_id = sr.zone_id
+            WHERE r.user_id = ?
+              AND (
+                    UPPER(COALESCE(r.payment_status,'UNPAID')) = 'PAID'
+                    OR ( UPPER(COALESCE(r.payment_status,'UNPAID')) <> 'PAID'
+                         AND NOW() < LEAST(r.registration_datetime + INTERVAL '5 minutes', ev.sales_end_datetime)
+                       )
+                  )
+              -- กันผลลัพธ์ที่ไม่มีที่นั่ง (เช่น เคลียร์ที่นั่งหลังหมดเวลา)
+              AND s.seat_id IS NOT NULL
+            ORDER BY ev.start_datetime DESC, r.reserved_id DESC, sz.zone_name, sr.row_label, s.seat_number
+        """;
+
+        var rows = jdbc.queryForList(sql, userId);
+        List<Map<String,Object>> out = new ArrayList<>(rows.size());
+
+        for (Map<String,Object> r : rows) {
+            Map<String,Object> m = new LinkedHashMap<>();
+            Object eventId = r.get("eventId");
+            String posterUrl = (eventId == null) ? "" : ("/api/events/" + eventId + "/cover");
+
+            m.put("posterUrl", posterUrl);
+            m.put("reserveId", str(r.get("reserveId")));
+            m.put("eventId", eventId);
+            m.put("title", str(r.get("title")));
+            m.put("venue", str(r.get("venue")));
+            m.put("showDate", str(r.get("showDate")));
+            m.put("zone", str(r.get("zoneName")));
+            m.put("rowLabel", r.get("rowLabel"));
+            m.put("seatNumber", r.get("seatNumber"));
+            m.put("seatId", r.get("seatId"));
+            m.put("unitPrice", r.get("unitPrice"));
+            m.put("type", "concert");
+            // หน้านี้ไม่ต้องใช้สถานะขายของอีเวนต์เท่าไร ใส่ค่าเดียวพอ
+            m.put("effectiveStatus", "ONSALE");
+            out.add(m);
         }
+        return ResponseEntity.ok(out);
+    }
+
+    private static String str(Object o) { return o == null ? "" : String.valueOf(o); }
+
+    /* ==================== UPDATE USER PROFILE ==================== */
+    @PutMapping("/user")
+    public ResponseEntity<?> updateUserProfile(
+            @Valid @RequestBody UpdateUserRequest req, Authentication auth) {
+
+        if (auth == null) return ResponseEntity.status(401).body(Map.of("error","Unauthorized"));
+
+        String username = auth.getName();
+        var userOpt = userRepo.findByUsernameIgnoreCase(username);
+        if (userOpt.isEmpty()) return ResponseEntity.status(404).body(Map.of("error","User not found"));
 
         User user = userOpt.get();
 
-        // ตรวจสอบ email ซ้ำ (ถ้ามีการเปลี่ยน)
         if (!user.getEmail().equalsIgnoreCase(req.getEmail())) {
-            if (userRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
-            }
-            if (organizerRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already taken by an organizer"));
-            }
+            if (userRepo.findByEmailIgnoreCase(req.getEmail()).isPresent())
+                return ResponseEntity.badRequest().body(Map.of("error","Email already exists"));
+            if (organizerRepo.findByEmailIgnoreCase(req.getEmail()).isPresent())
+                return ResponseEntity.badRequest().body(Map.of("error","Email already taken by an organizer"));
         }
 
-        // อัปเดตข้อมูล
-        user.setEmail(trimSafe(req.getEmail()));
-        user.setFirstName(trimSafe(req.getFirstName()));
-        user.setLastName(trimSafe(req.getLastName()));
-        user.setPhoneNumber(trimSafe(req.getPhoneNumber()));
-
-        if (req.getIdCard() != null && !req.getIdCard().trim().isEmpty()) {
-            user.setIdCardPassport(trimSafe(req.getIdCard()));
+        user.setEmail(trim(req.getEmail()));
+        user.setFirstName(trim(req.getFirstName()));
+        user.setLastName(trim(req.getLastName()));
+        user.setPhoneNumber(trim(req.getPhoneNumber()));
+        if (req.getIdCard()!=null && !req.getIdCard().trim().isEmpty()) {
+            user.setIdCardPassport(trim(req.getIdCard()));
         }
-
         userRepo.save(user);
-        return ResponseEntity.ok(Map.of("message", "Profile updated successfully", "user", buildUserResponse(user)));
+        return ResponseEntity.ok(Map.of("message","Profile updated successfully","user",buildUserResponse(user)));
     }
 
     /* ==================== UPDATE ORGANIZER PROFILE ==================== */
     @PutMapping("/organizer")
     public ResponseEntity<?> updateOrganizerProfile(
-            @Valid @RequestBody UpdateOrganizerRequest req,
-            BindingResult br,
-            Authentication auth) {
+            @Valid @RequestBody UpdateOrganizerRequest req, Authentication auth) {
 
-        if (br.hasErrors()) {
-            var errors = br.getFieldErrors().stream()
-                    .map(f -> Map.of("field", f.getField(), "message", f.getDefaultMessage()))
-                    .toList();
-            return ResponseEntity.badRequest().body(Map.of("error", "Validation failed", "details", errors));
-        }
-
-        if (auth == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
-        }
+        if (auth == null) return ResponseEntity.status(401).body(Map.of("error","Unauthorized"));
 
         String username = auth.getName();
         var orgOpt = organizerRepo.findByUsernameIgnoreCase(username);
-
-        if (orgOpt.isEmpty()) {
-            return ResponseEntity.status(404).body(Map.of("error", "Organizer not found"));
-        }
+        if (orgOpt.isEmpty()) return ResponseEntity.status(404).body(Map.of("error","Organizer not found"));
 
         Organizer org = orgOpt.get();
 
-        // ตรวจสอบ email ซ้ำ (ถ้ามีการเปลี่ยน)
         if (!org.getEmail().equalsIgnoreCase(req.getEmail())) {
-            if (organizerRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
-            }
-            if (userRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email already taken by a user"));
-            }
+            if (organizerRepo.findByEmailIgnoreCase(req.getEmail()).isPresent())
+                return ResponseEntity.badRequest().body(Map.of("error","Email already exists"));
+            if (userRepo.findByEmailIgnoreCase(req.getEmail()).isPresent())
+                return ResponseEntity.badRequest().body(Map.of("error","Email already taken by a user"));
         }
 
-        // อัปเดตข้อมูล
-        org.setEmail(trimSafe(req.getEmail()));
-        org.setFirstName(trimSafe(req.getFirstName()));
-        org.setLastName(trimSafe(req.getLastName()));
-        org.setPhoneNumber(trimSafe(req.getPhoneNumber()));
-        org.setAddress(trimSafe(req.getAddress()));
-        org.setCompanyName(trimSafe(req.getCompanyName()));
-        org.setTaxId(trimSafe(req.getTaxId()));
-
+        org.setEmail(trim(req.getEmail()));
+        org.setFirstName(trim(req.getFirstName()));
+        org.setLastName(trim(req.getLastName()));
+        org.setPhoneNumber(trim(req.getPhoneNumber()));
+        org.setAddress(trim(req.getAddress()));
+        org.setCompanyName(trim(req.getCompanyName()));
+        org.setTaxId(trim(req.getTaxId()));
         organizerRepo.save(org);
-        return ResponseEntity.ok(Map.of("message", "Profile updated successfully", "organizer", buildOrganizerResponse(org)));
-    }
 
-    /* ==================== DTO CLASSES ==================== */
+        return ResponseEntity.ok(Map.of("message","Profile updated successfully","organizer",buildOrganizerResponse(org)));
+    }
 
     public static class UpdateUserRequest {
         @Email @NotBlank private String email;
@@ -167,19 +196,12 @@ public class ProfileController {
         @NotBlank private String lastName;
         @NotBlank private String phoneNumber;
         private String idCard;
-
-        public String getEmail() { return email; }
-        public void setEmail(String email) { this.email = email; }
-        public String getFirstName() { return firstName; }
-        public void setFirstName(String firstName) { this.firstName = firstName; }
-        public String getLastName() { return lastName; }
-        public void setLastName(String lastName) { this.lastName = lastName; }
-        public String getPhoneNumber() { return phoneNumber; }
-        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
-        public String getIdCard() { return idCard; }
-        public void setIdCard(String idCard) { this.idCard = idCard; }
+        public String getEmail(){return email;} public void setEmail(String v){email=v;}
+        public String getFirstName(){return firstName;} public void setFirstName(String v){firstName=v;}
+        public String getLastName(){return lastName;} public void setLastName(String v){lastName=v;}
+        public String getPhoneNumber(){return phoneNumber;} public void setPhoneNumber(String v){phoneNumber=v;}
+        public String getIdCard(){return idCard;} public void setIdCard(String v){idCard=v;}
     }
-
     public static class UpdateOrganizerRequest {
         @Email @NotBlank private String email;
         @NotBlank private String firstName;
@@ -188,55 +210,42 @@ public class ProfileController {
         @NotBlank private String address;
         @NotBlank private String companyName;
         @NotBlank private String taxId;
-
-        public String getEmail() { return email; }
-        public void setEmail(String email) { this.email = email; }
-        public String getFirstName() { return firstName; }
-        public void setFirstName(String firstName) { this.firstName = firstName; }
-        public String getLastName() { return lastName; }
-        public void setLastName(String lastName) { this.lastName = lastName; }
-        public String getPhoneNumber() { return phoneNumber; }
-        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
-        public String getAddress() { return address; }
-        public void setAddress(String address) { this.address = address; }
-        public String getCompanyName() { return companyName; }
-        public void setCompanyName(String companyName) { this.companyName = companyName; }
-        public String getTaxId() { return taxId; }
-        public void setTaxId(String taxId) { this.taxId = taxId; }
+        public String getEmail(){return email;} public void setEmail(String v){email=v;}
+        public String getFirstName(){return firstName;} public void setFirstName(String v){firstName=v;}
+        public String getLastName(){return lastName;} public void setLastName(String v){lastName=v;}
+        public String getPhoneNumber(){return phoneNumber;} public void setPhoneNumber(String v){phoneNumber=v;}
+        public String getAddress(){return address;} public void setAddress(String v){address=v;}
+        public String getCompanyName(){return companyName;} public void setCompanyName(String v){companyName=v;}
+        public String getTaxId(){return taxId;} public void setTaxId(String v){taxId=v;}
     }
 
-    /* ==================== UTILITIES ==================== */
+    private static String trim(String s){ return s==null ? "" : s.trim(); }
 
-    private static String trimSafe(String s) {
-        return s == null ? "" : s.trim();
+    private Map<String,Object> buildUserResponse(User u){
+        Map<String,Object> m = new HashMap<>();
+        m.put("id", u.getId().toString());
+        m.put("username", u.getUsername());
+        m.put("email", u.getEmail());
+        m.put("role", u.getRole());
+        m.put("firstName", u.getFirstName());
+        m.put("lastName", u.getLastName());
+        m.put("phoneNumber", u.getPhoneNumber());
+        m.put("idCard", u.getIdCardPassport());
+        return m;
     }
-
-    private Map<String, Object> buildUserResponse(User user) {
-        Map<String, Object> response = new HashMap<>();
-        response.put("id", user.getId().toString());
-        response.put("username", user.getUsername());
-        response.put("email", user.getEmail());
-        response.put("role", user.getRole());
-        response.put("firstName", user.getFirstName());
-        response.put("lastName", user.getLastName());
-        response.put("phoneNumber", user.getPhoneNumber());
-        response.put("idCard", user.getIdCardPassport());
-        return response;
-    }
-
-    private Map<String, Object> buildOrganizerResponse(Organizer org) {
-        Map<String, Object> response = new HashMap<>();
-        response.put("id", org.getId().toString());
-        response.put("username", org.getUsername());
-        response.put("email", org.getEmail());
-        response.put("role", "ORGANIZER");
-        response.put("firstName", org.getFirstName());
-        response.put("lastName", org.getLastName());
-        response.put("phoneNumber", org.getPhoneNumber());
-        response.put("companyName", org.getCompanyName());
-        response.put("taxId", org.getTaxId());
-        response.put("address", org.getAddress());
-        response.put("verificationStatus", org.getVerificationStatus());
-        return response;
+    private Map<String,Object> buildOrganizerResponse(Organizer o){
+        Map<String,Object> m = new HashMap<>();
+        m.put("id", o.getId().toString());
+        m.put("username", o.getUsername());
+        m.put("email", o.getEmail());
+        m.put("role", "ORGANIZER");
+        m.put("firstName", o.getFirstName());
+        m.put("lastName", o.getLastName());
+        m.put("phoneNumber", o.getPhoneNumber());
+        m.put("companyName", o.getCompanyName());
+        m.put("taxId", o.getTaxId());
+        m.put("address", o.getAddress());
+        m.put("verificationStatus", o.getVerificationStatus());
+        return m;
     }
 }

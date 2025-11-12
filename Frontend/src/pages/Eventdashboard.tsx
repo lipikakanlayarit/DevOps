@@ -1,3 +1,4 @@
+// src/pages/eventdashboard.tsx
 "use client";
 
 import type React from "react";
@@ -5,71 +6,295 @@ import { useMemo, useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Sidebar } from "@/components/sidebarorg";
 import { Input } from "@/components/inputtxt";
-import { Search, CircleDollarSign, Ticket } from "lucide-react";
-// import { api } from "@/lib/api"; // ถ้าจะโหลดข้อมูลจริง ค่อยเปิดใช้
+import { Search, CircleDollarSign, Ticket, Users } from "lucide-react";
 
-type SeatRow = {
-    id: string;
-    seatId: string;
-    total: number;
+/* =========================
+   Types
+   ========================= */
+type ReservationRow = {
+    id: number | string;
+    reserved_code: string | null;
+    status: string;                // PAID/UNPAID (raw)
+    total: number;                 // fallback ถ้าไม่มี unit_price
+    payment_method?: string | null;
     user: string;
-    status: "COMPLETE" | "UNPAID";
+    date?: string;
+    seat_label: string;
+    registration_ts?: string;
+    expire_at?: string;
+
+    // seat-level
+    seat_id?: number | string;
+    unit_price?: number;
 };
 
-const MOCK_SEATS: SeatRow[] = [
-    { id: "81010012592500", seatId: "B12", total: 5000, user: "ZOMBIE", status: "COMPLETE" },
-    { id: "81010012592501", seatId: "C20", total: 3000, user: "NANA", status: "UNPAID" },
-    { id: "81010012592502", seatId: "A01", total: 8000, user: "PAUL", status: "COMPLETE" },
-];
+type DashboardResponse = {
+    eventId: number;
+    eventName: string;
+    ticketTarget: number;
+    sold: number;
+    reserved: number;
+    available: number;
+    netPayout: number;
+    ticketSoldNow: number;
+    rows: ReservationRow[];
+};
 
+/* =========================
+   Small utilities
+   ========================= */
+function readToken(): string | null {
+    const keys = ["authToken", "accessToken", "token", "jwt", "Authorization"];
+    for (const k of keys) {
+        const v =
+            (typeof localStorage !== "undefined" && localStorage.getItem(k)) ||
+            (typeof sessionStorage !== "undefined" && sessionStorage.getItem(k));
+        if (v) return v;
+    }
+    return null;
+}
+
+function getAuthHeaders(): Record<string, string> {
+    const token = readToken();
+    const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+    };
+    if (token) {
+        headers.Authorization = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    }
+    return headers;
+}
+
+function buildApiUrl(path: string): string {
+    if (/^https?:\/\//i.test(path)) return path;
+    const base = (import.meta as any)?.env?.VITE_API_BASE as string | undefined;
+    if (base) return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+    return path;
+}
+
+/* === Local attendance store (per event, seat-level) === */
+const checkedKey = (eventId: string | number) => `evt:${eventId}:checked:v2`;
+
+function rowKey(r: ReservationRow): string {
+    const rid = String(r.id ?? "");
+    const sid = r.seat_id != null ? String(r.seat_id) : "";
+    return sid ? `${rid}:${sid}` : rid;
+}
+function makeKey(reservedId?: string | number | null, seatId?: string | number | null): string {
+    const rid = reservedId != null ? String(reservedId) : "";
+    const sid = seatId != null ? String(seatId) : "";
+    return sid ? `${rid}:${sid}` : rid;
+}
+
+function loadCheckedSet(eventId: string | number): Set<string> {
+    try {
+        const raw = localStorage.getItem(checkedKey(eventId));
+        if (!raw) return new Set();
+        const arr = JSON.parse(raw) as string[];
+        return new Set(arr.map(String));
+    } catch {
+        return new Set();
+    }
+}
+function addChecked(eventId: string | number, key: string) {
+    const k = checkedKey(eventId);
+    const set = loadCheckedSet(eventId);
+    set.add(key);
+    localStorage.setItem(k, JSON.stringify(Array.from(set)));
+}
+function removeChecked(eventId: string | number, key: string) {
+    const k = checkedKey(eventId);
+    const set = loadCheckedSet(eventId);
+    set.delete(key);
+    localStorage.setItem(k, JSON.stringify(Array.from(set)));
+}
+
+/* Expanded normalize for UI badge */
+type UiStatus = "COMPLETE" | "UNPAID" | "EXPIRED";
+function normalizePaid(raw: string): "COMPLETE" | "UNPAID" {
+    const s = String(raw || "").trim().toUpperCase();
+    return s === "PAID" ? "COMPLETE" : "UNPAID";
+}
+function isExpiredRow(r: ReservationRow, now = new Date()): boolean {
+    if (!r.expire_at) return false;
+    const ex = new Date(r.expire_at);
+    return ex.getTime() <= now.getTime();
+}
+function uiStatusOf(r: ReservationRow, now = new Date()): UiStatus {
+    const paidOrUnpaid = normalizePaid(r.status);
+    if (paidOrUnpaid === "COMPLETE") return "COMPLETE";
+    return isExpiredRow(r, now) ? "EXPIRED" : "UNPAID";
+}
+function fmtAmount(n: number): string {
+    if (!isFinite(n)) return "0.00";
+    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function Skeleton({ w = 120, h = 16, rounded = false }: { w?: number; h?: number; rounded?: boolean }) {
+    return (
+        <span
+            className={`inline-block animate-pulse bg-slate-200 ${rounded ? "rounded-full" : "rounded-md"}`}
+            style={{ width: w, height: h }}
+        />
+    );
+}
+
+/* =========================
+   Component
+   ========================= */
 export default function EventDashboard() {
-    // ✅ รับ eventId จาก path หรือ query (?eventId=)
     const { eventId: eventIdParam } = useParams<{ eventId?: string }>();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
 
     const eventId = eventIdParam ?? searchParams.get("eventId") ?? "";
 
-    // (ตัวอย่าง state KPIs – รอเชื่อมจริงค่อยดึงจาก API)
-    const [available] = useState(40);
-    const [reserved] = useState(12);
-    const [sold] = useState(8);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const [netPayout] = useState(0);
-    const [ticketSoldNow] = useState(0);
-    const [ticketTarget] = useState(20);
+    const [eventName, setEventName] = useState<string>("");
+    const [available, setAvailable] = useState<number>(0);
+    const [reserved, setReserved] = useState<number>(0);
+    const [sold, setSold] = useState<number>(0);
 
+    const [netPayout, setNetPayout] = useState<number>(0);
+    const [ticketSoldNow, setTicketSoldNow] = useState<number>(0);
+    const [ticketTarget, setTicketTarget] = useState<number>(0);
+
+    const [rows, setRows] = useState<ReservationRow[]>([]);
     const [query, setQuery] = useState("");
+
+    // attendance + highlight
+    const [checkedSet, setCheckedSet] = useState<Set<string>>(() => loadCheckedSet(eventId || "0"));
+    const [highlightKey, setHighlightKey] = useState<string | null>(null);
 
     useEffect(() => {
         if (!eventId) {
-            // ถ้าไม่มี eventId ให้กลับหน้า list
             navigate("/organizationmnge", { replace: true });
             return;
         }
-
-        // 🔜 ตัวอย่างโหลดข้อมูลจริง
-        // (async () => {
-        //   const { data } = await api.get(`/events/${eventId}`);
-        //   // set states จาก data
-        // })();
     }, [eventId, navigate]);
 
+    useEffect(() => {
+        if (!eventId) return;
+
+        let aborted = false;
+        (async () => {
+            try {
+                setLoading(true);
+                setError(null);
+
+                const url = buildApiUrl(`/api/organizer/events/${eventId}/dashboard`);
+                const res = await fetch(url, {
+                    method: "GET",
+                    credentials: "include",
+                    headers: getAuthHeaders(),
+                });
+
+                if (res.status === 401) {
+                    const current = encodeURIComponent(window.location.pathname + window.location.search);
+                    setError("Unauthorized (401) — ต้องลงชื่อเข้าใช้");
+                    navigate(`/login?redirect=${current}`, { replace: true });
+                    return;
+                }
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    setError(`HTTP ${res.status} ${res.statusText} - ${text || "No body"}`);
+                    setLoading(false);
+                    return;
+                }
+
+                const data: DashboardResponse = await res.json();
+                if (aborted) return;
+
+                setEventName(String(data.eventName ?? ""));
+                setAvailable(Number(data.available ?? 0));
+                setReserved(Number(data.reserved ?? 0));
+                setSold(Number(data.sold ?? 0));
+                setNetPayout(Number(data.netPayout ?? 0));
+                setTicketSoldNow(Number(data.ticketSoldNow ?? 0));
+                setTicketTarget(Number(data.ticketTarget ?? 0));
+                setRows(Array.isArray(data.rows) ? data.rows : []);
+            } catch (e: any) {
+                if (!aborted) setError(e?.message || "Failed to load dashboard");
+            } finally {
+                if (!aborted) setLoading(false);
+            }
+        })();
+
+        return () => {
+            aborted = true;
+        };
+    }, [eventId, navigate]);
+
+    // consume ?checked=<reservedId>&seatId=<seatId> -> save seat-level checked + highlight
+    useEffect(() => {
+        const cid = searchParams.get("checked");
+        const sid = searchParams.get("seatId");
+        if (!cid || !eventId) return;
+
+        const k = makeKey(cid, sid);
+        addChecked(eventId, k);
+        setCheckedSet(loadCheckedSet(eventId));
+        setHighlightKey(k);
+
+        const sp = new URLSearchParams(searchParams);
+        sp.delete("checked");
+        sp.delete("seatId");
+        setTimeout(() => setSearchParams(sp, { replace: true }), 600);
+
+        setTimeout(() => setHighlightKey(null), 8000);
+    }, [searchParams, setSearchParams, eventId]);
+
+    // filter/search
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
-        return q
-            ? MOCK_SEATS.filter(
-                (r) =>
-                    r.id.toLowerCase().includes(q) ||
-                    r.seatId.toLowerCase().includes(q) ||
-                    r.user.toLowerCase().includes(q) ||
-                    r.status.toLowerCase().includes(q)
-            )
-            : MOCK_SEATS;
-    }, [query]);
+        if (!q) return rows;
+        return rows.filter((r) => {
+            const idText = String(r.id ?? "").toLowerCase();
+            const code = String(r.reserved_code ?? "").toLowerCase();
+            const seat = String(r.seat_label ?? "").toLowerCase();
+            const user = String(r.user ?? "").toLowerCase();
+            const status = String(r.status ?? "").toLowerCase();
+            return (
+                idText.includes(q) ||
+                code.includes(q) ||
+                seat.includes(q) ||
+                user.includes(q) ||
+                status.includes(q)
+            );
+        });
+    }, [rows, query]);
 
-    const paidPct = 0;
-    const pendingPct = 0;
+    // donut: active = paid + unpaid(not expired)
+    const { paidCount, pendingCount, paidPct, pendingPct } = useMemo(() => {
+        const now = new Date();
+
+        const paid = rows.filter((r) => normalizePaid(r.status) === "COMPLETE").length;
+        const pendingActive = rows.filter(
+            (r) => normalizePaid(r.status) === "UNPAID" && !isExpiredRow(r, now)
+        ).length;
+
+        const activeTotal = paid + pendingActive;
+        const p1 = activeTotal ? Math.round((paid / activeTotal) * 100) : 0;
+        const p2 = activeTotal ? Math.round((pendingActive / activeTotal) * 100) : 0;
+
+        return { paidCount: paid, pendingCount: pendingActive, paidPct: p1, pendingPct: p2 };
+    }, [rows]);
+
+    // attendance derived (seat-level) — นับเฉพาะแถวที่เช็คอินจริง (localStorage)
+    const checkedInCount = useMemo(() => {
+        const paidRows = rows.filter((r) => normalizePaid(r.status) === "COMPLETE");
+        return paidRows.filter((r) => checkedSet.has(rowKey(r))).length;
+    }, [rows, checkedSet]);
+
+    // Undo handler (seat-level key) — ใช้ removeChecked เพื่อลด warning unused
+    function handleUndoCheckinKey(key: string) {
+        if (!eventId) return;
+        removeChecked(eventId, key);
+        setCheckedSet(loadCheckedSet(eventId));
+    }
 
     return (
         <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -77,18 +302,27 @@ export default function EventDashboard() {
 
             <main className="flex-1 p-4 md:p-8">
                 <div className="mx-auto w-full max-w-[1400px]">
-                    {/* แสดงหัวเรื่อง + event id */}
                     <div className="mb-4 text-slate-700">
-                        <div className="text-xl font-semibold">Event Dashboard</div>
+                        <div className="text-xl font-semibold">
+                            Event Dashboard{eventName ? ` — ${eventName}` : ""}
+                        </div>
                         <div className="text-sm">Event ID: <span className="font-mono">{eventId}</span></div>
                     </div>
 
+                    {error && (
+                        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+                            โหลดข้อมูลไม่สำเร็จ: {error}
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4 md:gap-6">
-                        {/* KPI cards */}
                         <div className="space-y-4">
-                            <StatCard title="Net Payout (THB)" icon={<CircleDollarSign className="w-6 h-6 text-emerald-600" />}>
+                            <StatCard
+                                title="Net Payout (THB)"
+                                icon={<CircleDollarSign className="w-6 h-6 text-emerald-600" />}
+                            >
                                 <div className="mt-2 text-2xl md:text-3xl font-bold text-slate-800">
-                                    {netPayout.toFixed(2)}
+                                    {fmtAmount(netPayout)}
                                 </div>
                             </StatCard>
 
@@ -103,14 +337,13 @@ export default function EventDashboard() {
                                 <div className="mt-2 flex flex-col items-center gap-4">
                                     <Donut value={paidPct} size={90} />
                                     <div className="w-full flex flex-col gap-2 text-sm">
-                                        <Legend colorClass="bg-emerald-500" label="Paid" value={`0(${paidPct}%)`} />
-                                        <Legend colorClass="bg-amber-400" label="Pending" value={`0(${pendingPct}%)`} />
+                                        <Legend colorClass="bg-emerald-500" label="Paid" value={`${paidCount} (${paidPct}%)`} />
+                                        <Legend colorClass="bg-amber-400" label="Pending" value={`${pendingCount} (${pendingPct}%)`} />
                                     </div>
                                 </div>
                             </StatCard>
                         </div>
 
-                        {/* Table */}
                         <section className="bg-white rounded-2xl shadow-lg border border-slate-200/50 overflow-hidden">
                             {/* Controls */}
                             <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200">
@@ -129,43 +362,173 @@ export default function EventDashboard() {
                                 </div>
                             </div>
 
-                            {/* Table content */}
+                            {/* Table */}
                             <div className="overflow-x-auto">
                                 {/* Head */}
-                                <div className="min-w-[700px] grid grid-cols-[0.7fr_0.7fr_0.7fr_0.7fr_0.7fr] px-4 md:px-6 py-3 text-[11px] md:text-xs font-bold tracking-wide uppercase text-slate-500 bg-slate-50 border-b border-slate-200">
+                                <div
+                                    className={`min-w-[900px] grid grid-cols-[0.9fr_0.8fr_0.9fr_0.5fr_1.2fr] px-4 md:px-6 py-3 text-[11px] md:text-xs font-bold tracking-wide uppercase text-slate-500 bg-slate-50 border-b border-slate-200`}
+                                >
                                     <div className="text-left">Reserve ID</div>
-                                    <div className="text-center">Seat ID</div>
-                                    <div className="text-center">Total</div>
-                                    <div className="text-center">User</div>
+                                    <div className="text-left">Seat(s)</div>
+                                    <div className="text-left">Total</div>
+                                    <div className="text-left">User</div>
                                     <div className="text-center">Status</div>
                                 </div>
 
                                 {/* Rows */}
-                                <div className="min-w-[700px] divide-y divide-slate-100">
-                                    {filtered.map((r, idx) => (
-                                        <div
-                                            key={`${r.id}-${idx}`}
-                                            className="grid grid-cols-[0.7fr_0.7fr_0.7fr_0.7fr_0.7fr] px-4 md:px-6 py-3 md:py-4 text-sm items-center hover:bg-slate-50 transition-colors"
-                                        >
-                                            <div className="truncate text-slate-700 font-mono text-medium text-left">{r.id}</div>
-                                            <div className="text-slate-800 font-semibold text-center">{r.seatId}</div>
-                                            <div className="text-slate-700 font-medium text-center">{r.total.toLocaleString()}</div>
-                                            <div className="text-slate-600 font-medium text-center">{r.user}</div>
-                                            <div className="text-center">
-                                                <StatusBadge status={r.status} />
+                                <div className="min-w-[900px] divide-y divide-slate-100">
+                                    {(loading ? Array.from({ length: 6 }) : filtered).map((r: any, idx) => {
+                                        const st = loading ? null : uiStatusOf(r);
+
+                                        const isHL =
+                                            !loading &&
+                                            highlightKey &&
+                                            rowKey(r) === highlightKey;
+
+                                        return (
+                                            <div
+                                                key={loading ? `skeleton-${idx}` : `${rowKey(r)}-${idx}`}
+                                                className={`grid grid-cols-[0.9fr_0.8fr_0.9fr_0.5fr_1.2fr] px-4 md:px-6 py-3 md:py-4 text-sm items-center hover:bg-slate-50 transition-colors ${isHL ? "bg-emerald-50/40 ring-2 ring-emerald-300/70" : ""}`}
+                                            >
+                                                {/* Reserve ID */}
+                                                <div className="truncate text-slate-700 font-mono text-medium text-left">
+                                                    {loading ? <Skeleton w={160} /> : r.reserved_code || r.id}
+                                                </div>
+
+                                                {/* Seat label */}
+                                                <div className="text-slate-800 font-medium text-left">
+                                                    {loading ? <Skeleton w={220} /> : r.seat_label || "-"}
+                                                </div>
+
+                                                {/* Total -> ใช้ unit_price ถ้ามี (ราคา/ที่นั่ง) */}
+                                                <div className="text-slate-700 font-medium text-left tabular-nums">
+                                                    {loading ? (
+                                                        <Skeleton w={90} />
+                                                    ) : (
+                                                        fmtAmount(Number((r.unit_price ?? r.total) ?? 0))
+                                                    )}
+                                                </div>
+
+                                                {/* User */}
+                                                <div className="text-slate-600 font-medium text-left">
+                                                    {loading ? <Skeleton w={100} /> : r.user || "-"}
+                                                </div>
+
+                                                {/* Status */}
+                                                <div className="text-center">
+                                                    {loading ? (
+                                                        <Skeleton w={80} h={22} rounded />
+                                                    ) : (
+                                                        <StatusBadge status={st as UiStatus} />
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </section>
                     </div>
+
+                    {/* ===== Attendance Card ===== */}
+                    <section className="mt-6 bg-white rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
+                        <div className="px-5 py-4 border-b flex items-center gap-2">
+                            <Users className="w-5 h-5 text-slate-700" />
+                            <h3 className="text-base font-semibold text-slate-800">Attendance (Check-in)</h3>
+                            <div className="ml-auto text-sm text-slate-600">
+                                Checked-in: <b>{checkedInCount}</b> / Paid:{" "}
+                                <b>{rows.filter((r) => normalizePaid(r.status) === "COMPLETE").length}</b>
+                                {"  "}
+                                <span className="text-slate-400">•</span>{" "}
+                                No-show:{" "}
+                                <b>
+                                    {Math.max(
+                                        0,
+                                        rows.filter((r) => normalizePaid(r.status) === "COMPLETE").length - checkedInCount
+                                    )}
+                                </b>
+                            </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-0">
+                            {/* Attended */}
+                            <div className="p-5 border-r md:border-r-slate-200">
+                                <div className="text-sm font-semibold text-emerald-700 mb-3">เข้าร่วมแล้ว</div>
+                                {rows
+                                    .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                    .filter((r) => checkedSet.has(rowKey(r))).length === 0 ? (
+                                    <div className="text-sm text-slate-500">ยังไม่มีผู้เข้าร่วมเช็คอิน</div>
+                                ) : (
+                                    <ul className="space-y-2">
+                                        {rows
+                                            .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                            .filter((r) => checkedSet.has(rowKey(r)))
+                                            .map((r) => (
+                                                <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
+                                                        <div className="text-xs text-slate-500">
+                                                            <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                              IN
+                            </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleUndoCheckinKey(rowKey(r))}
+                                                            className="text-xs px-2 py-1 rounded-md border bg-white hover:bg-slate-50"
+                                                            title="ยกเลิกการเช็คอิน"
+                                                        >
+                                                            Undo
+                                                        </button>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            {/* No-show (Paid but not checked-in) */}
+                            <div className="p-5">
+                                <div className="text-sm font-semibold text-amber-700 mb-3">ยังไม่เช็คอิน</div>
+                                {rows
+                                    .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                    .filter((r) => !checkedSet.has(rowKey(r))).length === 0 ? (
+                                    <div className="text-sm text-slate-500">ทุกคนที่ชำระเงินแล้วได้เช็คอินครบ</div>
+                                ) : (
+                                    <ul className="space-y-2">
+                                        {rows
+                                            .filter((r) => normalizePaid(r.status) === "COMPLETE")
+                                            .filter((r) => !checkedSet.has(rowKey(r)))
+                                            .map((r) => (
+                                                <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
+                                                        <div className="text-xs text-slate-500">
+                                                            <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                                        </div>
+                                                    </div>
+                                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                            WAIT
+                          </span>
+                                                </li>
+                                            ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </main>
         </div>
     );
 }
 
+/* =========================
+   UI helpers
+   ========================= */
 function StatCard({
                       title,
                       children,
@@ -209,17 +572,13 @@ function Badge({
     };
 
     return (
-        <span
-            className={`inline-flex items-center rounded-full border ${
-                wide ? "px-6" : "px-3 md:px-4"
-            } py-1.5 md:py-2 text-xs md:text-sm font-medium ${variants[variant]}`}
-        >
+        <span className={`inline-flex items-center rounded-full border ${wide ? "px-6" : "px-3 md:px-4"} py-1.5 md:py-2 text-xs md:text-sm font-medium ${variants[variant]}`}>
       {label}
     </span>
     );
 }
 
-function StatusBadge({ status }: { status: "COMPLETE" | "UNPAID" }) {
+function StatusBadge({ status }: { status: "COMPLETE" | "UNPAID" | "EXPIRED" }) {
     if (status === "COMPLETE") {
         return (
             <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
@@ -227,8 +586,15 @@ function StatusBadge({ status }: { status: "COMPLETE" | "UNPAID" }) {
       </span>
         );
     }
+    if (status === "EXPIRED") {
+        return (
+            <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+        EXPIRED
+      </span>
+        );
+    }
     return (
-        <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-800">
+        <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
       UNPAID
     </span>
     );
@@ -247,7 +613,7 @@ function Legend({ colorClass, label, value }: { colorClass: string; label: strin
 function Donut({ value, size = 100 }: { value: number; size?: number }) {
     const v = Math.max(0, Math.min(100, value));
     const angle = (v / 100) * 360;
-    const bg = `conic-gradient(rgb(244 114 182 / 0.35) 0deg ${angle}deg, rgb(252 231 243 / 0.6) ${angle}deg 360deg)`;
+    const bg = `conic-gradient(rgb(5 150 105 / 0.45) 0deg ${angle}deg, rgb(209 250 229 / 0.8) ${angle}deg 360deg)`;
     return (
         <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
             <div className="rounded-full" style={{ width: size, height: size, background: bg }} />

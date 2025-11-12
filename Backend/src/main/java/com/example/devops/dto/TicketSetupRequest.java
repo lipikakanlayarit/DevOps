@@ -1,43 +1,87 @@
 package com.example.devops.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
-@Getter
-@Setter
+/**
+ * Payload จาก Organizer สำหรับตั้งค่าผังที่นั่ง/โซน/ราคา
+ * รองรับ alias หลายแบบของ field ชื่อ seatRow/seatRows/rows และ seatColumn/seatColumns/cols/columns
+ */
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class TicketSetupRequest {
 
-    // จำนวนแถว (A..), จำนวนคอลัมน์ (1..)
-    private int seatRows;     // ex. 8
-    private int seatColumns;  // ex. 20
+    /** ค่ากลาง (ทั้งอีเวนต์) จำนวนแถว */
+    @JsonAlias({"seatRow", "rows"})
+    private Integer seatRows;
 
-    // อนุญาตหลายโซน (รองรับปุ่ม “+ Add Zone”)
-    private List<ZoneConfig> zones; // ex. [{code:"VIP", name:"VIP", rowStart:1, rowEnd:2, price:5000}, ...]
+    /** ค่ากลาง (ทั้งอีเวนต์) จำนวนคอลัมน์ */
+    @JsonAlias({"seatColumn", "cols", "columns"})
+    private Integer seatColumns;
 
-    // (ออปชัน) ถ้าฟอร์มส่ง zone/price เดี่ยวๆ ก็ใส่ไว้เผื่อ
-    private String zone;
-    private Double price;
+    /** รายการโซน */
+    private List<ZoneDTO> zones;
 
-    // ---- Advanced Setting (global สำหรับอีเวนต์นี้) ----
-    // ใช้เป็นค่า default ตั้งให้ทุกรายการ ticket_types ที่ถูกสร้าง/รีเจน
-    private Integer minPerOrder;   // Minimum ticket per order
-    private Integer maxPerOrder;   // Maximum ticket per order
-    private Boolean active;        // true = Available, false = Unavailable
+    /** ค่ากลาง ticket types */
+    private Integer minPerOrder;
+    private Integer maxPerOrder;
+    private Boolean active;
 
-    @Getter @Setter
-    @NoArgsConstructor @AllArgsConstructor
-    public static class ZoneConfig {
-        private String code;       // "VIP" | "STANDARD"
-        private String name;       // แสดงผล
-        private Integer rowStart;  // 1-indexed เช่น VIP ครอบคลุมแถว 1..2 (A..B)
-        private Integer rowEnd;
-        private Double price;
-        private Long ticketTypeId; // ถ้ามีเชื่อม TicketTypes
+    /** sale window */
+    @JsonAlias({"salesStartDatetime"})
+    private Instant salesStartDateTime;
+
+    @JsonAlias({"salesEndDatetime"})
+    private Instant salesEndDateTime;
+
+    // getters ชื่อเดิมที่ service เรียกใช้
+    public Instant getSalesStartDatetime() { return salesStartDateTime; }
+    public void setSalesStartDatetime(Instant v) { this.salesStartDateTime = v; }
+    public Instant getSalesEndDatetime() { return salesEndDateTime; }
+    public void setSalesEndDatetime(Instant v) { this.salesEndDateTime = v; }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ZoneDTO {
+        /** zone_id (มี = update, ไม่มี = create) */
+        private Long id;
+
+        /** โค้ดโซน เช่น VIP / REGULAR / STANDING (เก็บใน description) */
+        private String code;
+
+        /** ชื่อแสดงผล เช่น Zone A */
+        private String name;
+
+        /** ราคา */
+        private BigDecimal price;
+
+        /** ลิงก์ไป ticket_type (ถ้ามี) */
+        private Long ticketTypeId;
+
+        /** standing mode (ไม่มีเก้าอี้) - ยังคงรองรับ alias hasSeats แบบเดิม */
+        @JsonAlias({"hasSeats"})
+        private Boolean standing;
+
+        /** ลำดับแสดงผล */
+        private Integer sortOrder;
+
+        /** ขนาดต่อโซน (รองรับ alias ทุกแบบ) */
+        @JsonAlias({"seatRow", "seatRows", "rows"})
+        private Integer seatRows;
+
+        @JsonAlias({"seatColumn", "seatColumns", "cols", "columns"})
+        private Integer seatColumns;
+
+        /** helper ให้ service เรียก */
+        public Integer getRows() { return seatRows; }
+        public Integer getCols() { return seatColumns; }
     }
 }

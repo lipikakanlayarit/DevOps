@@ -1,5 +1,6 @@
 package com.example.devops.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -41,6 +42,14 @@ public class EventsNam {
     @Column(name = "end_datetime")
     private Instant endDatetime;
 
+    /* ======================== ช่วงเวลาขายบัตร ======================== */
+    @Column(name = "sales_start_datetime")
+    private Instant salesStartDatetime;
+
+    @Column(name = "sales_end_datetime")
+    private Instant salesEndDatetime;
+    /* ================================================================= */
+
     @Column(name = "venue_name", length = 200)
     private String venueName;
 
@@ -55,7 +64,9 @@ public class EventsNam {
 
     // -------- Cover image (BYTEA) --------
     @Basic(fetch = FetchType.LAZY)
+    @Lob
     @JdbcTypeCode(SqlTypes.BINARY)
+    @JsonIgnore                 // ❗ กันไม่ให้ serialize ไปเป็น JSON (และมักลดโอกาสถูก log)
     @Column(name = "cover_image", columnDefinition = "bytea")
     private byte[] cover_image;
 
@@ -65,7 +76,7 @@ public class EventsNam {
     @Column(name = "cover_updated_at")
     private Instant cover_updated_at;
 
-    // -------- Admin review fields (ใหม่) --------
+    // -------- Admin review fields --------
     @Column(name = "review")
     private String review;
 

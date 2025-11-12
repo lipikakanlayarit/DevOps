@@ -4,12 +4,12 @@ import com.example.devops.security.JwtFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,41 +31,49 @@ public class SecurityConfig {
         this.jwtFilter = jwtFilter;
     }
 
+    /** 🔓 PUBLIC chain: ไม่แนบ JwtFilter */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    @Order(1)
+    public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
         http
-                .cors(c -> c.configurationSource(corsConfigurationSource()))
+                .securityMatcher("/api/public/**",
+                        "/api/auth/login",
+                        "/api/auth/signup",
+                        "/api/auth/organizer/signup",
+                        "/api/auth/register-user",
+                        "/api/auth/register-organizer",
+                        "/actuator/health",
+                        "/swagger-ui/**",
+                        "/v3/api-docs/**",
+                        "/error",
+                        "/api/events/**" /* GET อ่านได้สาธารณะ */)
                 .csrf(csrf -> csrf.disable())
+                .cors(c -> c.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // ===== Public endpoints =====
-                        .requestMatchers(
-                                "/api/auth/login",
-                                "/api/auth/signup",
-                                "/api/auth/organizer/signup",
-                                "/api/auth/register-user",
-                                "/api/auth/register-organizer",
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/api/events/**").permitAll()
+                        .requestMatchers("/api/auth/**",
                                 "/actuator/health",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
-                                "/error"
-                        ).permitAll()
+                                "/error").permitAll()
+                        .anyRequest().permitAll()
+                );
+        return http.build();
+    }
 
-                        // OPTIONS requests (CORS preflight)
+    /** 🔐 SECURED chain: ใช้ JwtFilter */
+    @Bean
+    @Order(2)
+    public SecurityFilterChain securedChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(csrf -> csrf.disable())
+                .cors(c -> c.configurationSource(corsConfigurationSource()))
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // ===== Event endpoints =====
-                        .requestMatchers(HttpMethod.GET, "/api/events/**").permitAll() // ดึงข้อมูลอีเวนต์ได้ทุกคน
-                        .requestMatchers(HttpMethod.POST, "/api/events").hasAnyRole("ORGANIZER", "ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/events/*/tickets/setup").hasAnyRole("ORGANIZER", "ADMIN")
-
-                        // ===== Profile & Authenticated routes =====
-                        .requestMatchers("/api/auth/me").authenticated()
-                        .requestMatchers("/api/profile/**").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/profile").authenticated()
-                        .requestMatchers(HttpMethod.PUT, "/api/profile/**").authenticated()
-
-                        // ===== Default: ต้อง authenticate =====
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) -> {
@@ -74,11 +82,11 @@ public class SecurityConfig {
                     res.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"" + e.getMessage() + "\"}");
                 }));
 
-        // แนบ JWT filter ก่อน UsernamePasswordAuthenticationFilter
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
+    /** 🌐 CORS สำหรับ FE dev */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
@@ -87,8 +95,8 @@ public class SecurityConfig {
                 "http://localhost:3000",
                 "http://localhost:4173"
         ));
-        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With"));
+        cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        cfg.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","X-Requested-With","Origin"));
         cfg.setExposedHeaders(List.of("Authorization"));
         cfg.setAllowCredentials(true);
         cfg.setMaxAge(3600L);
@@ -99,9 +107,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+    public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {

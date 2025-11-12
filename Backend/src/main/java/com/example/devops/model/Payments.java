@@ -1,35 +1,40 @@
 package com.example.devops.model;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 
+@Getter @Setter
 @Entity
 @Table(name = "payments")
 public class Payments {
-  @Id
-  @GeneratedValue(strategy = GenerationType.IDENTITY)
-  @Column(name = "payment_id")
-  private Long payment_id;
 
-  @Column(name = "reserved_id")
-  private Long reserved_id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "payment_id")
+    private Long paymentId;
 
-  @Column(name = "amount")
-  private BigDecimal amount;
+    @Column(name = "reserved_id", nullable = false)
+    private Long reservedId;
 
-  @Column(name = "payment_method")
-  private String payment_method;
+    @Column(name = "amount")
+    private BigDecimal amount;
 
-  @Column(name = "transaction_id")
-  private String transaction_id;
+    @Column(name = "payment_method")
+    private String paymentMethod;
 
-  @Column(name = "payment_status")
-  private String payment_status;
+    @Column(name = "transaction_id")
+    private String transactionId;
 
-  @Column(name = "payment_datetime")
-  private Instant payment_datetime;
+    @Column(name = "payment_status")
+    private String paymentStatus;
 
-  @Column(name = "gateway_response")
-  private String gateway_response;
+    @Column(name = "gateway_response", columnDefinition = "text")
+    private String gatewayResponse;
+
+    @Column(name = "payment_datetime")
+    private Instant paymentDatetime;
 }

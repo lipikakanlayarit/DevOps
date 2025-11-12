@@ -1,7 +1,9 @@
+// src/router.tsx
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
-// Public pages
+// ---------- Public Pages ----------
+import Landing from "@/pages/Landding";            // ✅ ชื่อให้ตรงไฟล์ Landing.tsx
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import OrganizerLogin from "@/pages/OrganizerLogin";
@@ -9,22 +11,26 @@ import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
 import Forbidden from "@/pages/Forbidden";
-import Landding from "@/pages/Landding";
+import CheckinConfirmPage from "@/pages/checkin"; // ✅ Public QR check-in confirm
 
-// Protected pages
-import Profile from "@/pages/Profile";
+// ---------- Event/Ticket (ทำให้เป็น Public) ----------
 import Eventselect from "@/pages/Eventselect";
 import Eventdetail from "@/pages/Eventdetail";
 import Ticketdetail from "@/pages/Ticketdetail";
+import Payment from "@/pages/payment";            // ✅ ให้ guest ไปต่อได้
+
+// ---------- Protected Pages ----------
+import Profile from "@/pages/Profile";
 import EventDashboard from "@/pages/Eventdashboard";
 import Organizationmnge from "@/pages/Organizationmnge";
 
-// Admin pages
+// ---------- Admin Pages ----------
 import Admin from "@/pages/admin";
 import AdminEventdetail from "@/pages/admin-eventdetail";
 import EventPermission from "@/pages/admin-permission";
+import AdminUserMnge from "@/pages/admin-usermange.tsx";
 
-// Guards
+// ---------- Guards ----------
 import RequireAuth from "@/features/auth/RequireAuth";
 import RequireRole from "@/features/auth/RequireRole";
 
@@ -33,16 +39,28 @@ export const router = createBrowserRouter([
         path: "/",
         element: <RootLayout />,
         children: [
-            // ---------- Public ----------
-            { index: true, element: <Landding /> },
+            // ===== PUBLIC =====
+            { index: true, element: <Landing /> },      // ✅ หน้าแรกใช้ Landing
             { path: "home", element: <Home /> },
             { path: "login", element: <Login /> },
-            { path: "OrganizerLogin", element: <OrganizerLogin /> },
+            { path: "organizerlogin", element: <OrganizerLogin /> },
             { path: "signin", element: <SignIn /> },
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
 
-            // ---------- Auth required ----------
+            // ✅ Public check-in confirm (จาก QR)
+            { path: "checkin/:reservedId", element: <CheckinConfirmPage /> },
+
+            // ✅ PUBLIC Event/Ticket/Payment (ไม่บังคับล็อกอิน)
+            { path: "eventselect", element: <Eventselect /> },
+            { path: "eventselect/:eventId", element: <Eventselect /> },
+            { path: "eventdetail", element: <Eventdetail /> },
+            { path: "eventdetail/:eventId", element: <Eventdetail /> },
+            { path: "ticketdetail", element: <Ticketdetail /> },
+            { path: "ticketdetail/:eventId", element: <Ticketdetail /> },
+            { path: "payment/:reservedId", element: <Payment /> }, // ✅ guest ไปจ่ายได้
+
+            // ===== AUTH REQUIRED (ผู้ใช้ทั่วไป) =====
             {
                 element: (
                     <RequireAuth>
@@ -51,27 +69,13 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { path: "profile", element: <Profile /> },
-                    { path: "eventselect", element: <Eventselect /> },
-
-                    // Create Event
-                    { path: "eventdetail", element: <Eventdetail /> },
-
-                    // ✅ Edit Event (prefill from id)
-                    { path: "eventdetail/:eventId", element: <Eventdetail /> },
-
-                    // ✅ Ticket Details (prefill & update)
-                    { path: "ticketdetail/:eventId", element: <Ticketdetail /> },
-
-                    // Fallback (เดิม ถ้าเข้าโดยยังไม่มี id)
-                    { path: "ticketdetail", element: <Ticketdetail /> },
-
-                    // Event dashboard (ถ้าใช้งาน)
-                    { path: "eventdashboard/:eventId", element: <EventDashboard /> },
+                    // หมายเหตุ: EventDashboard เป็นหน้าภายในหลังล็อกอินอยู่แล้ว
                     { path: "eventdashboard", element: <EventDashboard /> },
+                    { path: "eventdashboard/:eventId", element: <EventDashboard /> },
                 ],
             },
 
-            // ---------- Organizer/ Admin ----------
+            // ===== ORGANIZER / ADMIN =====
             {
                 path: "organizationmnge",
                 element: (
@@ -81,7 +85,7 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ---------- Admin ----------
+            // ===== ADMIN SECTION =====
             {
                 path: "admin",
                 element: (
@@ -91,6 +95,7 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { index: true, element: <Admin /> },
+                    { path: "usermnge", element: <AdminUserMnge /> },
                     { path: "users", element: <div>Admin Users Management</div> },
                     { path: "settings", element: <div>Admin Settings</div> },
                     { path: "eventdetail", element: <AdminEventdetail /> },
@@ -98,7 +103,7 @@ export const router = createBrowserRouter([
                 ],
             },
 
-            // ---------- 404 ----------
+            // 404
             { path: "*", element: <NotFound /> },
         ],
     },

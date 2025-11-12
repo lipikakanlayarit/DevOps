@@ -1,30 +1,22 @@
 package com.example.devops.model;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
+@Getter @Setter
 @Entity
 @Table(name = "reserved_seats")
 public class ReservedSeats {
 
-    @EmbeddedId
-    private ReservedSeatsId id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "reserved_seat_id")
+    private Long reservedSeatId;
 
-    // ถ้าจะทำ relation mapping เพิ่มเติม:
-    // @ManyToOne
-    // @MapsId("reserved_id")
-    // @JoinColumn(name = "reserved_id", insertable = false, updatable = false)
-    // private Reserved reserved;
+    @Column(name = "reserved_id", nullable = false)
+    private Long reservedId;
 
-    // @ManyToOne
-    // @MapsId("seat_id")
-    // @JoinColumn(name = "seat_id", insertable = false, updatable = false)
-    // private Seat seat;
-
-    public ReservedSeatsId getId() {
-        return id;
-    }
-
-    public void setId(ReservedSeatsId id) {
-        this.id = id;
-    }
+    @Column(name = "seat_id", nullable = false)
+    private Long seatId;
 }

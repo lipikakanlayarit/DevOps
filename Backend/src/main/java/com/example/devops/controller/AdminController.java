@@ -10,6 +10,7 @@ import com.example.devops.repo.OrganizerRepo;
 import com.example.devops.repo.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.http.*;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -22,21 +23,28 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/admin")
 @PreAuthorize("hasRole('ADMIN')")
+@CrossOrigin(
+        origins = {"http://localhost:5173", "http://localhost:3000"},
+        allowCredentials = "true"
+)
 public class AdminController {
 
     private final UserRepository userRepo;
     private final OrganizerRepo organizerRepo;
     private final EventsNamRepository eventsRepo;
+    private final JdbcTemplate jdbcTemplate;
 
     public AdminController(UserRepository userRepo,
                            OrganizerRepo organizerRepo,
-                           EventsNamRepository eventsRepo) {
+                           EventsNamRepository eventsRepo,
+                           JdbcTemplate jdbcTemplate) {
         this.userRepo = userRepo;
         this.organizerRepo = organizerRepo;
         this.eventsRepo = eventsRepo;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
-    /* ============== USERS ============== */
+    /* ================= USERS ================= */
 
     @GetMapping("/users")
     public ResponseEntity<?> getAllUsers() {
@@ -51,29 +59,168 @@ public class AdminController {
             m.put("lastName", u.getLastName());
             m.put("phoneNumber", u.getPhoneNumber());
             m.put("idCard", u.getIdCardPassport());
+            m.put("lastLogin", null);
             return m;
         }).toList();
         return ResponseEntity.ok(Map.of("users", data, "total", data.size()));
     }
 
-    /* ============== ORGANIZERS (ย่อ) ============== */
+    /** Ticket history (Attendee) — ส่ง eventId + coverUpdatedAt และคำนวณ poster = รูปจริงจาก DB */
+    @GetMapping("/users/{id}/tickets")
+    public ResponseEntity<?> getUserTickets(@PathVariable("id") Long userId) {
+        try {
+            if (!tableExists("reservations") || !tableExists("events_nam")) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            boolean hasStatus = columnExists("reservations", "status");
+            boolean hasPaymentStatus = columnExists("reservations", "payment_status");
+            boolean hasCreatedAt = columnExists("reservations", "created_at");
+            boolean hasRegDatetime = columnExists("reservations", "registration_datetime");
+
+            // ⭐ แก้: รวม RESERVED เข้ามาด้วย
+            String paidPredicate;
+            if (hasStatus) {
+                paidPredicate = "AND UPPER(COALESCE(r.status,'')) IN ('PAID','RESERVED') ";
+            } else if (hasPaymentStatus) {
+                paidPredicate = "AND UPPER(COALESCE(r.payment_status,'')) IN ('PAID','RESERVED') ";
+            } else {
+                paidPredicate = "";
+            }
+
+            String orderBy;
+            if (hasCreatedAt && hasRegDatetime) {
+                orderBy = "ORDER BY COALESCE(r.created_at, r.registration_datetime) DESC NULLS LAST";
+            } else if (hasCreatedAt) {
+                orderBy = "ORDER BY r.created_at DESC NULLS LAST";
+            } else if (hasRegDatetime) {
+                orderBy = "ORDER BY r.registration_datetime DESC NULLS LAST";
+            } else {
+                orderBy = "ORDER BY r.reservation_id DESC";
+            }
+
+            if (!tableExists("reservation_tickets")) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            String sql = """
+                SELECT
+                  COALESCE(r.reserve_code, 'RSV-' || r.reservation_id::text)                AS "reserveId",
+                  COALESCE(e.event_name, '-')                                              AS "title",
+                  COALESCE(e.venue_name, '-')                                              AS "venue",
+                  COALESCE(to_char(e.start_datetime, 'YYYY-MM-DD HH24:MI'), '-')           AS "showDate",
+                  COALESCE(tt.type_name, '-')                                              AS "zone",
+                  COALESCE(rt.seat_row, '-')                                               AS "row",
+                  COALESCE(rt.seat_col::text, '-')                                         AS "column",
+                  COALESCE(rt.price, tt.price, 0)                                          AS "total",
+                  e.event_id                                                                AS "eventId",
+                  e.cover_updated_at                                                        AS "coverUpdatedAt"
+                FROM reservations r
+                LEFT JOIN reservation_tickets rt ON rt.reservation_id = r.reservation_id
+                LEFT JOIN ticket_types tt        ON tt.ticket_type_id = rt.ticket_type_id
+                LEFT JOIN events_nam e           ON e.event_id = COALESCE(r.event_id, tt.event_id)
+                WHERE r.user_id = ?
+                """ + paidPredicate + "\n" + orderBy + "\n, rt.reservation_ticket_id ASC NULLS LAST";
+
+            List<Map<String, Object>> data = jdbcTemplate.queryForList(sql, userId);
+
+            for (Map<String, Object> m : data) {
+                Object eid = m.get("eventId");
+                String poster = "";
+                if (eid != null) {
+                    String ver = null;
+                    Object cu = m.get("coverUpdatedAt");
+                    if (cu != null) {
+                        if (cu instanceof java.sql.Timestamp ts) ver = String.valueOf(ts.getTime());
+                        else if (cu instanceof java.time.Instant inst) ver = String.valueOf(inst.toEpochMilli());
+                        else ver = String.valueOf(cu);
+                    }
+                    poster = "/api/public/events/" + eid + "/cover" + (ver != null ? "?v=" + ver : "");
+                }
+                m.put("poster", poster);
+            }
+
+            return ResponseEntity.ok(data);
+        } catch (Exception e) {
+            return ResponseEntity.ok(List.of());
+        }
+    }
+
+    /* ================= ORGANIZERS ================= */
 
     @GetMapping("/organizers")
     public ResponseEntity<?> getAllOrganizers() {
-        List<Organizer> orgs = organizerRepo.findAll();
+        var orgs = organizerRepo.findAll();
         var data = orgs.stream().map(o -> Map.of(
                 "id", o.getId(),
-                "username", o.getUsername(),
-                "email", o.getEmail(),
-                "firstName", o.getFirstName(),
-                "lastName", o.getLastName(),
-                "companyName", o.getCompanyName(),
-                "verificationStatus", o.getVerificationStatus()
+                "username", ns(o.getUsername()),
+                "email", ns(o.getEmail()),
+                "firstName", ns(o.getFirstName()),
+                "lastName", ns(o.getLastName()),
+                "companyName", ns(o.getCompanyName()),
+                "verificationStatus", ns(o.getVerificationStatus()),
+                "phoneNumber", ns(o.getPhoneNumber()),
+                "address", ns(o.getAddress())
         )).toList();
         return ResponseEntity.ok(Map.of("organizers", data, "total", data.size()));
     }
 
-    /* ============== EVENTS (Permission List) ============== */
+    @GetMapping("/organizers/{id}")
+    public ResponseEntity<?> getOrganizerById(@PathVariable("id") Long id) {
+        return organizerRepo.findById(id)
+                .<ResponseEntity<?>>map(o -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", o.getId());
+                    m.put("companyName", ns(o.getCompanyName()));
+                    m.put("phoneNumber", ns(o.getPhoneNumber()));
+                    m.put("address", ns(o.getAddress()));
+                    m.put("email", ns(o.getEmail()));
+                    m.put("username", ns(o.getUsername()));
+                    m.put("firstName", ns(o.getFirstName()));
+                    m.put("lastName", ns(o.getLastName()));
+                    m.put("verificationStatus", ns(o.getVerificationStatus()));
+                    return ResponseEntity.ok(m);
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "organizer not found")));
+    }
+
+    @GetMapping("/organizers/{id}/events")
+    public ResponseEntity<?> getOrganizerEvents(@PathVariable("id") Long organizerId) {
+        try {
+            if (!organizerRepo.existsById(organizerId)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "organizer not found"));
+            }
+
+            List<EventsNam> events = eventsRepo.findByOrganizerIdOrderByIdDesc(organizerId);
+
+            List<Map<String, Object>> data = events.stream().map(e -> {
+                Map<String, Object> m = new HashMap<>();
+                Long eid = e.getId();
+
+                m.put("eventId", eid);
+                m.put("title", ns(e.getEventName()));
+                m.put("venue", ns(e.getVenueName()));
+                m.put("showDate", e.getStartDatetime() != null ? e.getStartDatetime().toString() : null);
+                m.put("coverUpdatedAt", e.getCover_updated_at());
+
+                String poster = "/api/public/events/" + eid + "/cover";
+                if (e.getCover_updated_at() != null) {
+                    poster += "?v=" + e.getCover_updated_at().toEpochMilli();
+                }
+                m.put("poster", poster);
+
+                return m;
+            }).toList();
+
+            return ResponseEntity.ok(data);
+        } catch (Exception e) {
+            return ResponseEntity.ok(List.of());
+        }
+    }
+
+    /* ================= EVENTS (Permission/List + detail) ================= */
 
     @GetMapping("/events")
     public ResponseEntity<?> listEventsByStatus(
@@ -90,10 +237,8 @@ public class AdminController {
             list = eventsRepo.findAllByStatus(st);
         }
 
-        // 1) map entity -> DTO (ใส่ organizerId มาแล้ว)
         List<EventResponse> body = list.stream().map(EventMapper::toDto).toList();
 
-        // 2) เติม organizerName แบบ bulk
         Set<Long> orgIds = body.stream()
                 .map(EventResponse::getOrganizerId)
                 .filter(Objects::nonNull)
@@ -102,7 +247,6 @@ public class AdminController {
         if (!orgIds.isEmpty()) {
             Map<Long, Organizer> orgMap = organizerRepo.findAllById(orgIds).stream()
                     .collect(Collectors.toMap(Organizer::getId, Function.identity()));
-
             for (EventResponse dto : body) {
                 Long oid = dto.getOrganizerId();
                 if (oid != null) {
@@ -119,6 +263,26 @@ public class AdminController {
         return ResponseEntity.ok(body);
     }
 
+    @GetMapping("/events/{id}")
+    public ResponseEntity<EventResponse> getEventById(@PathVariable Long id) {
+        return eventsRepo.findById(id)
+                .map(ev -> {
+                    var dto = EventMapper.toDto(ev);
+                    if (dto.getOrganizerId() != null) {
+                        organizerRepo.findById(dto.getOrganizerId()).ifPresent(o -> {
+                            String company = o.getCompanyName() == null ? "" : o.getCompanyName();
+                            String username = o.getUsername() == null ? "" : o.getUsername();
+                            dto.setOrganizerName(company.isBlank() ? username : company);
+                            dto.setOrganizerCompany(company.isBlank() ? username : company);
+                            dto.setOrganizerPhone(o.getPhoneNumber());
+                            dto.setOrganizerAddress(o.getAddress());
+                        });
+                    }
+                    return ResponseEntity.ok(dto);
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+    }
+
     @PostMapping("/events/{id}/approve")
     @Transactional
     public ResponseEntity<?> approve(@PathVariable("id") Long id,
@@ -127,8 +291,9 @@ public class AdminController {
         Integer adminId = extractAdminId(auth);
         String review = body == null ? null : Objects.toString(body.getOrDefault("review", null), null);
         int n = eventsRepo.approve(id, review, adminId);
-        if (n == 0) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","event not found"));
-        return ResponseEntity.ok(Map.of("message","approved","eventId", id));
+        if (n == 0)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "event not found"));
+        return ResponseEntity.ok(Map.of("message", "approved", "eventId", id));
     }
 
     @PostMapping("/events/{id}/reject")
@@ -138,19 +303,20 @@ public class AdminController {
                                     Authentication auth) {
         String review = body == null ? null : Objects.toString(body.get("review"), null);
         if (review == null || review.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("message","review is required for rejection"));
+            return ResponseEntity.badRequest().body(Map.of("message", "review is required for rejection"));
         }
         Integer adminId = extractAdminId(auth);
         int n = eventsRepo.reject(id, review, adminId);
-        if (n == 0) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","event not found"));
-        return ResponseEntity.ok(Map.of("message","rejected","eventId", id));
+        if (n == 0)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "event not found"));
+        return ResponseEntity.ok(Map.of("message", "rejected", "eventId", id));
     }
 
     @GetMapping("/events/{id}/review")
     public ResponseEntity<?> getReview(@PathVariable("id") Long id) {
         return eventsRepo.findById(id)
                 .<ResponseEntity<?>>map(e -> {
-                    Map<String,Object> m = new HashMap<>();
+                    Map<String, Object> m = new HashMap<>();
                     m.put("eventId", e.getId());
                     m.put("status", e.getStatus());
                     m.put("review", e.getReview());
@@ -166,10 +332,9 @@ public class AdminController {
                     }
                     return ResponseEntity.ok(m);
                 })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message","event not found")));
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "event not found")));
     }
-
-    /* ============== COVER IMAGE ============== */
 
     @GetMapping("/events/{id}/cover")
     public ResponseEntity<byte[]> getEventCover(@PathVariable("id") Long id) {
@@ -177,7 +342,8 @@ public class AdminController {
         if (opt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         var e = opt.get();
         byte[] bytes = e.getCover_image();
-        if (bytes == null || bytes.length == 0) return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        if (bytes == null || bytes.length == 0)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(
@@ -186,11 +352,36 @@ public class AdminController {
         return new ResponseEntity<>(bytes, headers, HttpStatus.OK);
     }
 
-    /* ============== UTIL ============== */
+    /* ================= UTIL ================= */
 
     private Integer extractAdminId(Authentication auth) {
-        // TODO: map JWT จริง
+        // TODO: map JWT จริงจาก token
         return 1;
     }
+
     private static String ns(String s) { return s == null ? "" : s; }
+
+    private boolean tableExists(String table) {
+        String sql = """
+            SELECT EXISTS (
+              SELECT 1
+              FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=?
+            )
+            """;
+        Boolean ok = jdbcTemplate.queryForObject(sql, Boolean.class, table);
+        return Boolean.TRUE.equals(ok);
+    }
+
+    private boolean columnExists(String table, String column) {
+        String sql = """
+            SELECT EXISTS (
+              SELECT 1
+              FROM information_schema.columns
+              WHERE table_schema='public' AND table_name=? AND column_name=?
+            )
+            """;
+        Boolean ok = jdbcTemplate.queryForObject(sql, Boolean.class, table, column);
+        return Boolean.TRUE.equals(ok);
+    }
 }

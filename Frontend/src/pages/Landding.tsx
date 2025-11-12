@@ -1,3 +1,4 @@
+// src/pages/Landing.tsx
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -22,120 +23,244 @@ import poster7 from "@/assets/poster7.png";
 import poster8 from "@/assets/poster8.png";
 
 type Poster = { dateLabel: string; title: string; imageUrl: string };
-type EventItem = {
+
+type EventCardApi = {
+    id: number;
+    eventName: string;
+    categoryId?: number | null;
+    salesStartDatetime?: string | null;
+    salesEndDatetime?: string | null;
+    coverUrl?: string | null;
+    venueName?: string | null;
+};
+
+type Effective = "ONSALE" | "OFFSALE" | "UPCOMING";
+
+type EventItemUI = {
+    id: number;
     cover: string;
     dateRange: string;
     title: string;
     venue: string;
     category: string;
+    effectiveStatus: Effective;
 };
 
 const posters = [poster1, poster2, poster3, poster4, poster5, poster6, poster7, poster8];
 
 export const posterData: Poster[] = [
     { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[0] },
-    { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[1] },
     { dateLabel: "[2025.07.27]", title: "THE RIVER BROS", imageUrl: posters[2] },
     { dateLabel: "[2025.07.27]", title: "CREATIVE POSTER EXHIBITION", imageUrl: posters[3] },
     { dateLabel: "[2025.07.27]", title: "ROBERT BALTAZAR TRIO", imageUrl: posters[4] },
-    { dateLabel: "[2025.07.27]", title: "VICTIM by ...", imageUrl: posters[5] },
-    { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[6] },
     { dateLabel: "[2025.07.27]", title: "IN RIVER DANCE", imageUrl: posters[7] },
 ];
 
-export const eventData: EventItem[] = [
-    { cover: posters[1], dateRange: "22 Mar - 30 Mar", title: "ROBERT BALTAZAR TRIO THE CONCERT", venue: "Paragon hall", category: "Concert" },
-    { cover: posters[0], dateRange: "22 Mar - 30 Mar", title: "ROBERT BALTAZAR TRIO THE CONCERT", venue: "Paragon hall", category: "Concert" },
-    { cover: posters[2], dateRange: "22 Mar - 30 Mar", title: "THE RIVER BROS", venue: "Paragon hall", category: "Concert" },
-    { cover: posters[4], dateRange: "22 Mar - 30 Mar", title: "ROBERT BALTAZAR TRIO THE CONCERT", venue: "Paragon hall", category: "Concert" },
-    { cover: posters[5], dateRange: "22 Mar - 30 Mar", title: "MIDNIGHT RAVE PARTY", venue: "Paragon hall", category: "Concert" },
-    { cover: posters[6], dateRange: "22 Mar - 30 Mar", title: "THE SHAPE OF THINGS", venue: "Paragon hall", category: "Exhibition" },
-    { cover: posters[3], dateRange: "26.10.24", title: "THE ART HOUSE 4", venue: "Paragon hall", category: "Exhibition" },
-    { cover: posters[7], dateRange: "22 Mar - 30 Mar", title: "IN RIVER DANCE", venue: "Paragon hall", category: "Seminar" },
-    { cover: posters[3], dateRange: "15 Apr - 20 Apr", title: "TECH SUMMIT 2025", venue: "Queen Sirikit Convention Center", category: "Seminar" },
-    { cover: posters[4], dateRange: "01 May - 31 May", title: "ART GALLERY SHOWCASE", venue: "Bangkok Art Center", category: "Exhibition" },
-    { cover: posters[0], dateRange: "10 Jun - 12 Jun", title: "JAZZ FESTIVAL", venue: "Impact Arena", category: "Concert" },
-    { cover: posters[1], dateRange: "20 Jun - 25 Jun", title: "BUSINESS CONFERENCE", venue: "Centara Grand", category: "Seminar" },
-];
-
+// ===== Helpers =====
 function useDebounced<T>(value: T, delay = 300) {
     const [debouncedValue, setDebouncedValue] = useState(value);
-
     useEffect(() => {
-        const handler = setTimeout(() => {
-            setDebouncedValue(value);
-        }, delay);
-
-        return () => {
-            clearTimeout(handler);
-        };
+        const h = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(h);
     }, [value, delay]);
-
     return debouncedValue;
 }
 
-export default function HomePage() {
+function fmtRange(start?: string | null, end?: string | null) {
+    if (!start || !end) return "-";
+    const s = new Date(start);
+    const e = new Date(end);
+    const f = new Intl.DateTimeFormat("th-TH", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    });
+    return `${f.format(s)} – ${f.format(e)}`;
+}
+
+function categoryLabelFromId(catId?: number | null): string {
+    if (catId == null) return "Other";
+    const map: Record<number, string> = { 1: "Concert", 2: "Seminar", 3: "Exhibition" };
+    return map[catId] ?? "Other";
+}
+
+const coverOrFallback = (url?: string | null) => (url && url.length > 0 ? url : poster1);
+
+/** ✅ คำนวณสถานะจากช่วงขาย
+ *  - ONSALE   : now อยู่ระหว่าง start..end
+ *  - UPCOMING : now < start   (ไม่จำกัด 7 วัน)
+ *  - OFFSALE  : อื่น ๆ
+ */
+function computeEffectiveStatus(start?: string | null, end?: string | null): Effective {
+    if (!start || !end) return "OFFSALE";
+    const now = Date.now();
+    const s = +new Date(start);
+    const e = +new Date(end);
+    if (now >= s && now <= e) return "ONSALE";
+    if (now < s) return "UPCOMING";
+    return "OFFSALE";
+}
+
+/** รวม array ตาม id — ของหลังทับของก่อน */
+function mergeUniqueById(a: EventCardApi[], b: EventCardApi[]): EventCardApi[] {
+    const map = new Map<number, EventCardApi>();
+    for (const x of a) map.set(x.id, x);
+    for (const x of b) map.set(x.id, x);
+    return Array.from(map.values());
+}
+
+// ===== Mock Events ===== (ให้เป็น UPCOMING ไว้โชว์ layout เฉย ๆ)
+const mockEvents: EventItemUI[] = Array.from({ length: 24 }).map((_, i) => {
+    const p = posters[i % posters.length];
+    return {
+        id: -(i + 1),
+        cover: p,
+        dateRange: "01 ม.ค. 2025 – 31 ม.ค. 2025",
+        title: `Mock Event #${i + 1}`,
+        venue: ["MCC Hall", "Impact Arena", "BITEC", "ICONSIAM Hall"][i % 4],
+        category: ["Concert", "Seminar", "Exhibition"][i % 3],
+        effectiveStatus: "UPCOMING",
+    };
+});
+
+function mergeWithMocks(realItems: EventItemUI[], mocks: EventItemUI[], maxCount = 40): EventItemUI[] {
+    const seen = new Set<number>();
+    const out: EventItemUI[] = [];
+    for (const it of realItems) {
+        if (!seen.has(it.id)) {
+            out.push(it);
+            seen.add(it.id);
+        }
+    }
+    for (const it of mocks) {
+        if (out.length >= maxCount) break;
+        if (!seen.has(it.id)) {
+            out.push(it);
+            seen.add(it.id);
+        }
+    }
+    return out;
+}
+
+export default function LandingPage() {
+    const navigate = useNavigate();
+
+    // UI states
     const [searchQuery, setSearchQuery] = useState("");
-    const [eventFilter, setEventFilter] = useState("All");
-    const [isAnimationPaused, setIsAnimationPaused] = useState(false);
-
     const debouncedSearchQuery = useDebounced(searchQuery, 300);
+    const [eventFilter, setEventFilter] = useState("All");
+    const INITIAL_COUNT = 10;
+    const LOAD_STEP = 10;
+    const [visibleCount, setVisibleCount] = useState(INITIAL_COUNT);
 
+    // marquee states
     const DRAG_THRESHOLD = 6;
     const [isDragging, setIsDragging] = useState(false);
     const [isPointerDown, setIsPointerDown] = useState(false);
+    const [isAnimationPaused, setIsAnimationPaused] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
-
-    const INITIAL_COUNT = 5;
-    const LOAD_STEP = 5;
-    const [visibleCount, setVisibleCount] = useState(INITIAL_COUNT);
-
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const navigate = useNavigate();
 
+    // countdown mock
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + 10);
     targetDate.setHours(12, 56, 25, 0);
 
+    // Data from API
+    const [rawEvents, setRawEvents] = useState<EventCardApi[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [err, setErr] = useState<string | null>(null);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                setLoading(true);
+                setErr(null);
+
+                // โหลดทั้ง onSale และ upcoming แล้วรวม
+                const [r1, r2] = await Promise.all([
+                    fetch("/api/public/events/landing?section=onSale"),
+                    fetch("/api/public/events/landing?section=upcoming"),
+                ]);
+
+                if (!r1.ok) throw new Error(`HTTP ${r1.status} (onSale)`);
+                if (!r2.ok) throw new Error(`HTTP ${r2.status} (upcoming)`);
+
+                const d1: EventCardApi[] = await r1.json();
+                const d2: EventCardApi[] = await r2.json();
+
+                setRawEvents(mergeUniqueById(d1, d2));
+            } catch (e: any) {
+                setErr(e?.message ?? "Load failed");
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, []);
+
+    // map real -> UI + คำนวณสถานะ + ตัด OFFSALE ออก
+    const realUI: EventItemUI[] = useMemo(() => {
+        const mapped = (rawEvents ?? []).map((e) => {
+            const eff = computeEffectiveStatus(e.salesStartDatetime ?? null, e.salesEndDatetime ?? null);
+            return {
+                id: e.id,
+                cover: coverOrFallback(e.coverUrl),
+                dateRange: fmtRange(e.salesStartDatetime ?? null, e.salesEndDatetime ?? null),
+                title: e.eventName,
+                venue: e.venueName ?? "-",
+                category: categoryLabelFromId(e.categoryId ?? null),
+                effectiveStatus: eff,
+            } as EventItemUI;
+        });
+        // **ไม่แสดง OFFSALE บนหน้า Landing**
+        return mapped.filter((m) => m.effectiveStatus !== "OFFSALE");
+    }, [rawEvents]);
+
+    // ผสม mock (ของจริงมาก่อน)
+    const uiEventsAll: EventItemUI[] = useMemo(() => mergeWithMocks(realUI, mockEvents, 60), [realUI]);
+
+    // หมวดหมู่ dynamic
+    const dynamicCategories = useMemo(() => {
+        const set = new Set<string>();
+        uiEventsAll.forEach((ev) => set.add(ev.category));
+        const cats = Array.from(set);
+        cats.sort();
+        return ["All", ...cats];
+    }, [uiEventsAll]);
+
+    // ฟิลเตอร์ + ค้นหา
     const filteredEvents = useMemo(() => {
-        let filtered = eventData;
+        let filtered = uiEventsAll;
 
         if (eventFilter !== "All") {
-            filtered = filtered.filter(event => event.category === eventFilter);
+            filtered = filtered.filter((e) => e.category === eventFilter);
         }
-
         if (debouncedSearchQuery.trim()) {
-            const searchTerm = debouncedSearchQuery.toLowerCase().trim();
-            filtered = filtered.filter(event =>
-                event.title.toLowerCase().includes(searchTerm) ||
-                event.venue.toLowerCase().includes(searchTerm) ||
-                event.category.toLowerCase().includes(searchTerm)
+            const q = debouncedSearchQuery.toLowerCase().trim();
+            filtered = filtered.filter(
+                (e) =>
+                    e.title.toLowerCase().includes(q) ||
+                    e.venue.toLowerCase().includes(q) ||
+                    e.category.toLowerCase().includes(q)
             );
         }
-
         return filtered;
-    }, [eventFilter, debouncedSearchQuery]);
+    }, [uiEventsAll, eventFilter, debouncedSearchQuery]);
 
+    // reset visible
     useEffect(() => {
         setVisibleCount(INITIAL_COUNT);
     }, [eventFilter, debouncedSearchQuery]);
 
     const scrollToEventsSection = () => {
-        const eventsSection = document.getElementById("events-section");
-        if (eventsSection) eventsSection.scrollIntoView({ behavior: "smooth" });
+        const el = document.getElementById("events-section");
+        if (el) el.scrollIntoView({ behavior: "smooth" });
     };
 
-    const navigateToLogin = () => {
-        navigate("/login");
-    };
-
-    const eventFilterOptions = [
-        { label: "All", value: "All" },
-        { label: "Concert", value: "Concert" },
-        { label: "Seminar", value: "Seminar" },
-        { label: "Exhibition", value: "Exhibition" },
-    ];
-
+    // marquee handlers
     const handleMouseDown = (e: React.MouseEvent) => {
         if (!scrollContainerRef.current) return;
         setIsPointerDown(true);
@@ -143,32 +268,26 @@ export default function HomePage() {
         setIsAnimationPaused(true);
         setDragStart({ x: e.pageX, scrollLeft: scrollContainerRef.current.scrollLeft });
     };
-
     const handleMouseMove = (e: React.MouseEvent) => {
         if (!isPointerDown || !scrollContainerRef.current) return;
         const dx = Math.abs(e.pageX - dragStart.x);
-        if (!isDragging && dx > DRAG_THRESHOLD) {
-            setIsDragging(true);
-        }
+        if (!isDragging && dx > DRAG_THRESHOLD) setIsDragging(true);
         if (isDragging) {
             e.preventDefault();
             const walk = (e.pageX - dragStart.x) * 2;
             scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - walk;
         }
     };
-
     const handleMouseUp = () => {
         setIsPointerDown(false);
         setIsDragging(false);
         setTimeout(() => setIsAnimationPaused(false), 300);
     };
-
     const handleMouseLeave = () => {
         setIsPointerDown(false);
         setIsDragging(false);
         setTimeout(() => setIsAnimationPaused(false), 300);
     };
-
     const handleTouchStart = (e: React.TouchEvent) => {
         if (!scrollContainerRef.current) return;
         setIsPointerDown(true);
@@ -176,19 +295,15 @@ export default function HomePage() {
         setIsAnimationPaused(true);
         setDragStart({ x: e.touches[0].clientX, scrollLeft: scrollContainerRef.current.scrollLeft });
     };
-
     const handleTouchMove = (e: React.TouchEvent) => {
         if (!isPointerDown || !scrollContainerRef.current) return;
         const dx = Math.abs(e.touches[0].clientX - dragStart.x);
-        if (!isDragging && dx > DRAG_THRESHOLD) {
-            setIsDragging(true);
-        }
+        if (!isDragging && dx > DRAG_THRESHOLD) setIsDragging(true);
         if (isDragging) {
             const walk = (e.touches[0].clientX - dragStart.x) * 2;
             scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - walk;
         }
     };
-
     const handleTouchEnd = () => {
         setIsPointerDown(false);
         setIsDragging(false);
@@ -209,29 +324,16 @@ export default function HomePage() {
         return () => container.removeEventListener("scroll", handleScroll);
     }, []);
 
+    const firstEventId = filteredEvents.find((e) => e.id > 0)?.id ?? realUI[0]?.id;
+
     return (
         <>
             <style>{`
-        @keyframes scroll-infinite {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-scroll-infinite {
-          animation: scroll-infinite 30s linear infinite;
-        }
-        .animate-scroll-infinite.paused {
-          animation-play-state: paused;
-        }
-        .poster-container {
-          padding: 15px 10px;
-          user-select: none;
-        }
-        .draggable-container {
-          cursor: grab;
-          overflow-x: auto;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
+        @keyframes scroll-infinite { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .animate-scroll-infinite { animation: scroll-infinite 30s linear infinite; }
+        .animate-scroll-infinite.paused { animation-play-state: paused; }
+        .poster-container { padding: 15px 10px; user-select: none; }
+        .draggable-container { cursor: grab; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
         .draggable-container::-webkit-scrollbar { display: none; }
         .draggable-container.dragging { cursor: grabbing; }
         .draggable-container.dragging * { pointer-events: none; }
@@ -241,9 +343,7 @@ export default function HomePage() {
                 {/* Hero */}
                 <section className="px-6 py-16">
                     <div className="text-center mb-5">
-                        <h1 className="text-[min(9vw,200px)] font-extrabold leading-tight">
-                            LIVE THE VIBE ON
-                        </h1>
+                        <h1 className="text-[min(9vw,200px)] font-extrabold leading-tight">LIVE THE VIBE ON</h1>
                         <div className="flex justify-center gap-4 mb-12 pt-8">
                             <PrimaryButton onClick={scrollToEventsSection} className="px-8 py-3">
                                 ALL EVENT
@@ -267,7 +367,7 @@ export default function HomePage() {
                             onTouchEnd={handleTouchEnd}
                             style={{ margin: "20px 0" }}
                         >
-                            <div className={`flex gap-4 ${isAnimationPaused ? "animate-scroll-infinite paused" : "animate-scroll-infinite"}`}>
+                            <div className={`${isAnimationPaused ? "animate-scroll-infinite paused" : "animate-scroll-infinite"} flex gap-4`}>
                                 {[...posterData, ...posterData, ...posterData].map((poster, index) => (
                                     <div key={`poster-${index}`} className="flex-shrink-0 poster-container">
                                         <div className="transition-transform duration-300 hover:scale-105 will-change-transform">
@@ -275,7 +375,10 @@ export default function HomePage() {
                                                 dateLabel={poster.dateLabel}
                                                 title={poster.title}
                                                 imageUrl={poster.imageUrl}
-                                                onClick={() => !isDragging && navigate("/eventselect")}
+                                                onClick={() =>
+                                                    !isDragging &&
+                                                    (firstEventId ? navigate(`/eventselect/${firstEventId}`) : scrollToEventsSection())
+                                                }
                                             />
                                         </div>
                                     </div>
@@ -288,24 +391,25 @@ export default function HomePage() {
                 {/* Countdown */}
                 <CountdownTimer targetDate={targetDate} />
 
-                {/* Featured Event */}
-                <section data-testid="featured-event" className="bg-[#1D1D1D] text-white py-12 px-6">
+                {/* Featured */}
+                <section className="bg-[#1D1D1D] text-white py-12 px-6">
                     <div className="max-w-6xl mx-auto">
                         <div className="grid md:grid-cols-2 gap-8 items-center">
                             <div>
-                                <img src={poster1} alt="Robert Baltazar Trio" className="w-full max-w-md mx-auto rounded-lg" />
+                                <img src={poster1} alt="Featured" className="w-full max-w-md mx-auto rounded-lg" />
                             </div>
                             <div>
-                                <div className="text-[clamp(16px,3vw,20px)] font-bold text-white mb-2">
-                                    2024.03.22
-                                </div>
+                                <div className="text-[clamp(16px,3vw,20px)] font-bold text-white mb-2">2024.03.22</div>
                                 <h2 className="text-[clamp(28px,6vw,48px)] font-extrabold text-[#FA3A2B] mb-4">
                                     ROBERT<br />BALTAZAR TRIO
                                 </h2>
-                                <p className="text-gray-300 mb-6 leading-relaxed">
-                                    Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book.
-                                </p>
-                                <PrimaryButton to="/eventselect" className="px-8 py-3">VIEW</PrimaryButton>
+                                <p className="text-gray-300 mb-6 leading-relaxed">Lorem Ipsum is simply dummy text...</p>
+                                <PrimaryButton
+                                    onClick={() => (firstEventId ? navigate(`/eventselect/${firstEventId}`) : scrollToEventsSection())}
+                                    className="px-8 py-3"
+                                >
+                                    VIEW
+                                </PrimaryButton>
                             </div>
                         </div>
                     </div>
@@ -318,7 +422,7 @@ export default function HomePage() {
                             <span className="text-[#FA3A2B]">ALL</span> VIBE LONG <span className="text-[#FA3A2B]">STAGE</span> ON FIRE
                         </h2>
 
-                        {/* Toolbar: Search and Filter */}
+                        {/* Toolbar */}
                         <div className="flex flex-col items-center gap-3 mb-8">
                             <SearchBar
                                 value={searchQuery}
@@ -330,84 +434,60 @@ export default function HomePage() {
                             />
                             <div className="w-full flex justify-center">
                                 <CategoryRadio
-                                    options={eventFilterOptions}
+                                    options={dynamicCategories.map((c) => ({ label: c, value: c }))}
                                     value={eventFilter}
                                     onChange={setEventFilter}
                                 />
                             </div>
                         </div>
 
-                        {/* Search Results Summary */}
-                        {(debouncedSearchQuery.trim() || eventFilter !== "All") && (
-                            <div className="mb-6 text-center">
-                                <p className="text-gray-600">
-                                    {filteredEvents.length > 0
-                                        ? `Found ${filteredEvents.length} event${filteredEvents.length > 1 ? 's' : ''}`
-                                        : 'No events found'
-                                    }
-                                    {debouncedSearchQuery.trim() && (
-                                        <span> for "<strong>{debouncedSearchQuery}</strong>"</span>
-                                    )}
-                                    {eventFilter !== "All" && (
-                                        <span> in <strong>{eventFilter}</strong> category</span>
-                                    )}
-                                </p>
+                        {/* states */}
+                        {loading && <div className="text-center text-gray-500 py-10">กำลังโหลดรายการอีเวนต์...</div>}
+                        {err && <div className="text-center text-red-600 py-10">โหลดล้มเหลว: {err}</div>}
+
+                        {/* Event Cards */}
+                        {!loading && !err && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 justify-items-center">
+                                {filteredEvents.length > 0 ? (
+                                    filteredEvents.slice(0, visibleCount).map((event) => (
+                                        <EventCard
+                                            key={event.id}
+                                            cover={event.cover}
+                                            dateRange={event.dateRange}
+                                            title={event.title}
+                                            venue={event.venue}
+                                            effectiveStatus={event.effectiveStatus}
+                                            onClickGetTicket={() => (event.id > 0 ? navigate(`/eventselect/${event.id}`) : undefined)}
+                                        />
+                                    ))
+                                ) : (
+                                    <div className="col-span-full text-center py-12">
+                                        <h3 className="text-lg font-medium text-gray-900 mb-2">No events found</h3>
+                                        <p className="text-gray-500 mb-4">Try adjusting your search terms or filters.</p>
+                                        <button
+                                            onClick={() => {
+                                                setSearchQuery("");
+                                                setEventFilter("All");
+                                            }}
+                                            className="text-[#FA3A2B] hover:text-[#e8342a] font-medium"
+                                        >
+                                            Clear all filters
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        {/* Event Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 justify-items-center">
-                            {filteredEvents.length > 0 ? (
-                                filteredEvents.slice(0, visibleCount).map((event, index) => (
-                                    <EventCard
-                                        key={`${event.title}-${index}`}
-                                        cover={event.cover}
-                                        dateRange={event.dateRange}
-                                        title={event.title}
-                                        venue={event.venue}
-                                        onClick={() => navigate("/eventselect")}
-                                    />
-                                ))
-                            ) : (
-                                <div className="col-span-full text-center py-12">
-                                    <div className="text-gray-400 mb-4">
-                                        <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                    </div>
-                                    <h3 className="text-lg font-medium text-gray-900 mb-2">No events found</h3>
-                                    <p className="text-gray-500 mb-4">
-                                        Try adjusting your search terms or filters to find more events.
-                                    </p>
-                                    <button
-                                        onClick={() => {
-                                            setSearchQuery("");
-                                            setEventFilter("All");
-                                        }}
-                                        className="text-[#FA3A2B] hover:text-[#e8342a] font-medium"
-                                    >
-                                        Clear all filters
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Show More/Less Button */}
-                        {filteredEvents.length > INITIAL_COUNT && (
+                        {/* Show More/Less */}
+                        {!loading && !err && filteredEvents.length > 0 && (
                             <div className="text-center mt-12">
                                 {visibleCount < filteredEvents.length ? (
-                                    <OutlineButton
-                                        onClick={() => setVisibleCount(filteredEvents.length)}
-                                    >
+                                    <OutlineButton onClick={() => setVisibleCount((n) => Math.min(n + LOAD_STEP, filteredEvents.length))}>
                                         Show more ({filteredEvents.length - visibleCount} remaining)
                                     </OutlineButton>
-                                ) : (
-                                    <OutlineButton
-                                        onClick={() => setVisibleCount(INITIAL_COUNT)}
-                                    >
-                                        Show less
-                                    </OutlineButton>
-                                )}
+                                ) : filteredEvents.length > INITIAL_COUNT ? (
+                                    <OutlineButton onClick={() => setVisibleCount(INITIAL_COUNT)}>Show less</OutlineButton>
+                                ) : null}
                             </div>
                         )}
                     </div>
