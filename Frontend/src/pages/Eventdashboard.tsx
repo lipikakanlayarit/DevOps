@@ -1,3 +1,4 @@
+// src/pages/eventdashboard.tsx
 "use client";
 
 import type React from "react";
@@ -5,22 +6,26 @@ import { useMemo, useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Sidebar } from "@/components/sidebarorg";
 import { Input } from "@/components/inputtxt";
-import { Search, CircleDollarSign, Ticket } from "lucide-react";
+import { Search, CircleDollarSign, Ticket, Users } from "lucide-react";
 
 /* =========================
    Types for real dashboard
    ========================= */
 type ReservationRow = {
-    id: number | string;
+    id: number | string;           // reserved_id (หรือ reserved_seat_id ก็ได้ถ้าหลังบ้านเปลี่ยน)
     reserved_code: string | null;
     status: string;                // PAID/UNPAID (raw from backend)
-    total: number;
+    total: number;                 // fallback ถ้าไม่ส่ง unit_price
     payment_method?: string | null;
-    user: string;
+    user: string;                  // ชื่อ/ยูส จากหลังบ้าน
     date?: string;                 // 'DD Mon YYYY'
-    seat_label: string;
-    registration_ts?: string;      // ISO datetime from backend
-    expire_at?: string;            // ISO datetime from backend (LEAST(registration+5m, sales_end))
+    seat_label: string;            // ex. "supervip A1"
+    registration_ts?: string;      // ISO datetime
+    expire_at?: string;            // ISO datetime
+
+    // seat-level
+    seat_id?: number | string;     // 👈 ระบุที่นั่ง
+    unit_price?: number;           // 👈 ราคา/ที่นั่ง (โซน)
 };
 
 type DashboardResponse = {
@@ -68,30 +73,66 @@ function buildApiUrl(path: string): string {
     return path;
 }
 
-// Expanded normalize for UI badge
+/* === Local attendance store (per event, seat-level) === */
+const checkedKey = (eventId: string | number) => `evt:${eventId}:checked:v2`;
+
+// คีย์ต่อแถว (seat-level ถ้ามี seat_id)
+function rowKey(r: ReservationRow): string {
+    const rid = String(r.id ?? "");
+    const sid = r.seat_id != null ? String(r.seat_id) : "";
+    return sid ? `${rid}:${sid}` : rid;
+}
+
+// คีย์จาก reservedId + seatId ใน query
+function makeKey(reservedId?: string | number | null, seatId?: string | number | null): string {
+    const rid = reservedId != null ? String(reservedId) : "";
+    const sid = seatId != null ? String(seatId) : "";
+    return sid ? `${rid}:${sid}` : rid;
+}
+
+function loadCheckedSet(eventId: string | number): Set<string> {
+    try {
+        const raw = localStorage.getItem(checkedKey(eventId));
+        if (!raw) return new Set();
+        const arr = JSON.parse(raw) as string[];
+        return new Set(arr.map(String));
+    } catch {
+        return new Set();
+    }
+}
+function addChecked(eventId: string | number, key: string) {
+    const k = checkedKey(eventId);
+    const set = loadCheckedSet(eventId);
+    set.add(key);
+    localStorage.setItem(k, JSON.stringify(Array.from(set)));
+}
+function removeChecked(eventId: string | number, key: string) {
+    const k = checkedKey(eventId);
+    const set = loadCheckedSet(eventId);
+    set.delete(key);
+    localStorage.setItem(k, JSON.stringify(Array.from(set)));
+}
+
+/* Expanded normalize for UI badge */
 type UiStatus = "COMPLETE" | "UNPAID" | "EXPIRED";
 function normalizePaid(raw: string): "COMPLETE" | "UNPAID" {
     const s = String(raw || "").trim().toUpperCase();
     return s === "PAID" ? "COMPLETE" : "UNPAID";
 }
-
 function isExpiredRow(r: ReservationRow, now = new Date()): boolean {
-    if (!r.expire_at) return false; // ถ้าไม่มีข้อมูล ให้นับว่ายังไม่หมดเวลา
+    if (!r.expire_at) return false;
     const ex = new Date(r.expire_at);
     return ex.getTime() <= now.getTime();
 }
-
 function uiStatusOf(r: ReservationRow, now = new Date()): UiStatus {
     const paidOrUnpaid = normalizePaid(r.status);
     if (paidOrUnpaid === "COMPLETE") return "COMPLETE";
     return isExpiredRow(r, now) ? "EXPIRED" : "UNPAID";
 }
-
 function fmtAmount(n: number): string {
     if (!isFinite(n)) return "0.00";
     return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
 function Skeleton({ w = 120, h = 16, rounded = false }: { w?: number; h?: number; rounded?: boolean }) {
     return (
         <span
@@ -106,7 +147,7 @@ function Skeleton({ w = 120, h = 16, rounded = false }: { w?: number; h?: number
    ========================= */
 export default function EventDashboard() {
     const { eventId: eventIdParam } = useParams<{ eventId?: string }>();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
 
     const eventId = eventIdParam ?? searchParams.get("eventId") ?? "";
@@ -125,6 +166,10 @@ export default function EventDashboard() {
 
     const [rows, setRows] = useState<ReservationRow[]>([]);
     const [query, setQuery] = useState("");
+
+    // attendance + highlight
+    const [checkedSet, setCheckedSet] = useState<Set<string>>(() => loadCheckedSet(eventId || "0"));
+    const [highlightKey, setHighlightKey] = useState<string | null>(null);
 
     const GRID_COLS = "grid-cols-[0.9fr_0.8fr_0.9fr_0.5fr_1.2fr]";
 
@@ -160,7 +205,9 @@ export default function EventDashboard() {
 
                 if (!res.ok) {
                     const text = await res.text();
-                    throw new Error(`HTTP ${res.status} ${res.statusText} - ${text || "No body"}`);
+                    setError(`HTTP ${res.status} ${res.statusText} - ${text || "No body"}`);
+                    setLoading(false);
+                    return;
                 }
 
                 const data: DashboardResponse = await res.json();
@@ -186,6 +233,25 @@ export default function EventDashboard() {
         };
     }, [eventId, navigate]);
 
+    // consume ?checked=<reservedId>&seatId=<seatId> -> save seat-level checked + highlight
+    useEffect(() => {
+        const cid = searchParams.get("checked");
+        const sid = searchParams.get("seatId");
+        if (!cid || !eventId) return;
+
+        const k = makeKey(cid, sid);
+        addChecked(eventId, k);
+        setCheckedSet(loadCheckedSet(eventId));
+        setHighlightKey(k);
+
+        const sp = new URLSearchParams(searchParams);
+        sp.delete("checked");
+        sp.delete("seatId");
+        setTimeout(() => setSearchParams(sp, { replace: true }), 600);
+
+        setTimeout(() => setHighlightKey(null), 8000);
+    }, [searchParams, setSearchParams, eventId]);
+
     // filter/search
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -206,7 +272,7 @@ export default function EventDashboard() {
         });
     }, [rows, query]);
 
-    // ✅ โดนัท: ไม่นับ EXPIRED เป็นตัวหาร (นับเฉพาะ Paid + Pending ที่ยังไม่หมดเวลา)
+    // donut: active = paid + unpaid(not expired)
     const { paidCount, pendingCount, paidPct, pendingPct } = useMemo(() => {
         const now = new Date();
 
@@ -215,12 +281,31 @@ export default function EventDashboard() {
             (r) => normalizePaid(r.status) === "UNPAID" && !isExpiredRow(r, now)
         ).length;
 
-        const activeTotal = paid + pendingActive; // ❗ ไม่รวม expired
+        const activeTotal = paid + pendingActive;
         const p1 = activeTotal ? Math.round((paid / activeTotal) * 100) : 0;
         const p2 = activeTotal ? Math.round((pendingActive / activeTotal) * 100) : 0;
 
         return { paidCount: paid, pendingCount: pendingActive, paidPct: p1, pendingPct: p2 };
     }, [rows]);
+
+    // attendance derived (seat-level)
+    const { attendees, noShows, checkedInCount } = useMemo(() => {
+        const paidRows = rows.filter((r) => normalizePaid(r.status) === "COMPLETE");
+        const att = paidRows.filter((r) => checkedSet.has(rowKey(r)));
+        const noS = paidRows.filter((r) => !checkedSet.has(rowKey(r)));
+        return {
+            attendees: att,
+            noShows: noS,
+            checkedInCount: att.length,
+        };
+    }, [rows, checkedSet]);
+
+    // Undo handler (seat-level key)
+    function handleUndoCheckinKey(key: string) {
+        if (!eventId) return;
+        removeChecked(eventId, key);
+        setCheckedSet(loadCheckedSet(eventId));
+    }
 
     return (
         <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -243,7 +328,10 @@ export default function EventDashboard() {
 
                     <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4 md:gap-6">
                         <div className="space-y-4">
-                            <StatCard title="Net Payout (THB)" icon={<CircleDollarSign className="w-6 h-6 text-emerald-600" />}>
+                            <StatCard
+                                title="Net Payout (THB)"
+                                icon={<CircleDollarSign className="w-6 h-6 text-emerald-600" />}
+                            >
                                 <div className="mt-2 text-2xl md:text-3xl font-bold text-slate-800">
                                     {fmtAmount(netPayout)}
                                 </div>
@@ -302,32 +390,43 @@ export default function EventDashboard() {
                                 <div className="min-w-[900px] divide-y divide-slate-100">
                                     {(loading ? Array.from({ length: 6 }) : filtered).map((r: any, idx) => {
                                         const st = loading ? null : uiStatusOf(r);
+
+                                        const isHL =
+                                            !loading &&
+                                            highlightKey &&
+                                            rowKey(r) === highlightKey;
+
                                         return (
                                             <div
-                                                key={loading ? `skeleton-${idx}` : `${r.id}-${idx}`}
-                                                className={`grid ${GRID_COLS} px-4 md:px-6 py-3 md:py-4 text-sm items-center hover:bg-slate-50 transition-colors`}
+                                                key={loading ? `skeleton-${idx}` : `${rowKey(r)}-${idx}`}
+                                                className={`grid ${GRID_COLS} px-4 md:px-6 py-3 md:py-4 text-sm items-center hover:bg-slate-50 transition-colors
+                          ${isHL ? "bg-emerald-50/40 ring-2 ring-emerald-300/70" : ""}`}
                                             >
-                                                {/* Reserve ID - left */}
+                                                {/* Reserve ID */}
                                                 <div className="truncate text-slate-700 font-mono text-medium text-left">
                                                     {loading ? <Skeleton w={160} /> : r.reserved_code || r.id}
                                                 </div>
 
-                                                {/* Seat(s) - left */}
+                                                {/* Seat label */}
                                                 <div className="text-slate-800 font-medium text-left">
                                                     {loading ? <Skeleton w={220} /> : r.seat_label || "-"}
                                                 </div>
 
-                                                {/* Total - left (tabular numbers) */}
+                                                {/* Total -> ใช้ unit_price ถ้ามี (ราคา/ที่นั่ง) */}
                                                 <div className="text-slate-700 font-medium text-left tabular-nums">
-                                                    {loading ? <Skeleton w={90} /> : fmtAmount(Number(r.total ?? 0))}
+                                                    {loading ? (
+                                                        <Skeleton w={90} />
+                                                    ) : (
+                                                        fmtAmount(Number((r.unit_price ?? r.total) ?? 0))
+                                                    )}
                                                 </div>
 
-                                                {/* User - left */}
+                                                {/* User */}
                                                 <div className="text-slate-600 font-medium text-left">
                                                     {loading ? <Skeleton w={100} /> : r.user || "-"}
                                                 </div>
 
-                                                {/* Status - center */}
+                                                {/* Status */}
                                                 <div className="text-center">
                                                     {loading ? (
                                                         <Skeleton w={80} h={22} rounded />
@@ -342,6 +441,80 @@ export default function EventDashboard() {
                             </div>
                         </section>
                     </div>
+
+                    {/* ===== Attendance Card (ใต้ตาราง) ===== */}
+                    <section className="mt-6 bg-white rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
+                        <div className="px-5 py-4 border-b flex items-center gap-2">
+                            <Users className="w-5 h-5 text-slate-700" />
+                            <h3 className="text-base font-semibold text-slate-800">Attendance (Check-in)</h3>
+                            <div className="ml-auto text-sm text-slate-600">
+                                Checked-in: <b>{checkedInCount}</b> / Paid: <b>{paidCount}</b>
+                                {"  "}
+                                <span className="text-slate-400">•</span>{" "}
+                                No-show: <b>{Math.max(0, paidCount - checkedInCount)}</b>
+                            </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-0">
+                            {/* Attended */}
+                            <div className="p-5 border-r md:border-r-slate-200">
+                                <div className="text-sm font-semibold text-emerald-700 mb-3">เข้าร่วมแล้ว</div>
+                                {attendees.length === 0 ? (
+                                    <div className="text-sm text-slate-500">ยังไม่มีผู้เข้าร่วมเช็คอิน</div>
+                                ) : (
+                                    <ul className="space-y-2">
+                                        {attendees.map((r) => (
+                                            <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
+                                                    <div className="text-xs text-slate-500">
+                                                        <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                            IN
+                          </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUndoCheckinKey(rowKey(r))}
+                                                        className="text-xs px-2 py-1 rounded-md border bg-white hover:bg-slate-50"
+                                                        title="ยกเลิกการเช็คอิน"
+                                                    >
+                                                        Undo
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            {/* No-show (Paid but not checked-in) */}
+                            <div className="p-5">
+                                <div className="text-sm font-semibold text-amber-700 mb-3">ยังไม่เช็คอิน</div>
+                                {noShows.length === 0 ? (
+                                    <div className="text-sm text-slate-500">ทุกคนที่ชำระเงินแล้วได้เช็คอินครบ</div>
+                                ) : (
+                                    <ul className="space-y-2">
+                                        {noShows.map((r) => (
+                                            <li key={rowKey(r)} className="text-sm flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="truncate font-medium text-slate-800">{r.user || "-"}</div>
+                                                    <div className="text-xs text-slate-500">
+                                                        <span className="font-mono">{r.reserved_code || r.id}</span> • Seat {r.seat_label || "-"}
+                                                    </div>
+                                                </div>
+                                                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                          WAIT
+                        </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </main>
         </div>

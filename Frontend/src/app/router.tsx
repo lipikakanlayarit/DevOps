@@ -1,3 +1,4 @@
+// src/router.tsx
 import { createBrowserRouter, Outlet } from "react-router-dom";
 import RootLayout from "@/layouts/RootLayout";
 
@@ -10,6 +11,7 @@ import NotFound from "@/pages/NotFound";
 import Component from "@/pages/Component";
 import Forbidden from "@/pages/Forbidden";
 import Landding from "@/pages/Landding";
+import CheckinConfirmPage from "@/pages/checkin"; // <-- เพิ่ม
 
 // ---------- Protected Pages ----------
 import Profile from "@/pages/Profile";
@@ -26,7 +28,7 @@ import Payment from "@/pages/payment";
 import Admin from "@/pages/admin";
 import AdminEventdetail from "@/pages/admin-eventdetail";
 import EventPermission from "@/pages/admin-permission";
-import AdminUserMnge from "@/pages/admin-usermange.tsx"; // <<== เพิ่มอันนี้
+import AdminUserMnge from "@/pages/admin-usermange.tsx";
 
 // ---------- Guards ----------
 import RequireAuth from "@/features/auth/RequireAuth";
@@ -45,6 +47,9 @@ export const router = createBrowserRouter([
             { path: "signin", element: <SignIn /> },
             { path: "component", element: <Component /> },
             { path: "forbidden", element: <Forbidden /> },
+
+            // ✅ Public check-in confirm page (สแกนจาก QR)
+            { path: "checkin/:reservedId", element: <CheckinConfirmPage /> },
 
             // Auth required
             {
@@ -87,7 +92,7 @@ export const router = createBrowserRouter([
                 ),
                 children: [
                     { index: true, element: <Admin /> },
-                    { path: "usermnge", element: <AdminUserMnge /> }, // <<== เส้นทางที่ต้องการ
+                    { path: "usermnge", element: <AdminUserMnge /> },
                     { path: "users", element: <div>Admin Users Management</div> },
                     { path: "settings", element: <div>Admin Settings</div> },
                     { path: "eventdetail", element: <AdminEventdetail /> },

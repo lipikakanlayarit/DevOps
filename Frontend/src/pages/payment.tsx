@@ -1,5 +1,5 @@
- // src/pages/payment.tsx
-    "use client";
+// src/pages/payment.tsx
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -41,7 +41,10 @@ export default function PaymentPage() {
     const [loading, setLoading] = useState(true);
     const [paying, setPaying] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [method, setMethod] = useState<"Credit Card" | "Bank Transfer" | "QR Payment">("Credit Card");
+    const [method, setMethod] =
+        useState<"Credit Card" | "Bank Transfer" | "QR Payment">("Credit Card");
+
+    const isPaid = (resv?.paymentStatus ?? "").toUpperCase() === "PAID";
 
     useEffect(() => {
         if (!reservedId) return;
@@ -49,11 +52,16 @@ export default function PaymentPage() {
             try {
                 setLoading(true);
                 setError(null);
-                // baseURL ของ api คือ /api ดังนั้นอย่าเติม /api ซ้ำ
-                const { data } = await api.get<ReservedResponse>(`/public/reservations/${reservedId}`);
+                const { data } = await api.get<ReservedResponse>(
+                    `/public/reservations/${reservedId}`
+                );
                 setResv(data);
-                // ถ้ามี method เดิม (เคยจ่ายแล้ว) ให้แสดง
-                if (data?.paymentMethod && (["Credit Card","Bank Transfer","QR Payment"] as const).includes(data.paymentMethod as any)) {
+                if (
+                    data?.paymentMethod &&
+                    (["Credit Card", "Bank Transfer", "QR Payment"] as const).includes(
+                        data.paymentMethod as any
+                    )
+                ) {
                     setMethod(data.paymentMethod as any);
                 }
             } catch (e: any) {
@@ -65,23 +73,24 @@ export default function PaymentPage() {
         })();
     }, [reservedId]);
 
-    const isPaid = (resv?.paymentStatus ?? "").toUpperCase() === "PAID";
     const amountText = useMemo(() => {
         const n = Number(resv?.totalAmount ?? 0);
         if (Number.isNaN(n)) return "-";
         return "฿" + n.toLocaleString();
     }, [resv?.totalAmount]);
 
-    async function handlePayWith(methodArg: "Credit Card" | "Bank Transfer" | "QR Payment") {
+    async function handlePayWith(
+        methodArg: "Credit Card" | "Bank Transfer" | "QR Payment"
+    ) {
         if (!reservedId || !resv) return;
         try {
             setPaying(true);
             setError(null);
-            // ส่ง method ไปให้ backend บันทึก
-            const { data } = await api.post<ReservedResponse>(`/public/reservations/${reservedId}/pay`, {
-                method: methodArg,
-            });
-            setResv(data);
+            const { data } = await api.post<ReservedResponse>(
+                `/public/reservations/${reservedId}/pay`,
+                { method: methodArg }
+            );
+            setResv(data); // ได้สถานะ PAID + confirmationCode กลับมา
         } catch (e: any) {
             setError(e?.response?.data?.error || "Payment failed");
         } finally {
@@ -92,16 +101,22 @@ export default function PaymentPage() {
     return (
         <div className="min-h-screen bg-gray-100">
             <header className="bg-black text-white">
-                <div className="max-w-4xl mx-auto px-6 py-4 text-xl font-bold">BUTCON — Payment</div>
+                <div className="max-w-5xl mx-auto px-6 py-4 text-xl font-bold">
+                    BUTCON — Payment
+                </div>
             </header>
 
-            <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+            <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
                 {loading ? (
                     <div className="bg-white p-6 rounded-lg shadow-sm">Loading…</div>
                 ) : error ? (
-                    <div className="bg-white p-6 rounded-lg shadow-sm text-red-600">{error}</div>
+                    <div className="bg-white p-6 rounded-lg shadow-sm text-red-600">
+                        {error}
+                    </div>
                 ) : !resv ? (
-                    <div className="bg-white p-6 rounded-lg shadow-sm">Reservation not found.</div>
+                    <div className="bg-white p-6 rounded-lg shadow-sm">
+                        Reservation not found.
+                    </div>
                 ) : (
                     <>
                         {/* Summary */}
@@ -113,7 +128,9 @@ export default function PaymentPage() {
                                 </div>
                                 <div
                                     className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
-                                        isPaid ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"
+                                        isPaid
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-yellow-100 text-yellow-800"
                                     }`}
                                 >
                                     {isPaid ? "PAID" : "UNPAID"}
@@ -153,33 +170,39 @@ export default function PaymentPage() {
                             {resv.confirmationCode && (
                                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-green-800 flex items-center gap-2">
                                     <CheckCircle2 className="w-5 h-5" />
-                                    Confirmation Code: <span className="font-mono">{resv.confirmationCode}</span>
+                                    Confirmation Code:{" "}
+                                    <span className="font-mono">{resv.confirmationCode}</span>
                                 </div>
                             )}
                         </div>
 
                         {/* Payment Box */}
                         <div className="bg-white p-6 rounded-lg shadow-sm border">
-                            <div className="text-lg font-bold text-gray-800">Choose payment method</div>
+                            <div className="text-lg font-bold text-gray-800">
+                                Choose payment method
+                            </div>
 
                             <div className="mt-3 space-y-2 text-sm">
-                                {(["Credit Card", "Bank Transfer", "QR Payment"] as const).map((m) => (
-                                    <label key={m} className="flex items-center gap-2">
-                                        <input
-                                            type="radio"
-                                            name="pm"
-                                            value={m}
-                                            checked={method === m}
-                                            onChange={() => setMethod(m)}
-                                        />
-                                        <span>{m}</span>
-                                    </label>
-                                ))}
+                                {(["Credit Card", "Bank Transfer", "QR Payment"] as const).map(
+                                    (m) => (
+                                        <label key={m} className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="pm"
+                                                value={m}
+                                                checked={method === m}
+                                                onChange={() => setMethod(m)}
+                                                disabled={isPaid}
+                                            />
+                                            <span className={isPaid ? "opacity-50" : ""}>{m}</span>
+                                        </label>
+                                    )
+                                )}
                             </div>
 
                             <p className="text-sm text-gray-600 mt-3">
-                                ปุ่มนี้เป็นการ “จำลอง” การชำระเงิน: เมื่อกดระบบจะเปลี่ยนสถานะเป็น <b>PAID</b> และออก
-                                <b> Confirmation Code </b> ให้
+                                ปุ่มนี้เป็นการ “จำลอง” การชำระเงิน: เมื่อกดระบบจะเปลี่ยนสถานะเป็น{" "}
+                                <b>PAID</b> และออก<b> Confirmation Code </b>ให้
                             </p>
 
                             <div className="mt-4 flex gap-3">
@@ -188,7 +211,11 @@ export default function PaymentPage() {
                                     disabled={isPaid || paying}
                                     className="px-6 py-3 rounded-full font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                                 >
-                                    {isPaid ? "Already Paid" : paying ? "Processing…" : `Pay ${amountText}`}
+                                    {isPaid
+                                        ? "Already Paid"
+                                        : paying
+                                            ? "Processing…"
+                                            : `Pay ${amountText}`}
                                 </button>
                                 <button
                                     onClick={() => navigate(-1)}
@@ -204,4 +231,3 @@ export default function PaymentPage() {
         </div>
     );
 }
-
