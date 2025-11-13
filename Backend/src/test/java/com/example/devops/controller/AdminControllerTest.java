@@ -8,7 +8,6 @@ import com.example.devops.repo.OrganizerRepo;
 import com.example.devops.repo.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -17,12 +16,13 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.mockito.Mockito.*;
 
 @WebMvcTest(controllers = AdminController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -67,8 +67,7 @@ class AdminControllerTest {
         mockOrganizer.setVerificationStatus("PENDING");
 
         mockEvent = new EventsNam();
-        mockEvent.setId(100L);
-        mockEvent.setEventId(100L);
+        mockEvent.setId(100L);                     // ใช้ id ตัวเดียวพอ
         mockEvent.setStatus("PENDING");
         mockEvent.setOrganizerId(10L);
         mockEvent.setCover_image_type("image/png");
@@ -195,5 +194,4 @@ class AdminControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("event not found"));
     }
-
-/* ============== COVER IMAGE ==============*
+}
