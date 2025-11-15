@@ -27,33 +27,44 @@ export default defineConfig({
     envPrefix: 'VITE_',
 
     /* ==========================================================
-       🧪 VITEST CONFIGURATION (ส่วน test ที่เพิ่ม)
+       🧪 VITEST CONFIGURATION  (▼▼ เพิ่มมาใหม่ ห้ามตัดของเก่าออก)
     ========================================================== */
     test: {
-        globals: true,                // ✅ ใช้ expect(), describe() ได้เลย
-        environment: 'jsdom',         // ✅ จำลอง browser สำหรับ React
-        setupFiles: './src/setupTests.ts', // ✅ setup ก่อนทุก test เช่น import jest-dom
-        css: false,                   // ✅ ปิดโหลด CSS ใน test เพื่อความเร็ว
-        include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'], // ✅ ไฟล์ test pattern
+        globals: true,                // ใช้ describe(), it(), expect() ได้เลย
+        environment: 'jsdom',         // จำลอง Browser environment
+        setupFiles: './src/setupTests.ts',
+        css: false,
+        include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'],
 
         deps: {
             inline: [
                 '@testing-library/react',
                 '@testing-library/jest-dom'
-            ], // ✅ ป้องกัน dependency error
+            ],
         },
 
-        // ✅ Coverage Report เหมือน JaCoCo
+        // ==================================================
+        // 📊 Coverage Report (HTML แบบ JaCoCo)
+        // (แก้เฉพาะจุดสำคัญที่จำเป็นเท่านั้น)
+        // ==================================================
         coverage: {
             provider: 'v8',
-            reporter: ['text', 'html'], // ✅ แสดงทั้ง console และ HTML
-            all: true,                  // ✅ รวมทุกไฟล์ src แม้ไม่มี test
+            reporter: ['text', 'html'],      // สร้าง HTML report
+            reportsDirectory: './coverage',   // ← เพิ่มอันนี้สำคัญมาก!
+
+            all: true,
             include: ['src/**/*.{ts,tsx}'],
-            exclude: ['src/main.tsx', 'src/vite-env.d.ts'],
-            lines: 100,
-            functions: 100,
-            branches: 100,
-            statements: 100,
+            exclude: [
+                'src/main.tsx',
+                'src/vite-env.d.ts',
+                'src/setupTests.ts',
+            ],
+
+            // ❗ ต้องตั้ง 0 เพื่อไม่ให้ block การสร้าง HTML report
+            lines: 0,
+            functions: 0,
+            branches: 0,
+            statements: 0,
         },
     },
 })

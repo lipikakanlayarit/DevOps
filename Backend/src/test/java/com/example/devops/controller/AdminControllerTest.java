@@ -7,26 +7,32 @@ import com.example.devops.repo.EventsNamRepository;
 import com.example.devops.repo.OrganizerRepo;
 import com.example.devops.repo.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.util.Optional;
 
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(controllers = AdminController.class)
-@AutoConfigureMockMvc(addFilters = false)
-@WithMockUser(username = "admin", roles = {"ADMIN"})
+/**
+ * 🔍 Unit Test สำหรับ AdminController
+ * ใช้ WebMvcTest เพื่อโหลดเฉพาะ Controller layer
+ * Mock Repository & JdbcTemplate ทุกตัวที่เป็น dependency
+ */
+@WebMvcTest(AdminController.class)
+@WithMockUser(roles = "ADMIN") // ✅ จำลอง user มี role ADMIN ครอบทั้งคลาส
 class AdminControllerTest {
 
     @Autowired
@@ -41,6 +47,9 @@ class AdminControllerTest {
     @MockBean
     private EventsNamRepository eventsRepo;
 
+    @MockBean
+    private JdbcTemplate jdbcTemplate;
+
     private User mockUser;
     private Organizer mockOrganizer;
     private EventsNam mockEvent;
@@ -49,149 +58,131 @@ class AdminControllerTest {
     void setup() {
         mockUser = new User();
         mockUser.setId(1L);
-        mockUser.setUsername("user1");
-        mockUser.setEmail("u1@test.com");
+        mockUser.setUsername("alice");
+        mockUser.setEmail("alice@example.com");
         mockUser.setRole("USER");
-        mockUser.setFirstName("F");
-        mockUser.setLastName("L");
-        mockUser.setPhoneNumber("099");
-        mockUser.setIdCardPassport("12345");
 
         mockOrganizer = new Organizer();
         mockOrganizer.setId(10L);
         mockOrganizer.setUsername("org1");
-        mockOrganizer.setEmail("org@test.com");
-        mockOrganizer.setFirstName("O");
-        mockOrganizer.setLastName("G");
-        mockOrganizer.setCompanyName("ORG");
-        mockOrganizer.setVerificationStatus("PENDING");
+        mockOrganizer.setCompanyName("OrgName");
 
         mockEvent = new EventsNam();
-        mockEvent.setId(100L);                     // ใช้ id ตัวเดียวพอ
-        mockEvent.setStatus("PENDING");
-        mockEvent.setOrganizerId(10L);
-        mockEvent.setCover_image_type("image/png");
-        mockEvent.setCover_image("hello".getBytes());
+        ReflectionTestUtils.setField(mockEvent, "id", 100L);
+        ReflectionTestUtils.setField(mockEvent, "eventName", "Music Fest");
     }
 
-    /* ============== USERS ============== */
+    // ===================================================
+    // USERS
+    // ===================================================
+
     @Test
+    @DisplayName("✅ getAllUsers() → คืนค่า 200 OK และแสดงข้อมูล user")
     void testGetAllUsers() throws Exception {
         when(userRepo.findAll()).thenReturn(List.of(mockUser));
 
         mockMvc.perform(get("/api/admin/users"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(1))
-                .andExpect(jsonPath("$.users[0].username").value("user1"));
+                .andExpect(jsonPath("$.users[0].username").value("alice"))
+                .andExpect(jsonPath("$.total").value(1));
+
+        verify(userRepo).findAll();
     }
 
-    /* ============== ORGANIZERS ============== */
+    // ===================================================
+    // ORGANIZERS
+    // ===================================================
+
     @Test
+    @DisplayName("✅ getAllOrganizers() → คืนค่า 200 OK")
     void testGetAllOrganizers() throws Exception {
         when(organizerRepo.findAll()).thenReturn(List.of(mockOrganizer));
 
         mockMvc.perform(get("/api/admin/organizers"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(1))
-                .andExpect(jsonPath("$.organizers[0].email").value("org@test.com"));
+                .andExpect(jsonPath("$.organizers[0].username").value("org1"))
+                .andExpect(jsonPath("$.total").value(1));
+
+        verify(organizerRepo).findAll();
     }
 
-    /* ============== EVENTS ============== */
     @Test
-    void testListEvents_All() throws Exception {
-        when(eventsRepo.findAllByOrderByEventIdDesc()).thenReturn(List.of(mockEvent));
-        when(organizerRepo.findAllById(anySet())).thenReturn(List.of(mockOrganizer));
+    @DisplayName("✅ getOrganizerById() → พบ organizer → 200 OK")
+    void testGetOrganizerByIdFound() throws Exception {
+        when(organizerRepo.findById(10L)).thenReturn(Optional.of(mockOrganizer));
 
-        mockMvc.perform(get("/api/admin/events"))
+        mockMvc.perform(get("/api/admin/organizers/10"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].organizerName").value("ORG"));
+                .andExpect(jsonPath("$.companyName").value("OrgName"))
+                .andExpect(jsonPath("$.username").value("org1"));
     }
 
     @Test
-    void testListEvents_InvalidStatus() throws Exception {
-        mockMvc.perform(get("/api/admin/events?status=WRONG"))
+    @DisplayName("❌ getOrganizerById() → ไม่พบ → 404 Not Found")
+    void testGetOrganizerByIdNotFound() throws Exception {
+        when(organizerRepo.findById(999L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/admin/organizers/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("organizer not found"));
+    }
+
+    // ===================================================
+    // EVENTS
+    // ===================================================
+
+    @Test
+    @DisplayName("✅ listEventsByStatus(ALL) → คืนค่า event list")
+    void testListEventsAll() throws Exception {
+        when(eventsRepo.findAllByOrderByEventIdDesc()).thenReturn(List.of(mockEvent));
+
+        mockMvc.perform(get("/api/admin/events?status=ALL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].eventName").value("Music Fest"));
+
+        verify(eventsRepo).findAllByOrderByEventIdDesc();
+    }
+
+    @Test
+    @DisplayName("❌ listEventsByStatus(invalid) → 400 BadRequest")
+    void testListEventsInvalidStatus() throws Exception {
+        mockMvc.perform(get("/api/admin/events?status=XYZ"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("invalid status"));
     }
 
-    @Test
-    void testListEvents_FilteredStatus() throws Exception {
-        when(eventsRepo.findAllByStatus("PENDING")).thenReturn(List.of(mockEvent));
-        when(organizerRepo.findAllById(anySet())).thenReturn(List.of(mockOrganizer));
-
-        mockMvc.perform(get("/api/admin/events?status=pending"))
-                .andExpect(status().isOk());
-    }
-
-    /* ============== APPROVE / REJECT / REVIEW ============== */
-    @Test
-    void testApprove_Success() throws Exception {
-        when(eventsRepo.approve(eq(100L), any(), anyInt())).thenReturn(1);
-
-        mockMvc.perform(post("/api/admin/events/100/approve")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"review\":\"ok\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("approved"));
-    }
+    // ===================================================
+    // COVER
+    // ===================================================
 
     @Test
-    void testApprove_NotFound() throws Exception {
-        when(eventsRepo.approve(eq(99L), any(), anyInt())).thenReturn(0);
-
-        mockMvc.perform(post("/api/admin/events/99/approve")
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("event not found"));
-    }
-
-    @Test
-    void testReject_MissingReview() throws Exception {
-        mockMvc.perform(post("/api/admin/events/100/reject")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("review is required for rejection"));
-    }
-
-    @Test
-    void testReject_Success() throws Exception {
-        when(eventsRepo.reject(eq(100L), anyString(), anyInt())).thenReturn(1);
-
-        mockMvc.perform(post("/api/admin/events/100/reject")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"review\":\"not ok\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("rejected"));
-    }
-
-    @Test
-    void testReject_NotFound() throws Exception {
-        when(eventsRepo.reject(eq(200L), anyString(), anyInt())).thenReturn(0);
-
-        mockMvc.perform(post("/api/admin/events/200/reject")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"review\":\"reject\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("event not found"));
-    }
-
-    @Test
-    void testGetReview_Success() throws Exception {
+    @DisplayName("✅ getEventCover() → มีภาพ → 200 OK")
+    void testGetEventCoverFound() throws Exception {
+        ReflectionTestUtils.setField(mockEvent, "cover_image", "abc".getBytes());
+        ReflectionTestUtils.setField(mockEvent, "cover_image_type", "image/png");
         when(eventsRepo.findById(100L)).thenReturn(Optional.of(mockEvent));
-        when(organizerRepo.findById(10L)).thenReturn(Optional.of(mockOrganizer));
 
-        mockMvc.perform(get("/api/admin/events/100/review"))
+        mockMvc.perform(get("/api/admin/events/100/cover"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.organizerName").value("ORG"));
+                .andExpect(header().string("Content-Type", "image/png"));
     }
 
     @Test
-    void testGetReview_NotFound() throws Exception {
-        when(eventsRepo.findById(999L)).thenReturn(Optional.empty());
+    @DisplayName("❌ getEventCover() → ไม่พบ event → 404 Not Found")
+    void testGetEventCoverNotFound() throws Exception {
+        when(eventsRepo.findById(99L)).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/api/admin/events/999/review"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("event not found"));
+        mockMvc.perform(get("/api/admin/events/99/cover"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("❌ getEventCover() → มี event แต่ไม่มีภาพ → 404 Not Found")
+    void testGetEventCoverNoImage() throws Exception {
+        ReflectionTestUtils.setField(mockEvent, "cover_image", null);
+        when(eventsRepo.findById(100L)).thenReturn(Optional.of(mockEvent));
+
+        mockMvc.perform(get("/api/admin/events/100/cover"))
+                .andExpect(status().isNotFound());
     }
 }

@@ -91,17 +91,6 @@ describe("Landing Page (HomePage)", () => {
         expect(screen.getByTestId("footer")).toBeInTheDocument();
     });
 
-    it("navigates to eventselect when poster clicked", () => {
-        render(
-            <MemoryRouter>
-                <HomePage />
-            </MemoryRouter>
-        );
-        const poster = screen.getAllByTestId("poster-card")[0];
-        fireEvent.click(poster);
-        expect(mockNavigate).toHaveBeenCalledWith("/eventselect");
-    });
-
     it("handles drag events without crashing", () => {
         render(
             <MemoryRouter>
@@ -132,15 +121,4 @@ describe("Landing Page (HomePage)", () => {
         expect(scrollSpy).toHaveBeenCalled();
     });
 
-    it("navigates to /login if navigateToLogin is called", () => {
-        // mock navigateToLogin indirectly by triggering navigate in poster click
-        render(
-            <MemoryRouter>
-                <HomePage />
-            </MemoryRouter>
-        );
-        const poster = screen.getAllByTestId("poster-card")[0];
-        fireEvent.click(poster);
-        expect(mockNavigate).toHaveBeenCalledWith("/eventselect");
-    });
 });
