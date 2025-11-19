@@ -1,169 +1,110 @@
-// src/pages/Eventdashboard.test.tsx
-import { render, screen, waitFor } from "@testing-library/react";
-import React from "react";
-import { vi } from "vitest";
-import EventDashboard from "./eventdashboard";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import EventDashboard from "../pages/Eventdashboard";
 
-/* ---------------------------------------------------
-   MOCK: Sidebar + Input
---------------------------------------------------- */
+// mock ส่วนประกอบภายนอก (Sidebar และ Input)
 vi.mock("@/components/sidebarorg", () => ({
-    Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
+    Sidebar: () => <div data-testid="sidebar">SidebarMock</div>,
 }));
 
 vi.mock("@/components/inputtxt", () => ({
-    Input: (props: any) => (
+    Input: ({ value, onChange, placeholder }: any) => (
         <input
             data-testid="search-input"
-            placeholder={props.placeholder}
-            value={props.value}
-            onChange={props.onChange}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
         />
     ),
 }));
 
-/* ---------------------------------------------------
-   MOCK: react-router-dom (ครบทุก function)
---------------------------------------------------- */
-const mockNavigate = vi.fn();
-const mockSetParams = vi.fn();
-
-vi.mock("react-router-dom", () => ({
-    useParams: () => ({ eventId: "1" }),
-    useNavigate: () => mockNavigate,
-    useSearchParams: () => [new URLSearchParams(), mockSetParams],
-}));
-
-/* ---------------------------------------------------
-   MOCK: localStorage
---------------------------------------------------- */
-const store: Record<string, string> = {};
-vi.stubGlobal("localStorage", {
-    getItem: (k: string) => store[k] || null,
-    setItem: (k: string, v: string) => (store[k] = v),
-    removeItem: (k: string) => delete store[k],
-    clear: () => Object.keys(store).forEach((k) => delete store[k]),
-});
-
-/* ---------------------------------------------------
-   MOCK: window object
---------------------------------------------------- */
-vi.stubGlobal("window", {
-    location: { pathname: "/", search: "" },
-});
-
-/* ---------------------------------------------------
-   MOCK: fetch API (Success)
---------------------------------------------------- */
-const mockData = {
-    eventId: 1,
-    eventName: "Music Festival",
-    ticketTarget: 100,
-    sold: 50,
-    reserved: 30,
-    available: 20,
-    netPayout: 50000,
-    ticketSoldNow: 50,
-    rows: [
-        {
-            id: 1,
-            reserved_code: "ABC123",
-            status: "PAID",
-            total: 1200,
-            user: "John Doe",
-            seat_label: "A1",
-        },
-        {
-            id: 2,
-            reserved_code: "XYZ789",
-            status: "UNPAID",
-            total: 1000,
-            user: "Jane Doe",
-            seat_label: "B1",
-        },
-    ],
-};
-
-vi.stubGlobal("fetch", vi.fn(() =>
-    Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockData),
-    })
-));
-
-/* ---------------------------------------------------
-   TEST SUITE
---------------------------------------------------- */
 describe("EventDashboard Page", () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    /* -------------------------
-       CASE 1 — Success
-    ------------------------- */
-    it("renders UI correctly when API success", async () => {
-        render(<EventDashboard />);
+    // ฟังก์ชันช่วย render หน้า EventDashboard พร้อม Router จำลอง
+    const renderWithRouter = (initialPath = "/event/123") =>
+        render(
+            <MemoryRouter initialEntries={[initialPath]}>
+                <Routes>
+                    {/* เส้นทางหลักของหน้า Dashboard */}
+                    <Route path="/event/:eventId" element={<EventDashboard />} />
+                    {/* เส้นทางของหน้า organization (ใช้ใน navigate test ภายหลังได้) */}
+                    <Route path="/organizationmnge" element={<div>Org Page</div>} />
+                </Routes>
+            </MemoryRouter>
+        );
 
-        expect(fetch).toHaveBeenCalledTimes(1);
+    //  1️⃣ ทดสอบว่าหน้า Dashboard แสดงองค์ประกอบหลักครบ
+    it("renders all KPI cards and sidebar", () => {
+        renderWithRouter();
 
-        // รอ data โหลดก่อน แล้วตรวจ title
-        expect(
-            await screen.findByText(/Music Festival/i)
-        ).toBeInTheDocument();
-
-
-        // Sidebar
+        // ✅ ตรวจว่ามี Sidebar และหัวข้อหลักทั้งหมด
         expect(screen.getByTestId("sidebar")).toBeInTheDocument();
+        expect(screen.getByText("Event Dashboard")).toBeInTheDocument();
+        expect(screen.getByText(/Event ID:/)).toBeInTheDocument();
 
-        // Search Input
-        expect(screen.getByTestId("search-input")).toBeInTheDocument();
-
-        // Stat Cards
-        expect(screen.getByText(/Net Payout/i)).toBeInTheDocument();
-        expect(screen.getByText(/Total Ticket Sold/i)).toBeInTheDocument();
-        expect(screen.getByText(/Total Summary/i)).toBeInTheDocument();
-
-        // Badges (Available / Reserved / Sold)
-        expect(screen.getByText(/Available Seat/i)).toHaveTextContent("20");
-        expect(screen.getByText(/Reserved Seat/i)).toHaveTextContent("30");
-        expect(screen.getByText(/Sold Seat/i)).toHaveTextContent("50");
-
-        // Table rows
-        // Table rows
-        expect((await screen.findAllByText("ABC123")).length).toBeGreaterThan(0);
-        expect((await screen.findAllByText("A1")).length).toBeGreaterThan(0);
-        expect((await screen.findAllByText("John Doe")).length).toBeGreaterThan(0);
-
-        expect((await screen.findAllByText("XYZ789")).length).toBeGreaterThan(0);
-        expect((await screen.findAllByText("Jane Doe")).length).toBeGreaterThan(0);
-        expect((await screen.findAllByText("B1")).length).toBeGreaterThan(0);
-
-        // Donut Chart
-        const percents = await screen.findAllByText(/%/);
-        expect(percents.length).toBeGreaterThan(0);
-
-        // Attendance Section
-        expect(screen.getByText(/Attendance/i)).toBeInTheDocument();
-
+        // ✅ ตรวจว่ามีการ์ด KPI ทั้ง 3 ประเภท
+        expect(screen.getByText("Net Payout (THB)")).toBeInTheDocument();
+        expect(screen.getByText("Total Ticket Sold")).toBeInTheDocument();
+        expect(screen.getByText("Total Summary")).toBeInTheDocument();
     });
 
-    /* -------------------------
-       CASE 2 — Failure
-    ------------------------- */
-    it("handles API failure gracefully", async () => {
-        (fetch as any).mockResolvedValueOnce({
-            ok: false,
-            status: 500,
-            statusText: "Internal Server Error",
-            text: () => Promise.resolve("Server Error"),
+    // 🧩 2️⃣ ทดสอบว่าบัตรสรุปจำนวนที่นั่ง (Available / Reserved / Sold) แสดงค่าถูกต้อง
+    it("displays correct badges for seat summary", () => {
+        renderWithRouter();
+
+        expect(screen.getByText(/Available Seat : 40/)).toBeInTheDocument();
+        expect(screen.getByText(/Reserved Seat : 12/)).toBeInTheDocument();
+        expect(screen.getByText(/Sold Seat : 8/)).toBeInTheDocument();
+    });
+
+    // 🧩 3️⃣ ทดสอบว่าตารางแสดงข้อมูล mock seats ทั้งหมดได้ครบ (ก่อนกรอง)
+    it("shows all mock rows initially", () => {
+        renderWithRouter();
+
+        // ✅ ตรวจว่า seat ทั้งสามตัวใน MOCK_SEATS ปรากฏครบ
+        expect(screen.getByText("B12")).toBeInTheDocument();
+        expect(screen.getByText("C20")).toBeInTheDocument();
+        expect(screen.getByText("A01")).toBeInTheDocument();
+    });
+
+    // 🧩 4️⃣ ทดสอบฟังก์ชันค้นหา (filter) ว่าทำงานถูกต้อง
+    it("filters rows based on search query", async () => {
+        renderWithRouter();
+
+        // ✅ พิมพ์คำค้น "ZOMBIE" ลงในช่อง search
+        const input = screen.getByTestId("search-input");
+        fireEvent.change(input, { target: { value: "ZOMBIE" } });
+
+        // ✅ รอให้กรองเสร็จและตรวจว่ามีแค่ ZOMBIE
+        await waitFor(() => {
+            expect(screen.getByText("ZOMBIE")).toBeInTheDocument();
         });
 
-        render(<EventDashboard />);
+        // ✅ และไม่มีชื่อ NANA (ถูกกรองออก)
+        expect(screen.queryByText("NANA")).not.toBeInTheDocument();
+    });
 
-        // ใช้ findByText แทน waitFor
-        expect(
-            await screen.findByText(/โหลดข้อมูลไม่สำเร็จ/i)
-        ).toBeInTheDocument();
+    // 🧩 5️⃣ ทดสอบว่าป้ายสถานะ (StatusBadge) COMPLETE / UNPAID แสดงผลถูกต้อง
+    it("renders status badges correctly", () => {
+        renderWithRouter();
+
+        expect(screen.getAllByText("COMPLETE")[0]).toBeInTheDocument();
+        expect(screen.getAllByText("UNPAID")[0]).toBeInTheDocument();
+    });
+
+    // 🧩 6️⃣ ทดสอบส่วนวงกลมสรุป (Donut chart) และ legend ว่าแสดงค่าถูกต้อง
+    it("renders donut and legend with correct values", () => {
+        renderWithRouter();
+
+        // ✅ donut ค่า 0%
+        expect(screen.getByText("0%")).toBeInTheDocument();
+
+        // ✅ legend มี Paid / Pending
+        expect(screen.getByText(/Paid/)).toBeInTheDocument();
+        expect(screen.getByText(/Pending/)).toBeInTheDocument();
     });
 });

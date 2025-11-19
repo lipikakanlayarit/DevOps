@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="th"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ZoneTicketTypesId.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">backend</a> &gt; <a href="index.source.html" class="el_package">com.example.devops.model</a> &gt; <span class="el_source">ZoneTicketTypesId.java</span></div><h1>ZoneTicketTypesId.java</h1><pre class="source lang-java linenums">package com.example.devops.model;
+
+import jakarta.persistence.Embeddable;
+import java.io.Serializable;
+import java.util.Objects;
+
+@Embeddable
+public class ZoneTicketTypesId implements Serializable {
+
+    private Long zone_id;
+    private Long ticket_type_id;
+
+<span class="nc" id="L13">    public ZoneTicketTypesId() {}</span>
+
+<span class="nc" id="L15">    public ZoneTicketTypesId(Long zone_id, Long ticket_type_id) {</span>
+<span class="nc" id="L16">        this.zone_id = zone_id;</span>
+<span class="nc" id="L17">        this.ticket_type_id = ticket_type_id;</span>
+<span class="nc" id="L18">    }</span>
+
+    public Long getZone_id() {
+<span class="nc" id="L21">        return zone_id;</span>
+    }
+
+    public void setZone_id(Long zone_id) {
+<span class="nc" id="L25">        this.zone_id = zone_id;</span>
+<span class="nc" id="L26">    }</span>
+
+    public Long getTicket_type_id() {
+<span class="nc" id="L29">        return ticket_type_id;</span>
+    }
+
+    public void setTicket_type_id(Long ticket_type_id) {
+<span class="nc" id="L33">        this.ticket_type_id = ticket_type_id;</span>
+<span class="nc" id="L34">    }</span>
+
+    @Override
+    public boolean equals(Object o) {
+<span class="nc bnc" id="L38" title="All 2 branches missed.">        if (this == o) return true;</span>
+<span class="nc bnc" id="L39" title="All 2 branches missed.">        if (!(o instanceof ZoneTicketTypesId)) return false;</span>
+<span class="nc" id="L40">        ZoneTicketTypesId that = (ZoneTicketTypesId) o;</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">        return Objects.equals(zone_id, that.zone_id) &amp;&amp;</span>
+<span class="nc bnc" id="L42" title="All 2 branches missed.">               Objects.equals(ticket_type_id, that.ticket_type_id);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L47">        return Objects.hash(zone_id, ticket_type_id);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

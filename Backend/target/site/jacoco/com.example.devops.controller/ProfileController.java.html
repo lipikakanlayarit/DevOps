@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="th"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProfileController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">backend</a> &gt; <a href="index.source.html" class="el_package">com.example.devops.controller</a> &gt; <span class="el_source">ProfileController.java</span></div><h1>ProfileController.java</h1><pre class="source lang-java linenums">package com.example.devops.controller;
+
+import com.example.devops.model.User;
+import com.example.devops.model.Organizer;
+import com.example.devops.repo.UserRepository;
+import com.example.devops.repo.OrganizerRepo;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@RestController
+@RequestMapping(&quot;/api/profile&quot;)
+public class ProfileController {
+
+    private final UserRepository userRepo;
+    private final OrganizerRepo organizerRepo;
+    private final PasswordEncoder passwordEncoder;
+
+    public ProfileController(UserRepository userRepo,
+                             OrganizerRepo organizerRepo,
+<span class="fc" id="L29">                             PasswordEncoder passwordEncoder) {</span>
+<span class="fc" id="L30">        this.userRepo = userRepo;</span>
+<span class="fc" id="L31">        this.organizerRepo = organizerRepo;</span>
+<span class="fc" id="L32">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L33">    }</span>
+
+    /* ==================== GET PROFILE ==================== */
+    @GetMapping
+    public ResponseEntity&lt;?&gt; getProfile(Authentication auth) {
+<span class="pc bpc" id="L38" title="1 of 4 branches missed.">        if (auth == null || auth.getPrincipal() == null) {</span>
+<span class="fc" id="L39">            return ResponseEntity.status(401).body(Map.of(&quot;error&quot;, &quot;Unauthorized&quot;));</span>
+        }
+
+<span class="fc" id="L42">        String username = auth.getName();</span>
+
+        // ค้นหาใน User ก่อน
+<span class="fc" id="L45">        var userOpt = userRepo.findByUsernameIgnoreCase(username);</span>
+<span class="pc bpc" id="L46" title="1 of 2 branches missed.">        if (userOpt.isPresent()) {</span>
+<span class="nc" id="L47">            User user = userOpt.get();</span>
+<span class="nc" id="L48">            return ResponseEntity.ok(buildUserResponse(user));</span>
+        }
+
+        // ถ้าไม่เจอ ค้นหาใน Organizer
+<span class="fc" id="L52">        var orgOpt = organizerRepo.findByUsernameIgnoreCase(username);</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (orgOpt.isPresent()) {</span>
+<span class="fc" id="L54">            Organizer org = orgOpt.get();</span>
+<span class="fc" id="L55">            return ResponseEntity.ok(buildOrganizerResponse(org));</span>
+        }
+
+<span class="fc" id="L58">        return ResponseEntity.status(404).body(Map.of(&quot;error&quot;, &quot;User not found&quot;));</span>
+    }
+
+    /* ==================== UPDATE USER PROFILE ==================== */
+    @PutMapping(&quot;/user&quot;)
+    public ResponseEntity&lt;?&gt; updateUserProfile(
+            @Valid @RequestBody UpdateUserRequest req,
+            BindingResult br,
+            Authentication auth) {
+
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">        if (br.hasErrors()) {</span>
+<span class="nc" id="L69">            var errors = br.getFieldErrors().stream()</span>
+<span class="nc" id="L70">                    .map(f -&gt; Map.of(&quot;field&quot;, f.getField(), &quot;message&quot;, f.getDefaultMessage()))</span>
+<span class="nc" id="L71">                    .toList();</span>
+<span class="nc" id="L72">            return ResponseEntity.badRequest().body(Map.of(&quot;error&quot;, &quot;Validation failed&quot;, &quot;details&quot;, errors));</span>
+        }
+
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (auth == null) {</span>
+<span class="nc" id="L76">            return ResponseEntity.status(401).body(Map.of(&quot;error&quot;, &quot;Unauthorized&quot;));</span>
+        }
+
+<span class="fc" id="L79">        String username = auth.getName();</span>
+<span class="fc" id="L80">        var userOpt = userRepo.findByUsernameIgnoreCase(username);</span>
+
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">        if (userOpt.isEmpty()) {</span>
+<span class="nc" id="L83">            return ResponseEntity.status(404).body(Map.of(&quot;error&quot;, &quot;User not found&quot;));</span>
+        }
+
+<span class="fc" id="L86">        User user = userOpt.get();</span>
+
+        // ตรวจสอบ email ซ้ำ (ถ้ามีการเปลี่ยน)
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">        if (!user.getEmail().equalsIgnoreCase(req.getEmail())) {</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">            if (userRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {</span>
+<span class="fc" id="L91">                return ResponseEntity.badRequest().body(Map.of(&quot;error&quot;, &quot;Email already exists&quot;));</span>
+            }
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">            if (organizerRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {</span>
+<span class="nc" id="L94">                return ResponseEntity.badRequest().body(Map.of(&quot;error&quot;, &quot;Email already taken by an organizer&quot;));</span>
+            }
+        }
+
+        // อัปเดตข้อมูล
+<span class="fc" id="L99">        user.setEmail(trimSafe(req.getEmail()));</span>
+<span class="fc" id="L100">        user.setFirstName(trimSafe(req.getFirstName()));</span>
+<span class="fc" id="L101">        user.setLastName(trimSafe(req.getLastName()));</span>
+<span class="fc" id="L102">        user.setPhoneNumber(trimSafe(req.getPhoneNumber()));</span>
+
+<span class="pc bpc" id="L104" title="2 of 4 branches missed.">        if (req.getIdCard() != null &amp;&amp; !req.getIdCard().trim().isEmpty()) {</span>
+<span class="fc" id="L105">            user.setIdCardPassport(trimSafe(req.getIdCard()));</span>
+        }
+
+<span class="fc" id="L108">        userRepo.save(user);</span>
+<span class="fc" id="L109">        return ResponseEntity.ok(Map.of(&quot;message&quot;, &quot;Profile updated successfully&quot;, &quot;user&quot;, buildUserResponse(user)));</span>
+    }
+
+    /* ==================== UPDATE ORGANIZER PROFILE ==================== */
+    @PutMapping(&quot;/organizer&quot;)
+    public ResponseEntity&lt;?&gt; updateOrganizerProfile(
+            @Valid @RequestBody UpdateOrganizerRequest req,
+            BindingResult br,
+            Authentication auth) {
+
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">        if (br.hasErrors()) {</span>
+<span class="nc" id="L120">            var errors = br.getFieldErrors().stream()</span>
+<span class="nc" id="L121">                    .map(f -&gt; Map.of(&quot;field&quot;, f.getField(), &quot;message&quot;, f.getDefaultMessage()))</span>
+<span class="nc" id="L122">                    .toList();</span>
+<span class="nc" id="L123">            return ResponseEntity.badRequest().body(Map.of(&quot;error&quot;, &quot;Validation failed&quot;, &quot;details&quot;, errors));</span>
+        }
+
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">        if (auth == null) {</span>
+<span class="nc" id="L127">            return ResponseEntity.status(401).body(Map.of(&quot;error&quot;, &quot;Unauthorized&quot;));</span>
+        }
+
+<span class="fc" id="L130">        String username = auth.getName();</span>
+<span class="fc" id="L131">        var orgOpt = organizerRepo.findByUsernameIgnoreCase(username);</span>
+
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        if (orgOpt.isEmpty()) {</span>
+<span class="nc" id="L134">            return ResponseEntity.status(404).body(Map.of(&quot;error&quot;, &quot;Organizer not found&quot;));</span>
+        }
+
+<span class="fc" id="L137">        Organizer org = orgOpt.get();</span>
+
+        // ตรวจสอบ email ซ้ำ (ถ้ามีการเปลี่ยน)
+<span class="pc bpc" id="L140" title="1 of 2 branches missed.">        if (!org.getEmail().equalsIgnoreCase(req.getEmail())) {</span>
+<span class="pc bpc" id="L141" title="1 of 2 branches missed.">            if (organizerRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {</span>
+<span class="nc" id="L142">                return ResponseEntity.badRequest().body(Map.of(&quot;error&quot;, &quot;Email already exists&quot;));</span>
+            }
+<span class="fc bfc" id="L144" title="All 2 branches covered.">            if (userRepo.findByEmailIgnoreCase(req.getEmail()).isPresent()) {</span>
+<span class="fc" id="L145">                return ResponseEntity.badRequest().body(Map.of(&quot;error&quot;, &quot;Email already taken by a user&quot;));</span>
+            }
+        }
+
+        // อัปเดตข้อมูล
+<span class="fc" id="L150">        org.setEmail(trimSafe(req.getEmail()));</span>
+<span class="fc" id="L151">        org.setFirstName(trimSafe(req.getFirstName()));</span>
+<span class="fc" id="L152">        org.setLastName(trimSafe(req.getLastName()));</span>
+<span class="fc" id="L153">        org.setPhoneNumber(trimSafe(req.getPhoneNumber()));</span>
+<span class="fc" id="L154">        org.setAddress(trimSafe(req.getAddress()));</span>
+<span class="fc" id="L155">        org.setCompanyName(trimSafe(req.getCompanyName()));</span>
+<span class="fc" id="L156">        org.setTaxId(trimSafe(req.getTaxId()));</span>
+
+<span class="fc" id="L158">        organizerRepo.save(org);</span>
+<span class="fc" id="L159">        return ResponseEntity.ok(Map.of(&quot;message&quot;, &quot;Profile updated successfully&quot;, &quot;organizer&quot;, buildOrganizerResponse(org)));</span>
+    }
+
+    /* ==================== DTO CLASSES ==================== */
+
+<span class="fc" id="L164">    public static class UpdateUserRequest {</span>
+        @Email @NotBlank private String email;
+        @NotBlank private String firstName;
+        @NotBlank private String lastName;
+        @NotBlank private String phoneNumber;
+        private String idCard;
+
+<span class="fc" id="L171">        public String getEmail() { return email; }</span>
+<span class="fc" id="L172">        public void setEmail(String email) { this.email = email; }</span>
+<span class="fc" id="L173">        public String getFirstName() { return firstName; }</span>
+<span class="fc" id="L174">        public void setFirstName(String firstName) { this.firstName = firstName; }</span>
+<span class="fc" id="L175">        public String getLastName() { return lastName; }</span>
+<span class="fc" id="L176">        public void setLastName(String lastName) { this.lastName = lastName; }</span>
+<span class="fc" id="L177">        public String getPhoneNumber() { return phoneNumber; }</span>
+<span class="fc" id="L178">        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }</span>
+<span class="fc" id="L179">        public String getIdCard() { return idCard; }</span>
+<span class="fc" id="L180">        public void setIdCard(String idCard) { this.idCard = idCard; }</span>
+    }
+
+<span class="fc" id="L183">    public static class UpdateOrganizerRequest {</span>
+        @Email @NotBlank private String email;
+        @NotBlank private String firstName;
+        @NotBlank private String lastName;
+        @NotBlank private String phoneNumber;
+        @NotBlank private String address;
+        @NotBlank private String companyName;
+        @NotBlank private String taxId;
+
+<span class="fc" id="L192">        public String getEmail() { return email; }</span>
+<span class="fc" id="L193">        public void setEmail(String email) { this.email = email; }</span>
+<span class="fc" id="L194">        public String getFirstName() { return firstName; }</span>
+<span class="fc" id="L195">        public void setFirstName(String firstName) { this.firstName = firstName; }</span>
+<span class="fc" id="L196">        public String getLastName() { return lastName; }</span>
+<span class="fc" id="L197">        public void setLastName(String lastName) { this.lastName = lastName; }</span>
+<span class="fc" id="L198">        public String getPhoneNumber() { return phoneNumber; }</span>
+<span class="fc" id="L199">        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }</span>
+<span class="fc" id="L200">        public String getAddress() { return address; }</span>
+<span class="fc" id="L201">        public void setAddress(String address) { this.address = address; }</span>
+<span class="fc" id="L202">        public String getCompanyName() { return companyName; }</span>
+<span class="fc" id="L203">        public void setCompanyName(String companyName) { this.companyName = companyName; }</span>
+<span class="fc" id="L204">        public String getTaxId() { return taxId; }</span>
+<span class="fc" id="L205">        public void setTaxId(String taxId) { this.taxId = taxId; }</span>
+    }
+
+    /* ==================== UTILITIES ==================== */
+
+    private static String trimSafe(String s) {
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">        return s == null ? &quot;&quot; : s.trim();</span>
+    }
+
+    private Map&lt;String, Object&gt; buildUserResponse(User user) {
+<span class="fc" id="L215">        Map&lt;String, Object&gt; response = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L216">        response.put(&quot;id&quot;, user.getId().toString());</span>
+<span class="fc" id="L217">        response.put(&quot;username&quot;, user.getUsername());</span>
+<span class="fc" id="L218">        response.put(&quot;email&quot;, user.getEmail());</span>
+<span class="fc" id="L219">        response.put(&quot;role&quot;, user.getRole());</span>
+<span class="fc" id="L220">        response.put(&quot;firstName&quot;, user.getFirstName());</span>
+<span class="fc" id="L221">        response.put(&quot;lastName&quot;, user.getLastName());</span>
+<span class="fc" id="L222">        response.put(&quot;phoneNumber&quot;, user.getPhoneNumber());</span>
+<span class="fc" id="L223">        response.put(&quot;idCard&quot;, user.getIdCardPassport());</span>
+<span class="fc" id="L224">        return response;</span>
+    }
+
+    private Map&lt;String, Object&gt; buildOrganizerResponse(Organizer org) {
+<span class="fc" id="L228">        Map&lt;String, Object&gt; response = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L229">        response.put(&quot;id&quot;, org.getId().toString());</span>
+<span class="fc" id="L230">        response.put(&quot;username&quot;, org.getUsername());</span>
+<span class="fc" id="L231">        response.put(&quot;email&quot;, org.getEmail());</span>
+<span class="fc" id="L232">        response.put(&quot;role&quot;, &quot;ORGANIZER&quot;);</span>
+<span class="fc" id="L233">        response.put(&quot;firstName&quot;, org.getFirstName());</span>
+<span class="fc" id="L234">        response.put(&quot;lastName&quot;, org.getLastName());</span>
+<span class="fc" id="L235">        response.put(&quot;phoneNumber&quot;, org.getPhoneNumber());</span>
+<span class="fc" id="L236">        response.put(&quot;companyName&quot;, org.getCompanyName());</span>
+<span class="fc" id="L237">        response.put(&quot;taxId&quot;, org.getTaxId());</span>
+<span class="fc" id="L238">        response.put(&quot;address&quot;, org.getAddress());</span>
+<span class="fc" id="L239">        response.put(&quot;verificationStatus&quot;, org.getVerificationStatus());</span>
+<span class="fc" id="L240">        return response;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>
