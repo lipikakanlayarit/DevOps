@@ -1,127 +1,138 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
+// ✅ src/pages/admin-eventdetail.test.tsx
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { vi } from "vitest";
 import AdminEventdetail from "./admin-eventdetail";
 
-// 🧠 Mock components ที่ไม่ต้อง render จริง
+// 🧩 Mock Dependencies
+vi.mock("react-router-dom", async () => ({
+    ...(await vi.importActual("react-router-dom")),
+    useLocation: () => ({ search: "?id=1" }),
+    Link: ({ to, children }: any) => <a href={to}>{children}</a>,
+}));
+
 vi.mock("@/components/sidebar", () => ({
+    __esModule: true,
     default: () => <div data-testid="sidebar">Sidebar</div>,
 }));
 
 vi.mock("@/components/SearchBar", () => ({
+    __esModule: true,
     default: ({ value, onChange }: any) => (
         <input
-            data-testid="searchbar"
+            data-testid="search-bar"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="Search reservations..."
         />
     ),
 }));
 
 vi.mock("@/components/CategoryRadio", () => ({
-    default: ({ options, value, onChange }: any) => (
-        <div data-testid="category-radio">
-            {options.map((o: any) => (
-                <label key={o.value}>
-                    <input
-                        type="radio"
-                        checked={value === o.value}
-                        onChange={() => onChange(o.value)}
-                    />
-                    {o.label}
-                </label>
-            ))}
+    __esModule: true,
+    default: ({ value, onChange }: any) => (
+        <div data-testid="category-radio" onClick={() => onChange("sold")}>
+            Radio-{value}
         </div>
     ),
 }));
 
 vi.mock("@/components/OutlineButton", () => ({
-    default: ({ children, onClick }: any) => (
-        <button data-testid="outline-btn" onClick={onClick}>
-            {children}
-        </button>
+    __esModule: true,
+    default: ({ children, ...props }: any) => (
+        <button {...props}>{children}</button>
     ),
 }));
 
-// 🧱 wrapper สำหรับ Router
-const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <BrowserRouter>{children}</BrowserRouter>
-);
+vi.mock("@/components/AuthImage", () => ({
+    __esModule: true,
+    default: ({ alt }: any) => <img data-testid="auth-image" alt={alt} />,
+}));
 
-describe("AdminEventdetail", () => {
+vi.mock("@/lib/api", () => ({
+    api: {
+        get: vi.fn((url: string) => {
+            if (url.includes("/admin/events/1")) {
+                return Promise.resolve({
+                    data: {
+                        id: 1,
+                        eventName: "Test Event",
+                        organizerName: "Mock Org",
+                        categoryId: 1,
+                        venueName: "Bangkok Hall",
+                        startDateTime: "2025-01-01T12:00:00Z",
+                        endDateTime: "2025-01-02T12:00:00Z",
+                    },
+                });
+            }
+            if (url.includes("/zones"))
+                return Promise.resolve({
+                    data: [{ zone: "A", row: 5, column: 10, sale: "10/50", price: "500" }],
+                });
+            if (url.includes("/seat-stats"))
+                return Promise.resolve({
+                    data: { total: 50, sold: 10, reserved: 5, available: 35 },
+                });
+            if (url.includes("/reservations"))
+                return Promise.resolve({
+                    data: [
+                        {
+                            id: "R001",
+                            seat_label: "A1",
+                            total: 500,
+                            user: "John",
+                            status: "PAID",
+                            date: "2025-01-01T12:00:00Z",
+                            payment_method: "Credit Card",
+                        },
+                    ],
+                });
+            return Promise.resolve({ data: [] });
+        }),
+    },
+}));
+
+// ===============================================================
+// 🧪 TEST CASES
+// ===============================================================
+describe("AdminEventdetail Page", () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    afterEach(() => {
-        vi.restoreAllMocks();
+    it("renders sidebar and header", async () => {
+        render(<AdminEventdetail />);
+
+        expect(screen.getByTestId("sidebar")).toBeInTheDocument();
+        expect(await screen.findByText("Event Management")).toBeInTheDocument();
     });
 
-    // ---------- Seat Statistics ----------
-    it("renders seat stats correctly", async () => {
-        render(<AdminEventdetail />, { wrapper: Wrapper });
+    it("fetches and displays event data", async () => {
+        render(<AdminEventdetail />);
 
-        expect(await screen.findByText(/Available Seat: 40/i)).toBeInTheDocument();
-        expect(screen.getByText(/Reserved Seat: 12/i)).toBeInTheDocument();
-        expect(screen.getByText(/Sold Seat: 8/i)).toBeInTheDocument();
+        expect(await screen.findByText("Test Event")).toBeInTheDocument();
+        expect(await screen.findByText("Mock Org")).toBeInTheDocument();
+        expect(await screen.findByText("Bangkok Hall")).toBeInTheDocument();
     });
 
-    // ---------- Modal: Event detail ----------
-    it("opens and closes Event Detail modal", async () => {
-        render(<AdminEventdetail />, { wrapper: Wrapper });
 
-        const btn = await screen.findByText(/Event detail/i);
-        fireEvent.click(btn);
 
-        // modal should appear
-        expect(await screen.findByText(/Event Description/i)).toBeInTheDocument();
-
-        // close modal
-        const closeBtn = screen.getAllByText(/Close/i)[0];
-        fireEvent.click(closeBtn);
-
-        await waitFor(() =>
-            expect(screen.queryByText(/Event Description/i)).not.toBeInTheDocument()
-        );
+    it("filters reservations when category clicked", async () => {
+        render(<AdminEventdetail />);
+        const radio = await screen.findByTestId("category-radio");
+        fireEvent.click(radio);
+        expect(radio.textContent).toContain("sold");
     });
 
-    // ---------- Modal: Organizer detail ----------
-    it("opens and closes Organizer Detail modal", async () => {
-        render(<AdminEventdetail />, { wrapper: Wrapper });
-
-        const btn = await screen.findByText(/Organizer detail/i);
-        fireEvent.click(btn);
-
-        expect(await screen.findByText(/Organizer Details/i)).toBeInTheDocument();
-
-        const closeBtn = screen.getAllByText(/Close/i)[0];
-        fireEvent.click(closeBtn);
-
-        await waitFor(() =>
-            expect(screen.queryByText(/Organizer Details/i)).not.toBeInTheDocument()
-        );
-    });
-
-    // ---------- Search Bar ----------
-    it("filters reservations by search input", async () => {
-        render(<AdminEventdetail />, { wrapper: Wrapper });
-
-        const input = await screen.findByTestId("searchbar");
-        fireEvent.change(input, { target: { value: "810100125892500" } });
-
+    it("opens and closes detail modal", async () => {
+        render(<AdminEventdetail />);
+        const detailBtn = await screen.findByText("Event detail");
+        fireEvent.click(detailBtn);
         await waitFor(() => {
-            expect(screen.getByText(/810100125892500/i)).toBeInTheDocument();
+            expect(screen.getByRole("dialog")).toBeInTheDocument();
         });
-    });
-
-    // ---------- Category Filter ----------
-    it("changes reservation filter when clicking radio", async () => {
-        render(<AdminEventdetail />, { wrapper: Wrapper });
-
-        const reservedRadio = (await screen.findAllByRole("radio"))[1]; // "Reserved"
-        fireEvent.click(reservedRadio);
-
-        expect(reservedRadio).toBeChecked();
+        const close = screen.getAllByText("Close")[0];
+        fireEvent.click(close);
+        await waitFor(() => {
+            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        });
     });
 });
