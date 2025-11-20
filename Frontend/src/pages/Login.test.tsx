@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import "@testing-library/jest-dom";
-import { vi } from "vitest"; // ✅ ใช้ vi แทน jest
+import { vi, describe, test, beforeEach, expect } from "vitest";
 
 // ================= Mock Component =================
 const Login: React.FC = () => {
@@ -90,7 +90,7 @@ const Login: React.FC = () => {
 };
 
 // ================== MOCK SETUP ==================
-const mockFetch = vi.fn(); // ✅ ใช้ vi.fn() แทน jest.fn()
+const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
 const renderLogin = () =>
@@ -103,7 +103,7 @@ const renderLogin = () =>
 // ================== TEST SUITE ==================
 describe("Login Component - Full Coverage", () => {
     beforeEach(() => {
-        vi.clearAllMocks(); // ✅ ใช้ vi.clearAllMocks() แทน jest.clearAllMocks()
+        vi.clearAllMocks();
         mockFetch.mockClear();
         localStorage.clear();
         delete (window as any).location;

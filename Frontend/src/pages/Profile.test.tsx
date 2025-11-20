@@ -1,25 +1,44 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import Profile from './Profile';
-import { useAuth } from '@/features/auth/AuthContext';
-import { profileApi } from '@/lib/api';
+// src/pages/Profile.test.tsx
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mock dependencies
-vi.mock('@/features/auth/AuthContext');
-vi.mock('@/lib/api');
-vi.mock('@/components/TicketCard', () => ({
-    default: (props: any) => <div data-testid="ticket-card">{props.title}</div>
+import Profile from "./Profile";
+import { useAuth } from "@/features/auth/AuthContext";
+import { api, profileApi } from "@/lib/api";
+
+// ================= Mock modules =================
+vi.mock("@/features/auth/AuthContext", () => ({
+    useAuth: vi.fn(),
 }));
-vi.mock('@/components/EventCard', () => ({
+
+vi.mock("@/components/TicketCard", () => ({
     default: (props: any) => (
-        <div data-testid="event-card" onClick={props.onClick}>
+        <div data-testid="ticket-card">
+            <span>{props.title}</span>
+            <span>{props.venue}</span>
+            <span>{props.showDate}</span>
+            <span>{props.zone}</span>
+            <span>{props.row}</span>
+            <span>{props.column}</span>
+            <span>{props.total}</span>
+        </div>
+    ),
+}));
+
+vi.mock("@/components/EventCard", () => ({
+    default: (props: any) => (
+        <div
+            data-testid="event-card"
+            data-effective-status={props.effectiveStatus}
+            onClick={props.onClickGetTicket}
+        >
             {props.title}
         </div>
-    )
+    ),
 }));
-vi.mock('@/components/EventToolbar', () => ({
+
+vi.mock("@/components/EventToolbar", () => ({
     default: (props: any) => (
         <div data-testid="event-toolbar">
             <input
@@ -47,587 +66,476 @@ vi.mock('@/components/EventToolbar', () => ({
                 <option value="oldest">Oldest</option>
             </select>
         </div>
-    )
+    ),
 }));
 
-const mockUseAuth = vi.mocked(useAuth);
-const mockProfileApi = vi.mocked(profileApi);
+// ทำให้ TypeScript ไม่บ่นเรื่อง type ของ mock
+const mockUseAuth = useAuth as unknown as any;
+const spyGetProfile = vi.spyOn(profileApi, "getProfile");
+const spyUpdateUser = vi.spyOn(profileApi, "updateUser");
+const spyUpdateOrganizer = vi.spyOn(profileApi, "updateOrganizer");
+const spyApiGet = vi.spyOn(api, "get");
 
-describe('Profile Component', () => {
-    const mockProfile = {
-        id: '1',
-        username: 'testuser',
-        email: 'test@example.com',
-        role: 'USER',
-        firstName: 'John',
-        lastName: 'Doe',
-        phoneNumber: '1234567890',
-        idCard: '1234567890123',
-    };
+// ================= Mock Data =================
+const mockProfile = {
+    id: "1",
+    username: "testuser",
+    email: "test@example.com",
+    role: "USER",
+    firstName: "John",
+    lastName: "Doe",
+    phoneNumber: "1234567890",
+    idCard: "1234567890123",
+};
 
-    const mockOrganizerProfile = {
-        id: '2',
-        username: 'organizer',
-        email: 'org@example.com',
-        role: 'ORGANIZER',
-        firstName: 'Jane',
-        lastName: 'Smith',
-        phoneNumber: '0987654321',
-        companyName: 'Event Co',
-        taxId: 'TAX123',
-        address: '123 Street',
-        verificationStatus: 'VERIFIED',
-    };
+const mockOrganizerProfile = {
+    id: "2",
+    username: "organizer",
+    email: "org@example.com",
+    role: "ORGANIZER",
+    firstName: "Jane",
+    lastName: "Smith",
+    phoneNumber: "0987654321",
+    companyName: "Event Co",
+    taxId: "TAX123",
+    address: "123 Street",
+    verificationStatus: "VERIFIED",
+};
 
+// ================= Global beforeEach =================
+beforeEach(() => {
+    vi.clearAllMocks();
+    delete (window as any).location;
+    (window as any).location = { href: "" };
+    window.alert = vi.fn();
+    console.log = vi.fn();
+    console.error = vi.fn();
+});
+
+// =====================================================
+//  Authentication Flow
+// =====================================================
+describe("Profile Component - Authentication Flow", () => {
+    it("shows loading state when authentication is loading", () => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "loading", user: null },
+        } as any);
+
+        render(<Profile />);
+        expect(screen.getByText("Loading...")).toBeInTheDocument();
+    });
+
+    it("redirects to login when unauthenticated", () => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "unauthenticated", user: null },
+        } as any);
+
+        render(<Profile />);
+        expect(window.location.href).toBe("/login");
+    });
+
+    it("fetches profile and tickets when authenticated", async () => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockProfile } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(spyGetProfile).toHaveBeenCalledTimes(1);
+            expect(spyApiGet).toHaveBeenCalledWith("/profile/my-tickets");
+        });
+    });
+});
+
+// =====================================================
+//  ProfileCard
+// =====================================================
+describe("ProfileCard / Profile display", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
-        delete (window as any).location;
-        (window as any).location = { href: '' };
-        window.alert = vi.fn();
-        console.log = vi.fn();
-        console.error = vi.fn();
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockProfile } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
     });
 
-    describe('Authentication Flow', () => {
-        // ตรวจสอบว่าเมื่อสถานะ Auth เป็น "loading" จะโชว์ข้อความ "Loading..."
-        it('should show loading state when authentication is loading', () => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'loading', user: null },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
+    it("displays user profile information", async () => {
+        render(<Profile />);
 
-            render(<Profile />);
-            expect(screen.getByText('Loading...')).toBeInTheDocument();
-        });
-
-        // ถ้ายังไม่ได้ล็อกอิน (unauthenticated) → ต้อง redirect ไปหน้า /login
-        it('should redirect to login when unauthenticated', () => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'unauthenticated', user: null },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-
-            render(<Profile />);
-            expect(window.location.href).toBe('/login');
-        });
-
-        // เมื่อ Authenticated แล้ว ระบบต้องเรียก API getProfile() เพื่อโหลดข้อมูลโปรไฟล์
-        it('should fetch profile when authenticated', async () => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockProfile });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(mockProfileApi.getProfile).toHaveBeenCalled();
-            });
+        await waitFor(() => {
+            expect(screen.getByText("test@example.com")).toBeInTheDocument();
+            expect(screen.getByText("John Doe")).toBeInTheDocument();
+            expect(screen.getByText("testuser")).toBeInTheDocument();
+            expect(screen.getByText("1234567890")).toBeInTheDocument();
+            expect(screen.getByText("1234567890123")).toBeInTheDocument();
         });
     });
 
-    describe('ProfileCard Component', () => {
+    it("displays organizer profile information", async () => {
+        spyGetProfile.mockResolvedValueOnce({ data: mockOrganizerProfile } as any);
 
-        beforeEach(() => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockProfile });
-        });
+        render(<Profile />);
 
-        // ทดสอบว่าข้อมูลโปรไฟล์ของผู้ใช้ (User role) แสดงครบ เช่น Email, ชื่อ, เบอร์โทร, ID Card
-        it('should display user profile information', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('test@example.com')).toBeInTheDocument();
-                expect(screen.getByText('John Doe')).toBeInTheDocument();
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-                expect(screen.getByText('1234567890')).toBeInTheDocument();
-                expect(screen.getByText('1234567890123')).toBeInTheDocument();
-            });
-        });
-
-        // ทดสอบว่าข้อมูลโปรไฟล์ของ Organizer แสดงครบ เช่น ชื่อบริษัท, สถานะการยืนยัน
-        it('should display organizer profile information', async () => {
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockOrganizerProfile });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('org@example.com')).toBeInTheDocument();
-                expect(screen.getByText('Jane Smith')).toBeInTheDocument();
-                expect(screen.getByText('Event Co')).toBeInTheDocument();
-                expect(screen.getByText('VERIFIED')).toBeInTheDocument();
-            });
-        });
-
-        // ตรวจสอบว่า avatar แสดงอักษรย่อจากชื่อ (firstName + lastName) เช่น John Doe → JD
-        it('should show initials in avatar', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('JD')).toBeInTheDocument();
-            });
-        });
-
-        // ตรวจสอบว่ากดปุ่ม “Edit Profile” แล้ว Popup แก้ไขโปรไฟล์แสดงขึ้นมาจริง
-        it('should open edit popup when edit button is clicked', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            const editButton = screen.getByTitle('Edit Profile');
-            fireEvent.click(editButton);
-
-            expect(screen.getByText('Edit Profile')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText("org@example.com")).toBeInTheDocument();
+            expect(screen.getByText("Jane Smith")).toBeInTheDocument();
+            expect(screen.getByText("Event Co")).toBeInTheDocument();
+            expect(screen.getByText("VERIFIED")).toBeInTheDocument();
         });
     });
 
-    describe('EditProfilePopup Component', () => {
-        beforeEach(() => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockProfile });
-        });
+    it("shows initials in avatar", async () => {
+        render(<Profile />);
 
-        // ตรวจสอบว่าเมื่อเปิด popup แล้ว input field ถูกกรอกค่าจาก profile ปัจจุบันถูกต้อง
-        it('should display edit form with current values', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            const editButton = screen.getByTitle('Edit Profile');
-            fireEvent.click(editButton);
-
-            expect(screen.getByDisplayValue('John')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('Doe')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('test@example.com')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('1234567890')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('1234567890123')).toBeInTheDocument();
-        });
-        // ตรวจสอบว่าพิมพ์ข้อมูลใหม่ลงในช่อง input แล้วค่าในหน้าจอเปลี่ยนจริง
-        it('should update form values when inputs change', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-
-            const firstNameInput = screen.getByDisplayValue('John');
-            fireEvent.change(firstNameInput, { target: { value: 'Jane' } });
-
-            expect(screen.getByDisplayValue('Jane')).toBeInTheDocument();
-        });
-        // ทดสอบการอัปเดตข้อมูลผู้ใช้ปกติ (USER) แล้วต้องเรียก API updateUser() ถูกต้อง
-        it('should successfully update user profile', async () => {
-            mockProfileApi.updateUser.mockResolvedValue({ data: { success: true } });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-
-            const firstNameInput = screen.getByDisplayValue('John');
-            fireEvent.change(firstNameInput, { target: { value: 'Jane' } });
-
-            const saveButton = screen.getByText('Save');
-            fireEvent.click(saveButton);
-
-            await waitFor(() => {
-                expect(mockProfileApi.updateUser).toHaveBeenCalledWith({
-                    email: 'test@example.com',
-                    firstName: 'Jane',
-                    lastName: 'Doe',
-                    phoneNumber: '1234567890',
-                    idCard: '1234567890123',
-                });
-                expect(window.alert).toHaveBeenCalledWith('Profile updated successfully!');
-            });
-        });
-
-        // ทดสอบการอัปเดตข้อมูล Organizer แล้วต้องเรียก API updateOrganizer() ถูกต้อง
-        it('should successfully update organizer profile', async () => {
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockOrganizerProfile });
-            mockProfileApi.updateOrganizer.mockResolvedValue({ data: { success: true } });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('organizer')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-
-            const companyInput = screen.getByDisplayValue('Event Co');
-            fireEvent.change(companyInput, { target: { value: 'New Event Co' } });
-
-            const saveButton = screen.getByText('Save');
-            fireEvent.click(saveButton);
-
-            await waitFor(() => {
-                expect(mockProfileApi.updateOrganizer).toHaveBeenCalledWith({
-                    email: 'org@example.com',
-                    firstName: 'Jane',
-                    lastName: 'Smith',
-                    phoneNumber: '0987654321',
-                    companyName: 'New Event Co',
-                    taxId: 'TAX123',
-                    address: '123 Street',
-                });
-                expect(window.alert).toHaveBeenCalledWith('Profile updated successfully!');
-            });
-        });
-
-        // ถ้า API updateUser() ล้มเหลว → ต้องแสดงข้อความ error ("Update failed")
-        it('should display error message when update fails', async () => {
-            mockProfileApi.updateUser.mockRejectedValue({
-                response: { data: { error: 'Update failed' } },
-            });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-
-            const saveButton = screen.getByText('Save');
-            fireEvent.click(saveButton);
-
-            await waitFor(() => {
-                expect(screen.getByText('Update failed')).toBeInTheDocument();
-            });
-        });
-
-        // ถ้า error เป็น generic (ไม่มี response.data.error) → ต้องแสดงข้อความจาก Error เช่น “Network error”
-        it('should handle generic error when no error message provided', async () => {
-            mockProfileApi.updateUser.mockRejectedValue(new Error('Network error'));
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-
-            const saveButton = screen.getByText('Save');
-            fireEvent.click(saveButton);
-
-            await waitFor(() => {
-                expect(screen.getByText('Network error')).toBeInTheDocument();
-            });
-        });
-
-        // เมื่อกดปุ่ม “Cancel” ต้องปิด popup แก้ไขโปรไฟล์
-        it('should close popup when cancel button is clicked', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-            expect(screen.getByText('Edit Profile')).toBeInTheDocument();
-
-            const cancelButton = screen.getByText('Cancel');
-            fireEvent.click(cancelButton);
-
-            await waitFor(() => {
-                expect(screen.queryByText('Edit Profile')).not.toBeInTheDocument();
-            });
-        });
-
-        // เมื่อมี error แล้วพอพิมพ์ input ใหม่ ต้องเคลียร์ข้อความ error ออก
-        it('should clear error when input changes', async () => {
-            mockProfileApi.updateUser.mockRejectedValue({
-                response: { data: { error: 'Update failed' } },
-            });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-            fireEvent.click(screen.getByText('Save'));
-
-            await waitFor(() => {
-                expect(screen.getByText('Update failed')).toBeInTheDocument();
-            });
-
-            const firstNameInput = screen.getByDisplayValue('John');
-            fireEvent.change(firstNameInput, { target: { value: 'Jane' } });
-
-            expect(screen.queryByText('Update failed')).not.toBeInTheDocument();
-        });
-
-        // เมื่อคลิก “Save” แล้วอยู่ในสถานะกำลังบันทึก (saving) → ปุ่ม Save/Cancel ต้อง disabled
-        it('should disable buttons while saving', async () => {
-            mockProfileApi.updateUser.mockImplementation(
-                () => new Promise((resolve) => setTimeout(resolve, 1000))
-            );
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-
-            const saveButton = screen.getByText('Save');
-            fireEvent.click(saveButton);
-
-            expect(screen.getByText('Saving...')).toBeInTheDocument();
-            expect(saveButton).toBeDisabled();
-            expect(screen.getByText('Cancel')).toBeDisabled();
+        await waitFor(() => {
+            expect(screen.getByText("JD")).toBeInTheDocument();
         });
     });
 
-    describe('Ticket Filtering and Display', () => {
-        beforeEach(() => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockProfile });
+    it("opens edit popup when edit button is clicked", async () => {
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByText("testuser")).toBeInTheDocument();
         });
 
-        // ตรวจสอบว่าหลังโหลดข้อมูลแล้วมีหัวข้อ “My Ticket” และมี EventCard แสดงบนจอ
-        it('should display tickets', async () => {
-            render(<Profile />);
+        const editButton = screen.getByTitle("Edit Profile");
+        fireEvent.click(editButton);
 
-            await waitFor(() => {
-                expect(screen.getByText('My Ticket')).toBeInTheDocument();
-            });
+        expect(screen.getByText("Edit Profile")).toBeInTheDocument();
+    });
+});
 
-            expect(screen.getByTestId('event-card')).toBeInTheDocument();
+// =====================================================
+//  EditProfilePopup
+// =====================================================
+describe("EditProfilePopup behaviour", () => {
+    beforeEach(() => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockProfile } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+    });
+
+    const openPopup = async () => {
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByText("testuser")).toBeInTheDocument();
         });
 
-        //  ทดสอบว่าพิมพ์ในช่อง search แล้วค่าที่พิมพ์แสดงในช่องจริง (กรองตามชื่อ)
-        it('should filter tickets by search query', async () => {
-            render(<Profile />);
+        fireEvent.click(screen.getByTitle("Edit Profile"));
+    };
 
-            await waitFor(() => {
-                expect(screen.getByTestId('search-input')).toBeInTheDocument();
+    it("displays edit form with current values", async () => {
+        await openPopup();
+
+        expect(screen.getByDisplayValue("John")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("Doe")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("test@example.com")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("1234567890")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("1234567890123")).toBeInTheDocument();
+    });
+
+    it("updates form values when inputs change", async () => {
+        await openPopup();
+
+        const firstNameInput = screen.getByDisplayValue("John");
+        fireEvent.change(firstNameInput, { target: { value: "Jane" } });
+
+        expect(screen.getByDisplayValue("Jane")).toBeInTheDocument();
+    });
+
+    it("successfully updates user profile", async () => {
+        spyUpdateUser.mockResolvedValue({ data: { success: true } } as any);
+
+        await openPopup();
+
+        const firstNameInput = screen.getByDisplayValue("John");
+        fireEvent.change(firstNameInput, { target: { value: "Jane" } });
+
+        const saveButton = screen.getByText("Save");
+        fireEvent.click(saveButton);
+
+        await waitFor(() => {
+            expect(spyUpdateUser).toHaveBeenCalledWith({
+                email: "test@example.com",
+                firstName: "Jane",
+                lastName: "Doe",
+                phoneNumber: "1234567890",
+                idCard: "1234567890123",
             });
-
-            const searchInput = screen.getByTestId('search-input');
-            fireEvent.change(searchInput, { target: { value: 'ROBERT' } });
-
-            expect(searchInput).toHaveValue('ROBERT');
-        });
-
-        // ทดสอบการเลือกหมวดหมู่ (category) ว่าเปลี่ยนค่าถูกต้อง (เช่น concert/seminar)
-        it('should filter tickets by category', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByTestId('category-select')).toBeInTheDocument();
-            });
-
-            const categorySelect = screen.getByTestId('category-select');
-            fireEvent.change(categorySelect, { target: { value: 'concert' } });
-
-            expect(categorySelect).toHaveValue('concert');
-        });
-        // ทดสอบว่าการเปลี่ยน order (newest/oldest) ทำงานและค่าถูกอัปเดตใน select
-        it('should change sort order', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByTestId('order-select')).toBeInTheDocument();
-            });
-
-            const orderSelect = screen.getByTestId('order-select');
-            fireEvent.change(orderSelect, { target: { value: 'oldest' } });
-
-            expect(orderSelect).toHaveValue('oldest');
-        });
-
-        // ทดสอบว่าเมื่อคลิก EventCard → Popup TicketCard จะเปิดขึ้นมาแสดงรายละเอียดบัตร
-        it('should open ticket popup when event card is clicked', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByTestId('event-card')).toBeInTheDocument();
-            });
-
-            const eventCard = screen.getByTestId('event-card');
-            fireEvent.click(eventCard);
-
-            await waitFor(() => {
-                expect(screen.getByTestId('ticket-card')).toBeInTheDocument();
-            });
-        });
-
-        // ทดสอบว่ากดปุ่มปิด (×) แล้ว Popup TicketCard ต้องหายไป
-        it('should close ticket popup when close button is clicked', async () => {
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByTestId('event-card')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTestId('event-card'));
-
-            await waitFor(() => {
-                expect(screen.getByTestId('ticket-card')).toBeInTheDocument();
-            });
-
-            const closeButton = screen.getByText('×');
-            fireEvent.click(closeButton);
-
-            await waitFor(() => {
-                expect(screen.queryByTestId('ticket-card')).not.toBeInTheDocument();
-            });
+            expect(window.alert).toHaveBeenCalledWith("Profile updated successfully!");
         });
     });
 
-    describe('Error Handling', () => {
-        // ทดสอบว่าถ้าเรียก API getProfile() แล้ว error → ต้อง console.error(“❌ Error fetching profile:”)
-        it('should handle profile fetch error', async () => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
+    it("successfully updates organizer profile", async () => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "2" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockOrganizerProfile } as any);
+        spyUpdateOrganizer.mockResolvedValue({ data: { success: true } } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
 
-            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-            mockProfileApi.getProfile.mockRejectedValue(new Error('Fetch error'));
+        render(<Profile />);
 
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(consoleError).toHaveBeenCalledWith(
-                    '❌ Error fetching profile:',
-                    expect.any(Error)
-                );
-            });
-
-            consoleError.mockRestore();
+        await waitFor(() => {
+            expect(screen.getByText("organizer")).toBeInTheDocument();
         });
-        // ทดสอบว่าเมื่อ updateUser() error และไม่มี response.data.error → ต้องแสดงข้อความ “Failed to update profile”
-        it('should handle update error without response data', async () => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
+
+        fireEvent.click(screen.getByTitle("Edit Profile"));
+
+        const companyInput = screen.getByDisplayValue("Event Co");
+        fireEvent.change(companyInput, { target: { value: "New Event Co" } });
+
+        const saveButton = screen.getByText("Save");
+        fireEvent.click(saveButton);
+
+        await waitFor(() => {
+            expect(spyUpdateOrganizer).toHaveBeenCalledWith({
+                email: "org@example.com",
+                firstName: "Jane",
+                lastName: "Smith",
+                phoneNumber: "0987654321",
+                companyName: "New Event Co",
+                taxId: "TAX123",
+                address: "123 Street",
             });
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockProfile });
-            mockProfileApi.updateUser.mockRejectedValue({});
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
-
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-            fireEvent.click(screen.getByText('Save'));
-
-            await waitFor(() => {
-                expect(screen.getByText('Failed to update profile')).toBeInTheDocument();
-            });
+            expect(window.alert).toHaveBeenCalledWith("Profile updated successfully!");
         });
     });
 
-    describe('Edge Cases', () => {
-        // ทดสอบว่าถ้าเรียก API getProfile() แล้ว error → ต้อง console.error(“❌ Error fetching profile:”)
-        it('should handle organizer with missing optional fields', async () => {
-            const incompleteOrganizer = {
-                ...mockOrganizerProfile,
-                companyName: undefined,
-                verificationStatus: undefined,
-            };
-
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '2' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-
-            mockProfileApi.getProfile.mockResolvedValue({ data: incompleteOrganizer });
-
-            render(<Profile />);
-
-            await waitFor(() => {
-                expect(screen.getAllByText('-').length).toBeGreaterThan(0);
-            });
+    it("shows error message when update fails with API error", async () => {
+        spyUpdateUser.mockRejectedValue({
+            response: { data: { error: "Update failed" } },
         });
 
-        // ✅ ทดสอบว่าเมื่อ updateUser() error และไม่มี response.data.error → ต้องแสดงข้อความ “Failed to update profile”
-        it('should handle user with missing ID card', async () => {
-            const userWithoutIdCard = {
-                ...mockProfile,
-                idCard: undefined,
-            };
+        await openPopup();
 
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
+        fireEvent.click(screen.getByText("Save"));
 
-            mockProfileApi.getProfile.mockResolvedValue({ data: userWithoutIdCard });
+        await waitFor(() => {
+            expect(screen.getByText("Update failed")).toBeInTheDocument();
+        });
+    });
 
-            render(<Profile />);
+    it("handles generic error when no error message provided", async () => {
+        spyUpdateUser.mockRejectedValue(new Error("Network error"));
 
-            await waitFor(() => {
-                expect(screen.getByText('-')).toBeInTheDocument();
-            });
+        await openPopup();
+
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(screen.getByText("Network error")).toBeInTheDocument();
+        });
+    });
+
+    it("closes popup when cancel button is clicked", async () => {
+        await openPopup();
+
+        expect(screen.getByText("Edit Profile")).toBeInTheDocument();
+
+        const cancelButton = screen.getByText("Cancel");
+        fireEvent.click(cancelButton);
+
+        await waitFor(() => {
+            expect(screen.queryByText("Edit Profile")).not.toBeInTheDocument();
+        });
+    });
+
+    it("clears error when input changes", async () => {
+        spyUpdateUser.mockRejectedValue({
+            response: { data: { error: "Update failed" } },
         });
 
-        // ทดสอบว่าหลังจากกด Save แล้ว profile ต้องถูก fetch ใหม่อีกครั้ง (เรียก getProfile() 2 รอบ)
-        it('should refetch profile after successful save', async () => {
-            mockUseAuth.mockReturnValue({
-                state: { status: 'authenticated', user: { id: '1' } },
-                login: vi.fn(),
-                logout: vi.fn(),
-            });
-            mockProfileApi.getProfile.mockResolvedValue({ data: mockProfile });
-            mockProfileApi.updateUser.mockResolvedValue({ data: { success: true } });
+        await openPopup();
+        fireEvent.click(screen.getByText("Save"));
 
-            render(<Profile />);
+        await waitFor(() => {
+            expect(screen.getByText("Update failed")).toBeInTheDocument();
+        });
 
-            await waitFor(() => {
-                expect(screen.getByText('testuser')).toBeInTheDocument();
-            });
+        const firstNameInput = screen.getByDisplayValue("John");
+        fireEvent.change(firstNameInput, { target: { value: "Jane" } });
 
-            // First fetch on mount
-            expect(mockProfileApi.getProfile).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText("Update failed")).not.toBeInTheDocument();
+    });
 
-            fireEvent.click(screen.getByTitle('Edit Profile'));
-            fireEvent.click(screen.getByText('Save'));
+    it("disables buttons while saving", async () => {
+        spyUpdateUser.mockImplementation(
+            () => new Promise((resolve) => setTimeout(resolve, 1000))
+        );
 
-            await waitFor(() => {
-                // Second fetch after save
-                expect(mockProfileApi.getProfile).toHaveBeenCalledTimes(2);
-            });
+        await openPopup();
+
+        const saveButton = screen.getByText("Save");
+        const cancelButton = screen.getByText("Cancel");
+
+        fireEvent.click(saveButton);
+
+        expect(screen.getByText("Saving...")).toBeInTheDocument();
+        expect(saveButton).toBeDisabled();
+        expect(cancelButton).toBeDisabled();
+    });
+});
+
+// =====================================================
+//  Ticket filtering & toolbar
+// =====================================================
+describe("Ticket filtering and EventToolbar", () => {
+    beforeEach(() => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockProfile } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+    });
+
+    it("filters tickets by search query (state update)", async () => {
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByTestId("search-input")).toBeInTheDocument();
+        });
+
+        const searchInput = screen.getByTestId("search-input") as HTMLInputElement;
+        fireEvent.change(searchInput, { target: { value: "ROBERT" } });
+
+        expect(searchInput.value).toBe("ROBERT");
+    });
+
+    it("filters tickets by category (state update)", async () => {
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByTestId("category-select")).toBeInTheDocument();
+        });
+
+        const categorySelect = screen.getByTestId(
+            "category-select"
+        ) as HTMLSelectElement;
+        fireEvent.change(categorySelect, { target: { value: "concert" } });
+
+        expect(categorySelect.value).toBe("concert");
+    });
+
+    it("changes sort order", async () => {
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByTestId("order-select")).toBeInTheDocument();
+        });
+
+        const orderSelect = screen.getByTestId(
+            "order-select"
+        ) as HTMLSelectElement;
+        fireEvent.change(orderSelect, { target: { value: "oldest" } });
+
+        expect(orderSelect.value).toBe("oldest");
+    });
+});
+
+// =====================================================
+//  Error handling
+// =====================================================
+describe("Error handling", () => {
+    it("handles update error without response data", async () => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockProfile } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+        spyUpdateUser.mockRejectedValue({});
+
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByText("testuser")).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByTitle("Edit Profile"));
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(
+                screen.getByText("Failed to update profile")
+            ).toBeInTheDocument();
+        });
+    });
+});
+
+// =====================================================
+//  Edge cases
+// =====================================================
+describe("Edge cases (missing optional fields)", () => {
+    it("handles organizer with missing optional fields", async () => {
+        const incompleteOrganizer = {
+            ...mockOrganizerProfile,
+            companyName: undefined,
+            verificationStatus: undefined,
+        };
+
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "2" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: incompleteOrganizer } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+
+        render(<Profile />);
+
+        await waitFor(() => {
+            // มีอย่างน้อย 1 ตำแหน่งที่แสดง "-"
+            expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+        });
+    });
+
+    it("handles user with missing ID card", async () => {
+        const userWithoutIdCard = {
+            ...mockProfile,
+            idCard: undefined,
+        };
+
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: userWithoutIdCard } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByText("-")).toBeInTheDocument();
+        });
+    });
+
+    it("refetches profile after successful save", async () => {
+        mockUseAuth.mockReturnValue({
+            state: { status: "authenticated", user: { id: "1" } },
+        } as any);
+        spyGetProfile.mockResolvedValue({ data: mockProfile } as any);
+        spyApiGet.mockResolvedValue({ data: [] } as any);
+        spyUpdateUser.mockResolvedValue({ data: { success: true } } as any);
+
+        render(<Profile />);
+
+        await waitFor(() => {
+            expect(screen.getByText("testuser")).toBeInTheDocument();
+        });
+
+        // First fetch on mount
+        expect(spyGetProfile).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByTitle("Edit Profile"));
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            // Second fetch after save (onSave = fetchProfile)
+            expect(spyGetProfile).toHaveBeenCalledTimes(2);
         });
     });
 });

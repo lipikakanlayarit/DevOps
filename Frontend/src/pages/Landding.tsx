@@ -22,7 +22,7 @@ import poster6 from "@/assets/poster6.png";
 import poster7 from "@/assets/poster7.png";
 import poster8 from "@/assets/poster8.png";
 
-type Poster = { dateLabel: string; title: string; imageUrl: string };
+type Poster = { dateLabel: string; title: string; imageUrl: string; eventId?: number };
 
 type EventCardApi = {
     id: number;
@@ -164,12 +164,11 @@ export default function LandingPage() {
     const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-    // countdown mock
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + 10);
-    targetDate.setHours(12, 56, 25, 0);
+    // Countdown target (ใช้ event จริง ถ้าไม่มีใช้ fallback +10 วัน)
+    const [targetDate, setTargetDate] = useState<Date | null>(null);
+    const [nextOnSaleEvent, setNextOnSaleEvent] = useState<EventCardApi | null>(null);
 
-    // Data from API
+// Data from API
     const [rawEvents, setRawEvents] = useState<EventCardApi[]>([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
@@ -201,6 +200,48 @@ export default function LandingPage() {
         })();
     }, []);
 
+    useEffect(() => {
+        const now = Date.now();
+
+        // กรณีไม่มี event เลย → ใช้ fallback (อีก 10 วันข้างหน้า)
+        if (!rawEvents || rawEvents.length === 0) {
+            const d = new Date();
+            d.setDate(d.getDate() + 10);
+            d.setHours(12, 56, 25, 0);
+            setTargetDate(d);
+            setNextOnSaleEvent(null);
+            return;
+        }
+
+        // เลือกเฉพาะ event ที่ salesStart อยู่ในอนาคต
+        const upcoming = rawEvents.filter(
+            (ev) => ev.salesStartDatetime && +new Date(ev.salesStartDatetime) > now
+        );
+
+        if (upcoming.length === 0) {
+            // ไม่มี event ที่กำลังจะเริ่มขาย → ใช้ fallback
+            const d = new Date();
+            d.setDate(d.getDate() + 10);
+            d.setHours(12, 56, 25, 0);
+            setTargetDate(d);
+            setNextOnSaleEvent(null);
+            return;
+        }
+
+        // หา salesStartDatetime ที่ใกล้ที่สุด
+        upcoming.sort(
+            (a, b) =>
+                +new Date(a.salesStartDatetime as string) -
+                +new Date(b.salesStartDatetime as string)
+        );
+
+        const next = upcoming[0];
+        setTargetDate(new Date(next.salesStartDatetime as string));
+        setNextOnSaleEvent(next);
+    }, [rawEvents]);
+
+
+
     // map real -> UI + คำนวณสถานะ + ตัด OFFSALE ออก
     const realUI: EventItemUI[] = useMemo(() => {
         const mapped = (rawEvents ?? []).map((e) => {
@@ -219,8 +260,71 @@ export default function LandingPage() {
         return mapped.filter((m) => m.effectiveStatus !== "OFFSALE");
     }, [rawEvents]);
 
-    // ผสม mock (ของจริงมาก่อน)
-    const uiEventsAll: EventItemUI[] = useMemo(() => mergeWithMocks(realUI, mockEvents, 60), [realUI]);
+    // ใช้ event จริงก่อน ถ้าไม่มีเลยค่อย fallback เป็น mock
+    const uiEventsAll: EventItemUI[] = useMemo(() => {
+        if (realUI.length > 0) {
+            return realUI;
+        }
+        return mockEvents;
+    }, [realUI]);
+
+
+    // 🔁 โปสเตอร์สำหรับแถบเลื่อน
+// - ใช้ event จริงเป็นหลัก
+// - ถ้า event น้อยจะวนซ้ำให้ได้อย่างน้อย MIN_ITEMS ชิ้น
+// - ถ้าไม่มี event จริงเลย → ใช้ posterData (mock) เป็น fallback
+    const marqueePosters: Poster[] = useMemo(() => {
+        const MIN_ITEMS = 8; // อยากให้ base loop ยาวประมาณกี่ใบก็ปรับเลขตรงนี้ได้
+
+        const realEvents = realUI.filter((e) => e.id > 0);
+        if (realEvents.length > 0) {
+            const result: Poster[] = [];
+            const rawById = new Map(rawEvents.map((r) => [r.id, r]));
+
+            while (result.length < MIN_ITEMS) {
+                for (const ev of realEvents) {
+                    if (result.length >= MIN_ITEMS) break;
+
+                    const raw = rawById.get(ev.id);
+                    let dateLabel = "";
+
+                    if (raw?.salesStartDatetime) {
+                        const d = new Date(raw.salesStartDatetime);
+                        const f = new Intl.DateTimeFormat("th-TH", {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                        });
+                        dateLabel = `[${f.format(d)}]`;
+                    }
+
+                    result.push({
+                        dateLabel,
+                        title: ev.title,
+                        imageUrl: ev.cover,
+                        eventId: ev.id,
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        // ไม่มี event จริงเลย → ใช้ mock poster เดิม
+        return posterData;
+    }, [realUI, rawEvents]);
+
+    // เลือก Featured event จากของจริง (ถ้ามี)
+    const featuredEvent = useMemo(() => {
+        if (realUI.length === 0) return null;
+
+        const onSale = realUI.find((e) => e.effectiveStatus === "ONSALE");
+        if (onSale) return onSale;
+
+        return realUI[0];
+    }, [realUI]);
+
+
 
     // หมวดหมู่ dynamic
     const dynamicCategories = useMemo(() => {
@@ -324,7 +428,8 @@ export default function LandingPage() {
         return () => container.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const firstEventId = filteredEvents.find((e) => e.id > 0)?.id ?? realUI[0]?.id;
+    const firstRealEventId = realUI.find((e) => e.id > 0)?.id;
+
 
     return (
         <>
@@ -343,7 +448,9 @@ export default function LandingPage() {
                 {/* Hero */}
                 <section className="px-6 py-16">
                     <div className="text-center mb-5">
-                        <h1 className="text-[min(9vw,200px)] font-extrabold leading-tight">LIVE THE VIBE ON</h1>
+                        <h1 className="text-[min(9vw,200px)] font-extrabold leading-tight">
+                            LIVE THE VIBE ON
+                        </h1>
                         <div className="flex justify-center gap-4 mb-12 pt-8">
                             <PrimaryButton onClick={scrollToEventsSection} className="px-8 py-3">
                                 ALL EVENT
@@ -367,59 +474,107 @@ export default function LandingPage() {
                             onTouchEnd={handleTouchEnd}
                             style={{ margin: "20px 0" }}
                         >
-                            <div className={`${isAnimationPaused ? "animate-scroll-infinite paused" : "animate-scroll-infinite"} flex gap-4`}>
-                                {[...posterData, ...posterData, ...posterData].map((poster, index) => (
-                                    <div key={`poster-${index}`} className="flex-shrink-0 poster-container">
-                                        <div className="transition-transform duration-300 hover:scale-105 will-change-transform">
-                                            <PosterCard
-                                                dateLabel={poster.dateLabel}
-                                                title={poster.title}
-                                                imageUrl={poster.imageUrl}
-                                                onClick={() =>
-                                                    !isDragging &&
-                                                    (firstEventId ? navigate(`/eventselect/${firstEventId}`) : scrollToEventsSection())
-                                                }
-                                            />
+                            <div
+                                className={`${
+                                    isAnimationPaused
+                                        ? "animate-scroll-infinite paused"
+                                        : "animate-scroll-infinite"
+                                } flex gap-4`}
+                            >
+                                {[...marqueePosters, ...marqueePosters].map((poster, index) => {
+                                    const handleClick = () => {
+                                        if (isDragging) return;
+
+                                        if (poster.eventId && poster.eventId > 0) {
+                                            navigate(`/eventselect/${poster.eventId}`);
+                                        } else if (firstRealEventId) {
+                                            navigate(`/eventselect/${firstRealEventId}`);
+                                        } else {
+                                            scrollToEventsSection();
+                                        }
+                                    };
+
+                                    return (
+                                        <div key={`poster-${index}`} className="flex-shrink-0 poster-container">
+                                            <div className="transition-transform duration-300 hover:scale-105 will-change-transform">
+                                                <PosterCard
+                                                    dateLabel={poster.dateLabel}
+                                                    title={poster.title}
+                                                    imageUrl={poster.imageUrl}
+                                                    onClick={handleClick}
+                                                />
+                                            </div>
                                         </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Countdown Section แบบในรูป: แถบแดง + พื้นดำ + ปุ่ม */}
+                {targetDate && nextOnSaleEvent && (
+                    <>
+                        {/* แถบแดงด้านบน (ใช้ CountdownTimer เดิม) */}
+                        <CountdownTimer targetDate={targetDate} />
+
+                        {/* พื้นดำ + รูป + ข้อมูล event + ปุ่ม */}
+                        <section className="bg-[#1D1D1D] text-white py-12 px-6">
+                            <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-8 items-center">
+                                <div>
+                                    <img
+                                        src={coverOrFallback(nextOnSaleEvent.coverUrl)}
+                                        alt={nextOnSaleEvent.eventName}
+                                        className="w-full max-w-md mx-auto rounded-lg"
+                                    />
+                                </div>
+
+                                <div className="text-center md:text-left">
+                                    {/* วันที่สั้น ๆ แบบ 2024.03.22 */}
+                                    <div className="text-[clamp(16px,3vw,20px)] font-bold text-white mb-2">
+                                        {nextOnSaleEvent.salesStartDatetime
+                                            ? (() => {
+                                                const d = new Date(
+                                                    nextOnSaleEvent.salesStartDatetime as string
+                                                );
+                                                const y = d.getFullYear();
+                                                const m = String(d.getMonth() + 1).padStart(2, "0");
+                                                const day = String(d.getDate()).padStart(2, "0");
+                                                return `${y}.${m}.${day}`;
+                                            })()
+                                            : ""}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </section>
 
-                {/* Countdown */}
-                <CountdownTimer targetDate={targetDate} />
+                                    {/* ชื่อ event ตัวใหญ่สีแดง */}
+                                    <h2 className="text-[clamp(28px,6vw,48px)] font-extrabold text-[#FA3A2B] mb-4 leading-tight">
+                                        {nextOnSaleEvent.eventName}
+                                    </h2>
 
-                {/* Featured */}
-                <section className="bg-[#1D1D1D] text-white py-12 px-6">
-                    <div className="max-w-6xl mx-auto">
-                        <div className="grid md:grid-cols-2 gap-8 items-center">
-                            <div>
-                                <img src={poster1} alt="Featured" className="w-full max-w-md mx-auto rounded-lg" />
+                                    {/* คำอธิบาย: ยังไม่มีจาก DB ใช้ข้อความ template ไปก่อน */}
+                                    <p className="text-gray-300 mb-6 leading-relaxed">
+                                        Lorem Ipsum is simply dummy text of the printing and
+                                        typesetting industry. You can replace this text with your
+                                        event description later.
+                                    </p>
+
+                                    <PrimaryButton
+                                        onClick={() => navigate(`/eventselect/${nextOnSaleEvent.id}`)}
+                                        className="px-8 py-3"
+                                    >
+                                        VIEW
+                                    </PrimaryButton>
+                                </div>
                             </div>
-                            <div>
-                                <div className="text-[clamp(16px,3vw,20px)] font-bold text-white mb-2">2024.03.22</div>
-                                <h2 className="text-[clamp(28px,6vw,48px)] font-extrabold text-[#FA3A2B] mb-4">
-                                    ROBERT<br />BALTAZAR TRIO
-                                </h2>
-                                <p className="text-gray-300 mb-6 leading-relaxed">Lorem Ipsum is simply dummy text...</p>
-                                <PrimaryButton
-                                    onClick={() => (firstEventId ? navigate(`/eventselect/${firstEventId}`) : scrollToEventsSection())}
-                                    className="px-8 py-3"
-                                >
-                                    VIEW
-                                </PrimaryButton>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                        </section>
+                    </>
+                )}
 
                 {/* Events Section */}
                 <section id="events-section" className="py-12 px-6">
                     <div className="max-w-7xl mx-auto">
                         <h2 className="text-center text-[clamp(28px,6vw,80px)] font-extrabold text-black pb-8 pt-20 leading-tight">
-                            <span className="text-[#FA3A2B]">ALL</span> VIBE LONG <span className="text-[#FA3A2B]">STAGE</span> ON FIRE
+                            <span className="text-[#FA3A2B]">ALL</span> VIBE LONG{" "}
+                            <span className="text-[#FA3A2B]">STAGE</span> ON FIRE
                         </h2>
 
                         {/* Toolbar */}
@@ -442,8 +597,16 @@ export default function LandingPage() {
                         </div>
 
                         {/* states */}
-                        {loading && <div className="text-center text-gray-500 py-10">กำลังโหลดรายการอีเวนต์...</div>}
-                        {err && <div className="text-center text-red-600 py-10">โหลดล้มเหลว: {err}</div>}
+                        {loading && (
+                            <div className="text-center text-gray-500 py-10">
+                                กำลังโหลดรายการอีเวนต์...
+                            </div>
+                        )}
+                        {err && (
+                            <div className="text-center text-red-600 py-10">
+                                โหลดล้มเหลว: {err}
+                            </div>
+                        )}
 
                         {/* Event Cards */}
                         {!loading && !err && (
@@ -457,13 +620,21 @@ export default function LandingPage() {
                                             title={event.title}
                                             venue={event.venue}
                                             effectiveStatus={event.effectiveStatus}
-                                            onClickGetTicket={() => (event.id > 0 ? navigate(`/eventselect/${event.id}`) : undefined)}
+                                            onClickGetTicket={() =>
+                                                event.id > 0
+                                                    ? navigate(`/eventselect/${event.id}`)
+                                                    : undefined
+                                            }
                                         />
                                     ))
                                 ) : (
                                     <div className="col-span-full text-center py-12">
-                                        <h3 className="text-lg font-medium text-gray-900 mb-2">No events found</h3>
-                                        <p className="text-gray-500 mb-4">Try adjusting your search terms or filters.</p>
+                                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                                            No events found
+                                        </h3>
+                                        <p className="text-gray-500 mb-4">
+                                            Try adjusting your search terms or filters.
+                                        </p>
                                         <button
                                             onClick={() => {
                                                 setSearchQuery("");
@@ -482,11 +653,19 @@ export default function LandingPage() {
                         {!loading && !err && filteredEvents.length > 0 && (
                             <div className="text-center mt-12">
                                 {visibleCount < filteredEvents.length ? (
-                                    <OutlineButton onClick={() => setVisibleCount((n) => Math.min(n + LOAD_STEP, filteredEvents.length))}>
+                                    <OutlineButton
+                                        onClick={() =>
+                                            setVisibleCount((n) =>
+                                                Math.min(n + LOAD_STEP, filteredEvents.length)
+                                            )
+                                        }
+                                    >
                                         Show more ({filteredEvents.length - visibleCount} remaining)
                                     </OutlineButton>
                                 ) : filteredEvents.length > INITIAL_COUNT ? (
-                                    <OutlineButton onClick={() => setVisibleCount(INITIAL_COUNT)}>Show less</OutlineButton>
+                                    <OutlineButton onClick={() => setVisibleCount(INITIAL_COUNT)}>
+                                        Show less
+                                    </OutlineButton>
                                 ) : null}
                             </div>
                         )}
