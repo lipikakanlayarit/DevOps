@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 @Rollback
 @ActiveProfiles("test")     // <<<<<< ตรงนี้คือของจริง!
-class ZoneTicketTypesRepositoryIntegrationTest {
+class ZoneTicketTypesRepositoryIT {
 
     @Autowired
     private ZoneTicketTypesRepository repo;
