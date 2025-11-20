@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # 1) Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+
+  # 2) Scrape Spring Boot Actuator /metrics
+  - job_name: 'spring-backend'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['spring-backend:8080']
