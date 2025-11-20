@@ -1,127 +1,139 @@
+// cypress/e2e/admin-eventdetail.cy.js
 /// <reference types="cypress" />
 
 const FRONTEND_URL = "http://localhost:5173";
-const EVENT_ID = "123";
+
+// ใช้ event_id จากฐานจริง (BUTCON Music Fest 2025)
+const EVENT_ID = "1";
 
 /* ==============================
-   Mock Data
+   Seed-like Data (อิงจาก R__butcon_seed_data.sql)
    ============================== */
 
-const mockEvent = {
+// Event: BUTCON Music Fest 2025 (จาก seed)
+const seedEvent = {
     id: Number(EVENT_ID),
-    organizerId: 10,
-    organizerName: "Cool Organizer Co., Ltd.",
-    eventName: "Rock the Night",
-    description: "Best concert ever.",
-    categoryId: 1, // → Concert
-    startDateTime: "2025-01-10T18:00:00Z",
-    endDateTime: "2025-01-10T21:00:00Z",
-    salesStartDateTime: "2024-12-01T10:00:00Z",
-    salesEndDateTime: "2025-01-09T23:59:59Z",
-    venueName: "Impact Arena",
+    organizerId: 1, // จาก SELECT organizer_id WHERE event_name='BUTCON Music Fest 2025'
+    organizerName: "EventPro Ltd.",
+    eventName: "BUTCON Music Fest 2025",
+    description: "Annual outdoor music festival",
+    categoryId: 1, // 1 → Concert (ตาม categoryLabel ในหน้า React)
+    startDateTime: "2025-11-20T11:00:00Z", // ≈ 18:00 +07
+    endDateTime: "2025-11-20T16:59:59Z",   // ≈ 23:59:59 +07
+    salesStartDateTime: "2025-11-19T00:00:00Z", // ตัวเลขสมมติให้เทสต์ ไม่ได้ assert เวลาเป๊ะ
+    salesEndDateTime: "2025-12-19T00:00:00Z",
+    venueName: "Central Park",
     venueAddress: "Bangkok, Thailand",
-    maxCapacity: 100,
+    maxCapacity: 5000,
     status: "APPROVED",
-    updatedAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-11-01T00:00:00Z",
 };
 
-const mockTicketZones10 = Array.from({ length: 10 }, (_, i) => ({
-    zone: `ZONE-${i + 1}`,
-    row: i + 1,
-    column: 10 + i,
-    sale: `${i}/${100 + i}`,
-    price: 1500 + i * 100,
-}));
+// Ticket Zones (อิงโครงจาก seat_zones: Zone A/B/C)
+const seedTicketZones = [
+    // zone, row count, column count, sale = sold/total, price (VIP/REGULAR/STANDING)
+    { zone: "Zone A", row: 5, column: 10, sale: "2/50", price: 2500 }, // VIP
+    { zone: "Zone B", row: 5, column: 10, sale: "0/50", price: 1500 }, // REGULAR
+    { zone: "Zone C", row: 0, column: 0, sale: "0/0",  price: 800 },   // STANDING (ไม่มีที่นั่ง)
+    // เพิ่ม rows เพิ่มเติมให้มี pagination page 1 = 5 แถว
+    { zone: "Zone A-Extra-1", row: 5, column: 10, sale: "0/50", price: 2500 },
+    { zone: "Zone B-Extra-1", row: 5, column: 10, sale: "0/50", price: 1500 },
+    { zone: "Zone A-Extra-2", row: 5, column: 10, sale: "0/50", price: 2500 },
+    { zone: "Zone B-Extra-2", row: 5, column: 10, sale: "0/50", price: 1500 },
+    { zone: "Zone A-Extra-3", row: 5, column: 10, sale: "0/50", price: 2500 },
+    { zone: "Zone B-Extra-3", row: 5, column: 10, sale: "0/50", price: 1500 },
+    { zone: "Zone B-Extra-4", row: 5, column: 10, sale: "0/50", price: 1500 },
+];
 
-const mockSeatStats = {
+// Seat stats (ตาม geometry จาก seed: Zone A+B 5x10 = 100 ที่นั่ง)
+const seedSeatStats = {
     total: 100,
-    sold: 20,
-    reserved: 10,
-    available: 70,
+    sold: 1,       // แถวที่เป็น PAID
+    reserved: 2,   // แถวที่เป็น UNPAID/PENDING
+    available: 97, // 100 - 3
 };
 
-const mockReservations = [
+// Reservations (ใช้โครงเดียวกับ backend ที่หน้า React map อยู่)
+const seedReservations = [
     {
         id: 1,
-        reserved_code: "RES-001",
-        seat_label: "A 1",
-        zone_label: "A",
-        row_label: "1",
-        seat_number: 1,
-        total: 1500,
-        user: "user123",
+        reserved_code: "RSV-2025-0001",
+        seat_label: "A2",
+        zone_label: "Zone A",
+        row_label: "A",
+        seat_number: 2,
+        total: 2500,
+        user: "alice123",
         status: "PAID", // → COMPLETE → SOLD
-        date: "2025-01-01T00:00:00Z",
-        payment_method: "CREDIT_CARD",
+        date: "2025-11-18T00:00:00Z",
+        payment_method: "Bank Transfer",
     },
     {
         id: 2,
-        reserved_code: "RES-002",
-        seat_label: "A 2",
-        zone_label: "A",
-        row_label: "1",
-        seat_number: 2,
-        total: 1500,
-        user: "user456",
+        reserved_code: "RSV-2025-0002",
+        seat_label: "A3",
+        zone_label: "Zone A",
+        row_label: "A",
+        seat_number: 3,
+        total: 2500,
+        user: "user_unpaid",
         status: "UNPAID", // → UNPAID → RESERVED
-        date: "2025-01-02T00:00:00Z",
-        payment_method: "QR",
+        date: "2025-11-19T00:00:00Z",
+        payment_method: "Credit Card",
     },
     {
         id: 3,
-        reserved_code: "RES-003",
-        seat_label: "B 1",
-        zone_label: "B",
-        row_label: "1",
+        reserved_code: "RSV-2025-0003",
+        seat_label: "B1",
+        zone_label: "Zone B",
+        row_label: "B",
         seat_number: 1,
-        total: 2000,
-        user: "another-user",
-        status: "PENDING", // อะไรก็ได้ที่ไม่ใช่ PAID → UNPAID → RESERVED
-        date: "2025-01-03T00:00:00Z",
-        payment_method: "CASH",
+        total: 1500,
+        user: "user_pending",
+        status: "PENDING", // → UNPAID → RESERVED
+        date: "2025-11-19T12:00:00Z",
+        payment_method: "Cash",
     },
 ];
 
-const mockOrganizer = {
-    id: 10,
-    companyName: "Cool Organizer Co., Ltd.",
-    phoneNumber: "081-234-5678",
-    address: "123 Main Road, Bangkok",
-    email: "organizer@example.com",
+// Organizer จากตาราง organizers (org1@butcon.com → EventPro Ltd.) :contentReference[oaicite:3]{index=3}
+const seedOrganizer = {
+    id: 1,
+    companyName: "EventPro Ltd.",
+    phoneNumber: "0834567890",
+    address: "Bangkok, TH",
+    email: "org1@butcon.com",
 };
 
 /* ==============================
    Helpers
    ============================== */
 
-/**
- * ตั้ง intercept สำหรับหน้า Event Detail (แต่ยังไม่ visit)
- */
 function setupAdminEventDetailIntercepts({
-                                             event = mockEvent,
-                                             zones = mockTicketZones10,
-                                             seatStats = mockSeatStats,
-                                             reservations = mockReservations,
-                                             organizer = mockOrganizer,
+                                             event = seedEvent,
+                                             zones = seedTicketZones,
+                                             seatStats = seedSeatStats,
+                                             reservations = seedReservations,
+                                             organizer = seedOrganizer,
                                              delayEvent = 0,
                                              delayZones = 0,
                                              delaySeatStats = 0,
                                              delayReservations = 0,
                                          } = {}) {
-    // mock auth เป็น admin (แทนการ login จริง)
+    // mock auth เป็น admin
     cy.intercept("GET", "**/api/auth/me", {
         statusCode: 200,
         body: {
-            id: 1,
+            id: 999,
             username: "admin",
-            email: "admin@example.com",
+            email: "admin@butcon.com",
             role: "ADMIN",
             firstName: "Admin",
             lastName: "User",
         },
     }).as("getMe");
 
-    // Event detail
+    // Event detail (ตามหน้า admin-eventdetail.tsx) :contentReference[oaicite:4]{index=4}
     cy.intercept("GET", `**/api/admin/events/${EVENT_ID}`, {
         delay: delayEvent,
         statusCode: 200,
@@ -155,7 +167,7 @@ function setupAdminEventDetailIntercepts({
         body: organizer,
     }).as("getOrganizer");
 
-    // กัน error รูป cover
+    // กัน error รูป cover (AuthImage เรียก /admin/events/:id/cover?v=...)
     cy.intercept("GET", `**/admin/events/${EVENT_ID}/cover*`, {
         statusCode: 200,
         body: "",
@@ -163,14 +175,13 @@ function setupAdminEventDetailIntercepts({
 }
 
 /**
- * login แบบ mock (set token + /auth/me) แล้วเข้า /admin/eventdetail?id=123
+ * login แบบ mock (set token + /auth/me) แล้วเข้า /admin/eventdetail?id=1
  */
 function visitAdminEventDetailPage(options = {}) {
     setupAdminEventDetailIntercepts(options);
 
     cy.visit(`${FRONTEND_URL}/admin/eventdetail?id=${EVENT_ID}`, {
         onBeforeLoad(win) {
-            // จำลองว่า login แล้ว ได้ token มาแล้ว
             win.localStorage.setItem("token", "fake-admin-token");
         },
     });
@@ -186,16 +197,16 @@ function visitAdminEventDetailPage(options = {}) {
    Test Suite
    ============================== */
 
-describe("Admin Event Detail Page", () => {
-    // 1) หน้าจอแสดงครบ - Sidebar, Breadcrumb, Event Info, Ticket Zones, Seat Stats, Reservations
-    it("shows sidebar, breadcrumb and main sections", () => {
+describe("Admin Event Detail Page - BUTCON Music Fest (seed-based)", () => {
+    // 1) โครงหน้าจอหลัก: breadcrumb + section ต่าง ๆ
+    it("shows breadcrumb, sections and seat stats labels", () => {
         visitAdminEventDetailPage();
 
         // breadcrumb
         cy.contains("Event Management").should("be.visible");
-        cy.contains(`(ID: ${EVENT_ID})`).should("be.visible");
+        cy.contains("(ID: 1)").should("be.visible");
 
-        // main heading
+        // main headings
         cy.contains("Ticket Zones").should("be.visible");
         cy.contains("Reservations").should("be.visible");
 
@@ -205,7 +216,7 @@ describe("Admin Event Detail Page", () => {
         cy.contains("Sold Seat:").should("be.visible");
     });
 
-    // 2) Loading state - แสดง skeleton ขณะโหลดข้อมูล
+    // 2) Loading skeleton ตอนโหลด event
     it("shows loading skeleton while fetching event detail", () => {
         setupAdminEventDetailIntercepts({ delayEvent: 500 });
 
@@ -217,74 +228,73 @@ describe("Admin Event Detail Page", () => {
 
         cy.wait("@getMe");
 
-        // ระหว่าง event ยังโหลดอยู่ ควรเห็น skeleton
+        // หน้า React ใช้ .animate-pulse เป็น skeleton :contentReference[oaicite:5]{index=5}
         cy.get(".animate-pulse").should("be.visible");
 
         cy.wait("@getEvent");
 
-        // หลังโหลดเสร็จ skeleton หาย และแสดงชื่อ event
         cy.get(".animate-pulse").should("not.exist");
-        cy.contains(mockEvent.eventName).should("be.visible");
+        cy.contains(seedEvent.eventName).should("be.visible");
     });
 
-    // 3) Fetch event detail - แสดงข้อมูล event (poster, name, category, etc.)
+    // 3) แสดงข้อมูล Event จาก /admin/events/:id
     it("displays event detail from /admin/events/:id", () => {
         visitAdminEventDetailPage();
 
-        // event title
-        cy.contains(mockEvent.eventName).should("be.visible");
+        // title
+        cy.contains(seedEvent.eventName).should("be.visible");
 
-        // category label (categoryId=1 → Concert)
+        // category = Concert
         cy.contains("Category:")
             .next()
             .should("contain.text", "Concert");
 
-        // organizer name
+        // organizer
         cy.contains("Organizer:")
             .next()
-            .should("contain.text", mockEvent.organizerName);
+            .should("contain.text", seedEvent.organizerName);
 
         // location
         cy.contains("Location:")
             .next()
-            .should("contain.text", mockEvent.venueName);
+            .should("contain.text", seedEvent.venueName);
 
-        // capacity
+        // capacity (5000)
         cy.contains("Capacity:")
             .next()
-            .should("contain.text", "100");
+            .should("contain.text", "5,000");
 
-        // poster img (AuthImage → alt = event.title)
-        cy.get(`img[alt="${mockEvent.eventName}"]`).should("exist");
+        // poster (AuthImage alt = event.title)
+        cy.get(`img[alt="${seedEvent.eventName}"]`).should("exist");
     });
 
-    // 4) Fetch ticket zones - แสดงตารางโซนตั๋ว 5 คอลัมน์
-    it("renders ticket zones table with correct columns and rows", () => {
+    // 4) ตาราง Ticket Zones + header + rows หน้าแรก 5 แถว (page size = 5)
+    it("renders ticket zones table with correct headers and first-page rows", () => {
         visitAdminEventDetailPage();
 
         cy.contains("Ticket Zones").should("be.visible");
 
-        // header
+        // headers
         cy.contains("th", "Ticket Zone").should("be.visible");
         cy.contains("th", "Row").should("be.visible");
         cy.contains("th", "Column").should("be.visible");
         cy.contains("th", "Sale").should("be.visible");
         cy.contains("th", "Price/ticket").should("be.visible");
 
-        // rows page 1 (page size = 5)
+        // rows page 1
         cy.get("table").first().find("tbody tr").should("have.length", 5);
     });
 
-    // 5) Fetch seat stats - แสดง badge Available/Reserved/Sold
-    it("shows seat stats badges with numbers from /seat-stats", () => {
+    // 5) Seat stats จาก /seat-stats
+    it("shows seat stats badges using /seat-stats data", () => {
         visitAdminEventDetailPage();
 
-        cy.contains(`Available Seat: ${mockSeatStats.available}`).should("be.visible");
-        cy.contains(`Reserved Seat: ${mockSeatStats.reserved}`).should("be.visible");
-        cy.contains(`Sold Seat: ${mockSeatStats.sold}`).should("be.visible");
+        cy.contains(`Available Seat: ${seedSeatStats.available}`).should("be.visible");
+        cy.contains(`Reserved Seat: ${seedSeatStats.reserved}`).should("be.visible");
+        cy.contains(`Sold Seat: ${seedSeatStats.sold}`).should("be.visible");
     });
 
-    // 6) Fetch reservations - แสดงตารางการจอง
+    // 6) Reservations table แสดงครบ column และแถวตาม seedReservations
     it("shows reservations table from /reservations", () => {
         visitAdminEventDetailPage();
 
@@ -296,37 +306,36 @@ describe("Admin Event Detail Page", () => {
         cy.contains("th", "PAYMENT METHOD").should("be.visible");
         cy.contains("th", "STATUS").should("be.visible");
 
-        cy.get("table").last().find("tbody tr").should("have.length", mockReservations.length);
+        cy.get("table").last().find("tbody tr").should("have.length", seedReservations.length);
     });
 
-
-
-    // 10) Reservations filter - All - แสดงทุก reservations
+    // 7) Filter = All (ค่า default) → แสดงทุก reservation
     it("filters reservations - All shows all items", () => {
         visitAdminEventDetailPage();
 
         cy.contains("button", "All").click();
 
-        cy.get("table").last().find("tbody tr").should("have.length", mockReservations.length);
+        cy.get("table").last().find("tbody tr").should("have.length", seedReservations.length);
     });
 
-    // 11) Reservations filter - Reserved - เฉพาะ RESERVED
-    it("filters reservations - Reserved shows only non-sold", () => {
+    // 8) Filter = Reserved → เฉพาะ status ที่ไม่ใช่ PAID (UNPAID/PENDING)
+    it("filters reservations - Reserved shows only non-PAID items", () => {
         visitAdminEventDetailPage();
 
         cy.contains("button", "Reserved").click();
 
+        // จาก seedReservations มี 3 แถว: 1 PAID, 2 non-PAID
         cy.get("table").last().find("tbody tr").should("have.length", 2);
 
         cy.get("table").last().contains("SOLD").should("not.exist");
         cy.get("table").last().contains("RESERVED").should("exist");
     });
 
-    // 13) Reservations search - พิมพ์ "user123"
-    it("searches reservations by keyword", () => {
+    // 10) Search reservations ด้วย keyword (alice123)
+    it("searches reservations by keyword (alice123)", () => {
         visitAdminEventDetailPage();
 
-        cy.get('input[placeholder="Search reservations..."]').type("user123");
+        cy.get('input[placeholder="Search reservations..."]').type("alice123");
 
         cy.get("table")
             .last()
@@ -334,22 +343,20 @@ describe("Admin Event Detail Page", () => {
             .should("have.length", 1)
             .first()
             .within(() => {
-                cy.contains("user123").should("be.visible");
+                cy.contains("alice123").should("be.visible");
             });
     });
 
-
-
-    // 15) Organizer Detail Modal - เปิด/ปิดด้วย Close / ESC
+    // 11) Organizer Detail Modal - เปิด/ปิด ด้วยปุ่ม Close + ESC
     it("opens and closes Organizer Detail modal", () => {
         visitAdminEventDetailPage();
 
-        // open
+        // เปิด
         cy.contains("button", "Organizer detail").click();
         cy.contains("Organizer Details").should("be.visible");
-        cy.contains(mockOrganizer.companyName).should("be.visible");
+        cy.contains(seedOrganizer.companyName).should("be.visible");
 
-        // close ด้วยปุ่ม Close
+        // ปิดด้วยปุ่ม Close
         cy.contains("button", "Close").click();
         cy.contains("Organizer Details").should("not.exist");
 

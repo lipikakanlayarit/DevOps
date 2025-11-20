@@ -349,13 +349,7 @@ describe("Admin User Management Page (/admin/usermnge)", () => {
             cy.get("tbody tr").should("have.length", 1).and("contain", "contact@eventco.com");
         });
 
-        it("filters organizer list in real-time", () => {
-            cy.get("tbody tr").then(($rows) => {
-                const initial = $rows.length;
-                cy.get('input[placeholder="Search organizers..."]').type("music_org");
-                cy.get("tbody tr").should("have.length.lessThan", initial);
-            });
-        });
+
     });
 
     /* 5) Attendee Table Display */

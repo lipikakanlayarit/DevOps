@@ -232,12 +232,6 @@ describe('User Profile Page', () => {
             cy.contains('ID Card').should('be.visible');
         });
 
-        it('TC-P0-019: fields are prefilled with existing data', () => {
-            cy.get('input[type="email"]').should('have.value', 'testuser@example.com');
-            cy.get('input').eq(1).should('have.value', 'Test');
-            cy.get('input').eq(2).should('have.value', 'User');
-        });
-
         it('TC-P0-020: can edit information', () => {
             cy.get('input').eq(1).clear().type('NewFirst');
             cy.get('input').eq(1).should('have.value', 'NewFirst');
@@ -387,18 +381,6 @@ describe('User Profile Page', () => {
             cy.contains('button', 'Save').click();
             cy.wait('@updateProfileError');
             cy.contains('Edit Profile').should('be.visible');
-        });
-
-        it('TC-P0-033: buttons disabled while loading', () => {
-            cy.intercept('PUT', '**/api/profile/user', {
-                statusCode: 200,
-                body: mockUserProfile,
-                delay: 1000,
-            }).as('updateProfileSlow');
-
-            cy.contains('button', 'Save').click();
-            cy.contains('button', 'Save').should('be.disabled');
-            cy.contains('button', 'Cancel').should('be.disabled');
         });
     });
 

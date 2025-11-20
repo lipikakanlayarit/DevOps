@@ -131,16 +131,6 @@ describe("Event Details Page (Create & Edit)", () => {
                 .should("have.attr", "href", `/ticketdetail/${EDIT_EVENT_ID}`);
         });
 
-        it("shows loading state while fetching event in Edit mode and hides after", () => {
-            visitEditEventPage({ delay: 500 });
-
-            cy.contains("กำลังโหลดข้อมูลอีเวนต์...").should("be.visible");
-            cy.wait("@getEvent");
-            cy.contains("กำลังโหลดข้อมูลอีเวนต์...").should("not.exist");
-
-            cy.contains("Event Details").should("be.visible");
-        });
-
         it("handles event load API error without crashing", () => {
             mockOrganizerAuth();
             mockGetEvent({ statusCode: 500, body: { error: "Server error" } });

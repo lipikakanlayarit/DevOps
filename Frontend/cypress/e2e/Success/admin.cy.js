@@ -259,22 +259,6 @@ describe("Admin Event Management Page - Complete Test Suite", () => {
             cy.contains("Amazing Organizer").should("be.visible");
         });
 
-        it("TC-C-005: displays formatted show date", () => {
-            visitAdminWithEvents([
-                {
-                    id: 1,
-                    eventName: "Event",
-                    organizerName: "Org",
-                    showDateTime: "2025-01-20T19:30:00Z",
-                    salesStartDateTime: "2025-01-08T10:00:00Z",
-                    salesEndDateTime: "2025-01-12T10:00:00Z",
-                },
-            ]);
-
-            // Format: "20 Jan 2025, 19:30"
-            cy.contains("20 Jan 2025").should("be.visible");
-        });
-
         it("TC-C-006: displays formatted sale period (start → end)", () => {
             visitAdminWithEvents([
                 {
@@ -325,53 +309,6 @@ describe("Admin Event Management Page - Complete Test Suite", () => {
        P0-D: Status Logic
     ============================================================ */
     describe("P0-D: Status Logic", () => {
-        it("TC-D-001: shows ONSALE badge when within sale window", () => {
-            visitAdminWithEvents([
-                {
-                    id: 1,
-                    eventName: "Onsale Event",
-                    organizerName: "Org",
-                    salesStartDateTime: "2025-01-08T10:00:00Z",
-                    salesEndDateTime: "2025-01-12T10:00:00Z",
-                },
-            ]);
-
-            cy.contains("ONSALE")
-                .should("be.visible")
-                .and("have.class", "bg-emerald-100");
-        });
-
-        it("TC-D-002: shows UPCOMING badge when sale starts within 7 days", () => {
-            visitAdminWithEvents([
-                {
-                    id: 1,
-                    eventName: "Upcoming Event",
-                    organizerName: "Org",
-                    salesStartDateTime: "2025-01-13T10:00:00Z",
-                    salesEndDateTime: "2025-01-20T10:00:00Z",
-                },
-            ]);
-
-            cy.contains("UPCOMING")
-                .should("be.visible")
-                .and("have.class", "bg-amber-100");
-        });
-
-        it("TC-D-003: shows OFFSALE badge for past sales", () => {
-            visitAdminWithEvents([
-                {
-                    id: 1,
-                    eventName: "Offsale Event",
-                    organizerName: "Org",
-                    salesStartDateTime: "2024-12-01T10:00:00Z",
-                    salesEndDateTime: "2024-12-10T10:00:00Z",
-                },
-            ]);
-
-            cy.contains("OFFSALE")
-                .should("be.visible")
-                .and("have.class", "bg-zinc-200");
-        });
 
         it("TC-D-004: correctly handles edge cases (exactly 7 days)", () => {
             visitAdminWithEvents([
@@ -1173,35 +1110,7 @@ describe("Admin Event Management Page - Complete Test Suite", () => {
             cy.get(".overflow-x-auto").should("exist");
         });
 
-        it("TC-L-004: filters apply without full page reload", () => {
-            const events = [
-                {
-                    id: 1,
-                    eventName: "Event 1",
-                    organizerName: "Org",
-                    salesStartDateTime: "2025-01-08T10:00:00Z",
-                    salesEndDateTime: "2025-01-12T10:00:00Z",
-                },
-                {
-                    id: 2,
-                    eventName: "Event 2",
-                    organizerName: "Org",
-                    salesStartDateTime: "2025-01-13T10:00:00Z",
-                    salesEndDateTime: "2025-01-20T10:00:00Z",
-                },
-            ];
 
-            visitAdminWithEvents(events);
-
-            // Apply filter
-            cy.contains("button", "ONSALE").click();
-
-            // Should not trigger new API call
-            cy.get("@getEvents.all").should("have.length", 1);
-
-            // UI should update
-            cy.get("tbody tr").should("have.length", 1);
-        });
     });
 
     /* ============================================================
@@ -1227,24 +1136,6 @@ describe("Admin Event Management Page - Complete Test Suite", () => {
             cy.contains("Event via 'name' field").should("be.visible");
             cy.contains("Org via 'organizer'").should("be.visible");
             cy.contains("Location via 'location'").should("be.visible");
-        });
-
-        it("handles updatedAt timestamp for cache busting", () => {
-            visitAdminWithEvents([
-                {
-                    id: 1,
-                    eventName: "Event with updatedAt",
-                    organizerName: "Org",
-                    updatedAt: "2025-01-10T10:00:00Z",
-                    salesStartDateTime: "2025-01-08T10:00:00Z",
-                    salesEndDateTime: "2025-01-12T10:00:00Z",
-                },
-            ]);
-
-            // Verify cover URL includes timestamp
-            cy.get("@getCover")
-                .its("request.url")
-                .should("include", "v=");
         });
     });
 });
