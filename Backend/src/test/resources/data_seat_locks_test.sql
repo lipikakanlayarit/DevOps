@@ -1,0 +1,4 @@
+INSERT INTO seat_locks(seat_id, event_id, user_id, started_at, expires_at, status)
+VALUES
+    (30, 100, 50, CURRENT_TIMESTAMP, DATEADD('MINUTE', 10, CURRENT_TIMESTAMP), 'LOCKED'),
+    (31, 100, 50, CURRENT_TIMESTAMP, DATEADD('MINUTE', 5, CURRENT_TIMESTAMP), 'LOCKED');
