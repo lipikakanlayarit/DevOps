@@ -36,17 +36,20 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/api/public/**",
+                .securityMatcher(
+                        "/api/public/**",
                         "/api/auth/login",
                         "/api/auth/signup",
                         "/api/auth/organizer/signup",
                         "/api/auth/register-user",
                         "/api/auth/register-organizer",
                         "/actuator/health",
+                        "/actuator/prometheus",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
                         "/error",
-                        "/api/events/**" /* GET อ่านได้สาธารณะ */)
+                        "/api/events/**"            // GET อ่านได้สาธารณะ
+                )
                 .csrf(csrf -> csrf.disable())
                 .cors(c -> c.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -54,11 +57,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/events/**").permitAll()
-                        .requestMatchers("/api/auth/**",
+                        .requestMatchers(
+                                "/api/auth/**",
                                 "/actuator/health",
+                                "/actuator/prometheus",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
-                                "/error").permitAll()
+                                "/error"
+                        ).permitAll()
                         .anyRequest().permitAll()
                 );
         return http.build();
@@ -95,8 +101,8 @@ public class SecurityConfig {
                 "http://localhost:3000",
                 "http://localhost:4173"
         ));
-        cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","X-Requested-With","Origin"));
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         cfg.setExposedHeaders(List.of("Authorization"));
         cfg.setAllowCredentials(true);
         cfg.setMaxAge(3600L);
@@ -107,7 +113,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
