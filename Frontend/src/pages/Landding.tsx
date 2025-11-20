@@ -13,14 +13,8 @@ import Footer from "@/components/Footer";
 import CountdownTimer from "@/components/CountdownTimer";
 
 // assets
+// ใช้แค่รูปเดียวเป็น fallback เวลา event ไม่มี cover
 import poster1 from "@/assets/poster.png";
-import poster2 from "@/assets/poster2.png";
-import poster3 from "@/assets/poster3.png";
-import poster4 from "@/assets/poster4.png";
-import poster5 from "@/assets/poster5.png";
-import poster6 from "@/assets/poster6.png";
-import poster7 from "@/assets/poster7.png";
-import poster8 from "@/assets/poster8.png";
 
 type Poster = { dateLabel: string; title: string; imageUrl: string; eventId?: number };
 
@@ -45,16 +39,6 @@ type EventItemUI = {
     category: string;
     effectiveStatus: Effective;
 };
-
-const posters = [poster1, poster2, poster3, poster4, poster5, poster6, poster7, poster8];
-
-export const posterData: Poster[] = [
-    { dateLabel: "[2025.07.27]", title: "VICTIM by INTROVE...", imageUrl: posters[0] },
-    { dateLabel: "[2025.07.27]", title: "THE RIVER BROS", imageUrl: posters[2] },
-    { dateLabel: "[2025.07.27]", title: "CREATIVE POSTER EXHIBITION", imageUrl: posters[3] },
-    { dateLabel: "[2025.07.27]", title: "ROBERT BALTAZAR TRIO", imageUrl: posters[4] },
-    { dateLabel: "[2025.07.27]", title: "IN RIVER DANCE", imageUrl: posters[7] },
-];
 
 // ===== Helpers =====
 function useDebounced<T>(value: T, delay = 300) {
@@ -89,11 +73,7 @@ function categoryLabelFromId(catId?: number | null): string {
 
 const coverOrFallback = (url?: string | null) => (url && url.length > 0 ? url : poster1);
 
-/** ✅ คำนวณสถานะจากช่วงขาย
- *  - ONSALE   : now อยู่ระหว่าง start..end
- *  - UPCOMING : now < start   (ไม่จำกัด 7 วัน)
- *  - OFFSALE  : อื่น ๆ
- */
+/** ✅ คำนวณสถานะจากช่วงขาย */
 function computeEffectiveStatus(start?: string | null, end?: string | null): Effective {
     if (!start || !end) return "OFFSALE";
     const now = Date.now();
@@ -110,39 +90,6 @@ function mergeUniqueById(a: EventCardApi[], b: EventCardApi[]): EventCardApi[] {
     for (const x of a) map.set(x.id, x);
     for (const x of b) map.set(x.id, x);
     return Array.from(map.values());
-}
-
-// ===== Mock Events ===== (ให้เป็น UPCOMING ไว้โชว์ layout เฉย ๆ)
-const mockEvents: EventItemUI[] = Array.from({ length: 24 }).map((_, i) => {
-    const p = posters[i % posters.length];
-    return {
-        id: -(i + 1),
-        cover: p,
-        dateRange: "01 ม.ค. 2025 – 31 ม.ค. 2025",
-        title: `Mock Event #${i + 1}`,
-        venue: ["MCC Hall", "Impact Arena", "BITEC", "ICONSIAM Hall"][i % 4],
-        category: ["Concert", "Seminar", "Exhibition"][i % 3],
-        effectiveStatus: "UPCOMING",
-    };
-});
-
-function mergeWithMocks(realItems: EventItemUI[], mocks: EventItemUI[], maxCount = 40): EventItemUI[] {
-    const seen = new Set<number>();
-    const out: EventItemUI[] = [];
-    for (const it of realItems) {
-        if (!seen.has(it.id)) {
-            out.push(it);
-            seen.add(it.id);
-        }
-    }
-    for (const it of mocks) {
-        if (out.length >= maxCount) break;
-        if (!seen.has(it.id)) {
-            out.push(it);
-            seen.add(it.id);
-        }
-    }
-    return out;
 }
 
 export default function LandingPage() {
@@ -164,11 +111,11 @@ export default function LandingPage() {
     const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-    // Countdown target (ใช้ event จริง ถ้าไม่มีใช้ fallback +10 วัน)
+    // Countdown target (ใช้ event จริงเท่านั้น)
     const [targetDate, setTargetDate] = useState<Date | null>(null);
     const [nextOnSaleEvent, setNextOnSaleEvent] = useState<EventCardApi | null>(null);
 
-// Data from API
+    // Data from API
     const [rawEvents, setRawEvents] = useState<EventCardApi[]>([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
@@ -203,32 +150,22 @@ export default function LandingPage() {
     useEffect(() => {
         const now = Date.now();
 
-        // กรณีไม่มี event เลย → ใช้ fallback (อีก 10 วันข้างหน้า)
         if (!rawEvents || rawEvents.length === 0) {
-            const d = new Date();
-            d.setDate(d.getDate() + 10);
-            d.setHours(12, 56, 25, 0);
-            setTargetDate(d);
+            setTargetDate(null);
             setNextOnSaleEvent(null);
             return;
         }
 
-        // เลือกเฉพาะ event ที่ salesStart อยู่ในอนาคต
         const upcoming = rawEvents.filter(
             (ev) => ev.salesStartDatetime && +new Date(ev.salesStartDatetime) > now
         );
 
         if (upcoming.length === 0) {
-            // ไม่มี event ที่กำลังจะเริ่มขาย → ใช้ fallback
-            const d = new Date();
-            d.setDate(d.getDate() + 10);
-            d.setHours(12, 56, 25, 0);
-            setTargetDate(d);
+            setTargetDate(null);
             setNextOnSaleEvent(null);
             return;
         }
 
-        // หา salesStartDatetime ที่ใกล้ที่สุด
         upcoming.sort(
             (a, b) =>
                 +new Date(a.salesStartDatetime as string) -
@@ -239,8 +176,6 @@ export default function LandingPage() {
         setTargetDate(new Date(next.salesStartDatetime as string));
         setNextOnSaleEvent(next);
     }, [rawEvents]);
-
-
 
     // map real -> UI + คำนวณสถานะ + ตัด OFFSALE ออก
     const realUI: EventItemUI[] = useMemo(() => {
@@ -256,75 +191,62 @@ export default function LandingPage() {
                 effectiveStatus: eff,
             } as EventItemUI;
         });
-        // **ไม่แสดง OFFSALE บนหน้า Landing**
+        // ไม่แสดง OFFSALE บนหน้า Landing
         return mapped.filter((m) => m.effectiveStatus !== "OFFSALE");
     }, [rawEvents]);
 
-    // ใช้ event จริงก่อน ถ้าไม่มีเลยค่อย fallback เป็น mock
-    const uiEventsAll: EventItemUI[] = useMemo(() => {
-        if (realUI.length > 0) {
-            return realUI;
-        }
-        return mockEvents;
-    }, [realUI]);
+    // ใช้เฉพาะ event จริงจาก API เท่านั้น
+    const uiEventsAll: EventItemUI[] = useMemo(() => realUI, [realUI]);
 
-
-    // 🔁 โปสเตอร์สำหรับแถบเลื่อน
-// - ใช้ event จริงเป็นหลัก
-// - ถ้า event น้อยจะวนซ้ำให้ได้อย่างน้อย MIN_ITEMS ชิ้น
-// - ถ้าไม่มี event จริงเลย → ใช้ posterData (mock) เป็น fallback
+    // 🔁 โปสเตอร์สำหรับแถบเลื่อน (ใช้เฉพาะ event จริง)
     const marqueePosters: Poster[] = useMemo(() => {
-        const MIN_ITEMS = 8; // อยากให้ base loop ยาวประมาณกี่ใบก็ปรับเลขตรงนี้ได้
+        const MIN_ITEMS = 8;
 
         const realEvents = realUI.filter((e) => e.id > 0);
-        if (realEvents.length > 0) {
-            const result: Poster[] = [];
-            const rawById = new Map(rawEvents.map((r) => [r.id, r]));
-
-            while (result.length < MIN_ITEMS) {
-                for (const ev of realEvents) {
-                    if (result.length >= MIN_ITEMS) break;
-
-                    const raw = rawById.get(ev.id);
-                    let dateLabel = "";
-
-                    if (raw?.salesStartDatetime) {
-                        const d = new Date(raw.salesStartDatetime);
-                        const f = new Intl.DateTimeFormat("th-TH", {
-                            year: "numeric",
-                            month: "2-digit",
-                            day: "2-digit",
-                        });
-                        dateLabel = `[${f.format(d)}]`;
-                    }
-
-                    result.push({
-                        dateLabel,
-                        title: ev.title,
-                        imageUrl: ev.cover,
-                        eventId: ev.id,
-                    });
-                }
-            }
-
-            return result;
+        if (realEvents.length === 0) {
+            // ❗ ไม่มี event จริงเลย → ไม่แสดง marquee section
+            return [];
         }
 
-        // ไม่มี event จริงเลย → ใช้ mock poster เดิม
-        return posterData;
+        const rawById = new Map(rawEvents.map((r) => [r.id, r]));
+        const result: Poster[] = [];
+
+        while (result.length < MIN_ITEMS) {
+            for (const ev of realEvents) {
+                if (result.length >= MIN_ITEMS) break;
+
+                const raw = rawById.get(ev.id);
+                let dateLabel = "";
+
+                if (raw?.salesStartDatetime) {
+                    const d = new Date(raw.salesStartDatetime);
+                    const f = new Intl.DateTimeFormat("th-TH", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                    });
+                    dateLabel = `[${f.format(d)}]`;
+                }
+
+                result.push({
+                    dateLabel,
+                    title: ev.title,
+                    imageUrl: ev.cover,
+                    eventId: ev.id,
+                });
+            }
+        }
+
+        return result;
     }, [realUI, rawEvents]);
 
-    // เลือก Featured event จากของจริง (ถ้ามี)
+    // Featured event จากของจริง
     const featuredEvent = useMemo(() => {
         if (realUI.length === 0) return null;
-
         const onSale = realUI.find((e) => e.effectiveStatus === "ONSALE");
         if (onSale) return onSale;
-
         return realUI[0];
     }, [realUI]);
-
-
 
     // หมวดหมู่ dynamic
     const dynamicCategories = useMemo(() => {
@@ -430,7 +352,6 @@ export default function LandingPage() {
 
     const firstRealEventId = realUI.find((e) => e.id > 0)?.id;
 
-
     return (
         <>
             <style>{`
@@ -461,61 +382,67 @@ export default function LandingPage() {
                         </div>
                     </div>
 
-                    <div className="relative overflow-hidden py-5">
-                        <div
-                            ref={scrollContainerRef}
-                            className={`draggable-container ${isDragging ? "dragging" : ""}`}
-                            onMouseDown={handleMouseDown}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseLeave}
-                            onTouchStart={handleTouchStart}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
-                            style={{ margin: "20px 0" }}
-                        >
+                    {/* แสดง marquee เฉพาะเมื่อมี event จริง */}
+                    {marqueePosters.length > 0 && (
+                        <div className="relative overflow-hidden py-5">
                             <div
-                                className={`${
-                                    isAnimationPaused
-                                        ? "animate-scroll-infinite paused"
-                                        : "animate-scroll-infinite"
-                                } flex gap-4`}
+                                ref={scrollContainerRef}
+                                className={`draggable-container ${isDragging ? "dragging" : ""}`}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseLeave}
+                                onTouchStart={handleTouchStart}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                style={{ margin: "20px 0" }}
                             >
-                                {[...marqueePosters, ...marqueePosters].map((poster, index) => {
-                                    const handleClick = () => {
-                                        if (isDragging) return;
+                                <div
+                                    className={`${
+                                        isAnimationPaused
+                                            ? "animate-scroll-infinite paused"
+                                            : "animate-scroll-infinite"
+                                    } flex gap-4`}
+                                >
+                                    {[...marqueePosters, ...marqueePosters].map((poster, index) => {
+                                        const handleClick = () => {
+                                            if (isDragging) return;
 
-                                        if (poster.eventId && poster.eventId > 0) {
-                                            navigate(`/eventselect/${poster.eventId}`);
-                                        } else if (firstRealEventId) {
-                                            navigate(`/eventselect/${firstRealEventId}`);
-                                        } else {
-                                            scrollToEventsSection();
-                                        }
-                                    };
+                                            if (poster.eventId && poster.eventId > 0) {
+                                                navigate(`/eventselect/${poster.eventId}`);
+                                            } else if (firstRealEventId) {
+                                                navigate(`/eventselect/${firstRealEventId}`);
+                                            } else {
+                                                scrollToEventsSection();
+                                            }
+                                        };
 
-                                    return (
-                                        <div key={`poster-${index}`} className="flex-shrink-0 poster-container">
-                                            <div className="transition-transform duration-300 hover:scale-105 will-change-transform">
-                                                <PosterCard
-                                                    dateLabel={poster.dateLabel}
-                                                    title={poster.title}
-                                                    imageUrl={poster.imageUrl}
-                                                    onClick={handleClick}
-                                                />
+                                        return (
+                                            <div
+                                                key={`poster-${index}`}
+                                                className="flex-shrink-0 poster-container"
+                                            >
+                                                <div className="transition-transform duration-300 hover:scale-105 will-change-transform">
+                                                    <PosterCard
+                                                        dateLabel={poster.dateLabel}
+                                                        title={poster.title}
+                                                        imageUrl={poster.imageUrl}
+                                                        onClick={handleClick}
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </section>
 
-                {/* Countdown Section แบบในรูป: แถบแดง + พื้นดำ + ปุ่ม */}
+                {/* Countdown Section แบบในรูป */}
                 {targetDate && nextOnSaleEvent && (
                     <>
-                        {/* แถบแดงด้านบน (ใช้ CountdownTimer เดิม) */}
+                        {/* แถบแดงด้านบน */}
                         <CountdownTimer targetDate={targetDate} />
 
                         {/* พื้นดำ + รูป + ข้อมูล event + ปุ่ม */}
@@ -530,7 +457,6 @@ export default function LandingPage() {
                                 </div>
 
                                 <div className="text-center md:text-left">
-                                    {/* วันที่สั้น ๆ แบบ 2024.03.22 */}
                                     <div className="text-[clamp(16px,3vw,20px)] font-bold text-white mb-2">
                                         {nextOnSaleEvent.salesStartDatetime
                                             ? (() => {
@@ -545,12 +471,10 @@ export default function LandingPage() {
                                             : ""}
                                     </div>
 
-                                    {/* ชื่อ event ตัวใหญ่สีแดง */}
                                     <h2 className="text-[clamp(28px,6vw,48px)] font-extrabold text-[#FA3A2B] mb-4 leading-tight">
                                         {nextOnSaleEvent.eventName}
                                     </h2>
 
-                                    {/* คำอธิบาย: ยังไม่มีจาก DB ใช้ข้อความ template ไปก่อน */}
                                     <p className="text-gray-300 mb-6 leading-relaxed">
                                         Lorem Ipsum is simply dummy text of the printing and
                                         typesetting industry. You can replace this text with your
