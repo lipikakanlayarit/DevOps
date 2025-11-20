@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.*;
 @DataJpaTest
 @ActiveProfiles("test")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class UserRepositoryIntegrationTest {
+class UserRepositoryIT {
 
     @Autowired
     private UserRepository userRepository;

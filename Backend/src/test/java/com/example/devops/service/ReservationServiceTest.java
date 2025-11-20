@@ -15,7 +15,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class ReservationService_createReservationTest {
+class ReservationServiceTest {
 
     ReservedRepository reservedRepo;
     ReservedSeatsRepository reservedSeatsRepo;
