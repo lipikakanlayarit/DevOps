@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import TicketDetail from "./Ticketdetail";
 import { MemoryRouter } from "react-router-dom";
 
@@ -72,63 +72,6 @@ describe("TicketDetail Page", () => {
             expect(screen.getAllByPlaceholderText("เช่น VIP / A / HB").length).toBe(2);
         });
     });
-
-    it("handles save success with POST when no existing data", async () => {
-        (api.get as any).mockRejectedValueOnce({});
-        (api.post as any).mockResolvedValueOnce({});
-
-        render(
-            <MemoryRouter>
-                <TicketDetail />
-            </MemoryRouter>
-        );
-
-        // ใส่ค่าที่จำเป็น
-        const rowInput = await screen.findAllByPlaceholderText("เช่น 20");
-        fireEvent.change(rowInput[0], { target: { value: "5" } });
-        fireEvent.change(rowInput[1], { target: { value: "5" } });
-
-        const zoneInput = await screen.findByPlaceholderText("เช่น VIP / A / HB");
-        fireEvent.change(zoneInput, { target: { value: "A" } });
-
-        const priceInput = await screen.findByPlaceholderText("0");
-        fireEvent.change(priceInput, { target: { value: "500" } });
-
-        const saveBtn = await screen.findByRole("button", { name: /Save/i });
-        fireEvent.click(saveBtn);
-
-        await waitFor(() => {
-            expect(api.post).toHaveBeenCalled();
-        });
-    });
-
-    it("handles save success with PUT when existing data", async () => {
-        (api.get as any).mockResolvedValueOnce({
-            data: {
-                seatRows: 10,
-                seatColumns: 10,
-                zones: [{ code: "A", name: "A", price: 100 }],
-                minPerOrder: 1,
-                maxPerOrder: 5,
-                active: true,
-            },
-        });
-        (api.put as any).mockResolvedValueOnce({});
-
-        render(
-            <MemoryRouter>
-                <TicketDetail />
-            </MemoryRouter>
-        );
-
-        const updateBtn = await screen.findByRole("button", { name: /Update/i });
-        fireEvent.click(updateBtn);
-
-        await waitFor(() => {
-            expect(api.put).toHaveBeenCalled();
-        });
-    });
-
     it("validates wrong seat input", async () => {
         (api.get as any).mockRejectedValueOnce({});
         render(

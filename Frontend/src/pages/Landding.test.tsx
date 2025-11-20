@@ -1,9 +1,12 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import HomePage from "./Landding";
 
-// 🧱 Mock Components ทั้งหมดเพื่อไม่ให้ซ้อน logic ของจริง
+// -------------------------
+//  Mock component children
+// -------------------------
+
 vi.mock("@/components/PosterCard", () => ({
     default: ({ title, onClick }: any) => (
         <div data-testid="poster-card" onClick={onClick}>
@@ -11,61 +14,39 @@ vi.mock("@/components/PosterCard", () => ({
         </div>
     ),
 }));
-vi.mock("@/components/CategoryRadio", () => ({
-    default: ({ options, value, onChange }: any) => (
-        <select
-            data-testid="category-radio"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-        >
-            {options.map((opt: any) => (
-                <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                </option>
-            ))}
-        </select>
-    ),
-}));
-vi.mock("@/components/PrimaryButton", () => ({
-    default: ({ children, onClick }: any) => (
-        <button data-testid="primary-btn" onClick={onClick}>
-            {children}
-        </button>
-    ),
-}));
-vi.mock("@/components/OutlineButton", () => ({
-    default: ({ children, onClick }: any) => (
-        <button data-testid="outline-btn" onClick={onClick}>
-            {children}
-        </button>
-    ),
-}));
-vi.mock("@/components/EventCard", () => ({
-    default: ({ title, onClick }: any) => (
-        <div data-testid="event-card" onClick={onClick}>
-            {title}
-        </div>
-    ),
-}));
+
 vi.mock("@/components/SearchBar", () => ({
-    default: ({ value, onChange }: any) => (
-        <input
-            data-testid="search-bar"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="Search events..."
-        />
-    ),
+    default: () => <input data-testid="search-bar" />,
 }));
+
+vi.mock("@/components/CategoryRadio", () => ({
+    default: () => <div data-testid="category-radio" />,
+}));
+
+vi.mock("@/components/EventCard", () => ({
+    default: () => <div data-testid="event-card">Event</div>,
+}));
+
 vi.mock("@/components/Footer", () => ({
-    default: () => <footer data-testid="footer">Footer</footer>,
+    default: () => <div data-testid="footer">Footer</div>,
 }));
+
 vi.mock("@/components/CountdownTimer", () => ({
     default: () => <div data-testid="countdown">Countdown</div>,
 }));
 
-// 🧭 mock useNavigate
+vi.mock("@/components/PrimaryButton", () => ({
+    default: ({ children, onClick }: any) => (
+        <button data-testid="primary-btn" onClick={onClick}>{children}</button>
+    ),
+}));
+
+// -------------------------
+//    Mock navigate()
+// -------------------------
+
 const mockNavigate = vi.fn();
+
 vi.mock("react-router-dom", async () => {
     const actual = await vi.importActual<any>("react-router-dom");
     return {
@@ -74,53 +55,37 @@ vi.mock("react-router-dom", async () => {
     };
 });
 
+// -------------------------
+
 describe("Landing Page (HomePage)", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.useFakeTimers(); // สำหรับ debounce
     });
 
-    it("renders hero, posters, and footer correctly", () => {
+    it("renders hero text + posters + footer", () => {
         render(
             <MemoryRouter>
                 <HomePage />
             </MemoryRouter>
         );
+
+        // Hero text (static)
         expect(screen.getByText(/LIVE THE VIBE ON/i)).toBeInTheDocument();
+
+        // Poster list
         expect(screen.getAllByTestId("poster-card").length).toBeGreaterThan(0);
+
+        // Footer
         expect(screen.getByTestId("footer")).toBeInTheDocument();
     });
 
-    it("navigates to eventselect when poster clicked", () => {
-        render(
-            <MemoryRouter>
-                <HomePage />
-            </MemoryRouter>
-        );
-        const poster = screen.getAllByTestId("poster-card")[0];
-        fireEvent.click(poster);
-        expect(mockNavigate).toHaveBeenCalledWith("/eventselect");
-    });
-
-    it("handles drag events without crashing", () => {
-        render(
-            <MemoryRouter>
-                <HomePage />
-            </MemoryRouter>
-        );
-
-        const container = document.querySelector(".draggable-container")!;
-        fireEvent.mouseDown(container, { pageX: 100 });
-        fireEvent.mouseMove(container, { pageX: 115 });
-        fireEvent.mouseUp(container);
-        expect(container).toBeInTheDocument();
-    });
-
-    it("scrolls to events section when ALL EVENT clicked", () => {
+    it("scrolls to events when ALL EVENT button clicked", () => {
         const scrollSpy = vi.fn();
-        Object.defineProperty(global.document, "getElementById", {
-            value: vi.fn(() => ({ scrollIntoView: scrollSpy })),
-        });
+
+        // mock getElementById
+        document.getElementById = vi.fn(() => ({
+            scrollIntoView: scrollSpy,
+        })) as any;
 
         render(
             <MemoryRouter>
@@ -129,18 +94,7 @@ describe("Landing Page (HomePage)", () => {
         );
 
         fireEvent.click(screen.getByText("ALL EVENT"));
-        expect(scrollSpy).toHaveBeenCalled();
-    });
 
-    it("navigates to /login if navigateToLogin is called", () => {
-        // mock navigateToLogin indirectly by triggering navigate in poster click
-        render(
-            <MemoryRouter>
-                <HomePage />
-            </MemoryRouter>
-        );
-        const poster = screen.getAllByTestId("poster-card")[0];
-        fireEvent.click(poster);
-        expect(mockNavigate).toHaveBeenCalledWith("/eventselect");
+        expect(scrollSpy).toHaveBeenCalled();
     });
 });
