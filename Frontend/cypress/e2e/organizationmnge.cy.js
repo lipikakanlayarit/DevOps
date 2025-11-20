@@ -1,192 +1,401 @@
 // cypress/e2e/organizationmnge.cy.js
-//
-// This suite exercises the Organization Management page for
-// organizers.  The page lists all events belonging to the current
-// organizer and provides controls for searching, filtering by
-// category, sorting by newest/oldest, and navigating to the
-// individual event detail page.  Because the route is protected by
-// RequireRole, we stub the `/api/auth/me` endpoint to return a
-// user with the `ORGANIZER` role.  We also stub `/api/events/mine`
-// to return a small set of sample events so that the UI has
-// predictable data to render.
-//
-// The tests verify that the events list is displayed, that the
-// search and category filters work, that the order toggle changes
-// the visible text, and that clicking the “View” link navigates
-// to the correct event detail route.
+/// <reference types="cypress" />
 
-describe('Organization Management Page', () => {
-    // Provide stubbed responses for authentication and event data on
-    // every test.  The auth response gives the user an ORGANIZER
-    // role; without this role the route would redirect to the
-    // Forbidden page.  The events response contains three events
-    // spanning different categories and statuses.  Additional
-    // intercepts catch any event detail requests to prevent network
-    // errors when navigating.
-    beforeEach(() => {
-        cy.intercept('GET', '**/api/auth/me', {
-            statusCode: 200,
-            body: {
-                id: 99,
-                username: 'organizeruser',
-                email: 'organizer@example.com',
-                role: 'ORGANIZER',
-                firstName: 'Organizer',
-                lastName: 'User',
-            },
-        }).as('getMe');
+const FRONTEND_URL = "http://localhost:5173";
 
-        cy.intercept('GET', '/api/events/mine', {
-            statusCode: 200,
-            body: [
-                {
-                    id: 1,
-                    eventName: 'Jazz Night',
-                    categoryId: 1, // concert
-                    status: 'PENDING',
-                    startDateTime: '2025-05-01T00:00:00Z',
+/* ==============================
+   Mock Data
+   ============================== */
+
+const mockEvents = [
+    {
+        id: 1,
+        eventName: "Rock Concert",
+        categoryId: 1, // → concert
+        status: "APPROVED",
+        startDateTime: "2025-04-01T10:00:00Z",
+        updatedAt: "2025-04-02T09:00:00Z",
+    },
+    {
+        id: 2,
+        eventName: "Data Seminar",
+        categoryId: 2, // → seminar
+        status: "PENDING",
+        startDateTime: "2025-03-01T09:00:00Z",
+        updatedAt: "2025-03-02T09:00:00Z",
+    },
+    {
+        id: 3,
+        eventName: "Art Exhibition",
+        categoryId: 3, // → exhibition
+        status: "REJECTED",
+        startDateTime: "2025-02-01T08:00:00Z",
+        updatedAt: "2025-02-02T09:00:00Z",
+    },
+];
+
+/* dataset สำหรับทดสอบ sort (oldest/newest) */
+const mockEventsForSorting = [
+    {
+        id: 101,
+        eventName: "Oldest Event",
+        categoryId: 1,
+        status: "APPROVED",
+        startDateTime: "2025-01-01T00:00:00Z",
+    },
+    {
+        id: 102,
+        eventName: "Middle Event",
+        categoryId: 1,
+        status: "APPROVED",
+        startDateTime: "2025-02-01T00:00:00Z",
+    },
+    {
+        id: 103,
+        eventName: "Newest Event",
+        categoryId: 1,
+        status: "APPROVED",
+        startDateTime: "2025-03-01T00:00:00Z",
+    },
+];
+
+/* ==============================
+   Helpers
+   ============================== */
+
+function mockAuthOrganizer() {
+    cy.intercept("GET", "**/api/auth/me", {
+        statusCode: 200,
+        body: {
+            id: 10,
+            username: "organizer",
+            email: "organizer@example.com",
+            role: "ORGANIZER",
+            firstName: "Org",
+            lastName: "User",
+        },
+    }).as("getMe");
+}
+
+function mockEventsApi(body = mockEvents, opts = {}) {
+    const { delay = 0, statusCode = 200 } = opts;
+    cy.intercept("GET", "**/api/events/mine", {
+        statusCode,
+        delay,
+        body,
+    }).as("getEventsMine");
+}
+
+/** เข้า /organizationmnge แบบปกติ (มี token + mocks) */
+function visitOrganizationPage(options = {}) {
+    const { events = mockEvents, delay = 0 } = options;
+
+    mockAuthOrganizer();
+    mockEventsApi(events, { delay });
+
+    cy.visit(`${FRONTEND_URL}/organizationmnge`, {
+        onBeforeLoad(win) {
+            // จำลองว่า login แล้ว (api instance น่าจะอ่าน token จาก storage)
+            win.localStorage.setItem("token", "fake-organizer-token");
+        },
+    });
+
+    cy.wait("@getMe");
+    cy.wait("@getEventsMine");
+}
+
+/* ==============================
+   Test Suite (P0 + P1)
+   ============================== */
+
+describe("Organizer - All Event Page (Organizationmnge)", () => {
+    /* ---------------------------------
+       1. Initial Load & API (P0)
+    --------------------------------- */
+
+    describe("Initial Load & API Data", () => {
+
+        it("shows error box when API /events/mine fails", () => {
+            mockAuthOrganizer();
+            cy.intercept("GET", "**/api/events/mine", {
+                statusCode: 500,
+                body: { message: "Server error" },
+            }).as("getEventsMine");
+            cy.visit(`${FRONTEND_URL}/organizationmnge`, {
+                onBeforeLoad(win) {
+                    win.localStorage.setItem("token", "fake-organizer-token");
                 },
-                {
-                    id: 2,
-                    eventName: 'Tech Summit',
-                    categoryId: 2, // seminar
-                    status: 'APPROVED',
-                    startDateTime: '2024-01-05T00:00:00Z',
-                },
-                {
-                    id: 3,
-                    eventName: 'Art Expo',
-                    categoryId: 3, // exhibition
-                    status: 'REJECTED',
-                    startDateTime: '2024-09-10T00:00:00Z',
-                },
-            ],
-        }).as('getEvents');
+            });
 
-        // We no longer intercept all `/api/events/*` routes here to avoid
-        // capturing the `/api/events/mine` request.  Individual tests can
-        // stub event detail endpoints as needed.
+            cy.wait("@getMe");
+            cy.wait("@getEventsMine");
+
+            cy.contains("Server error").should("be.visible");
+            cy.get(".bg-red-100.border-red-300").should("exist");
+        });
     });
 
-    it('shows a list of events for the organizer', () => {
-        // Visit the organization management page with a fake token in
-        // localStorage so that the AuthProvider considers us logged in.
-        cy.visit('http://localhost:5173/organizationmnge', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
+    /* ---------------------------------
+       4. Category Filter (P1)
+    --------------------------------- */
+
+    describe("Category Filter", () => {
+        beforeEach(() => {
+            visitOrganizationPage();
         });
-        // Wait for both the auth check and the events fetch.
-        cy.wait('@getMe');
-        cy.wait('@getEvents');
 
-        // The page should display the heading and all three event titles.
-        cy.contains('All Event').should('be.visible');
-        cy.contains('Jazz Night').should('be.visible');
-        cy.contains('Tech Summit').should('be.visible');
-        cy.contains('Art Expo').should('be.visible');
+        it('defaults to "All" and shows all events', () => {
+            cy.contains("All Event").should("be.visible");
+            cy.contains("button", "All").should("exist");
 
-        // The status labels for each event should appear (Pending, Approved, Rejected).
-        cy.contains('Pending').should('be.visible');
-        cy.contains('Approved').should('be.visible');
-        cy.contains('Rejected').should('be.visible');
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                mockEvents.length
+            );
+        });
+
+        it("filters Concert events only", () => {
+            cy.contains("button", "Concert").click();
+
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .contains("Rock Concert");
+        });
+
+        it("filters Seminar events only", () => {
+            cy.contains("button", "Seminar").click();
+
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .contains("Data Seminar");
+        });
+
+        it("filters Exhibition events only", () => {
+            cy.contains("button", "Exhibition").click();
+
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .contains("Art Exhibition");
+        });
+
+        it("can switch back to All and show all events again", () => {
+            cy.contains("button", "Concert").click();
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                1
+            );
+
+            cy.contains("button", "All").click();
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                mockEvents.length
+            );
+        });
     });
 
-    it('filters events using the search bar', () => {
-        cy.visit('http://localhost:5173/organizationmnge', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
+    /* ---------------------------------
+       6. Search Bar (P1)
+    --------------------------------- */
+
+    describe("Search Bar", () => {
+        beforeEach(() => {
+            visitOrganizationPage();
         });
-        cy.wait('@getMe');
-        cy.wait('@getEvents');
 
-        // Enter a search term.  The query is debounced in the component,
-        // but Cypress will wait until the DOM updates before asserting.
-        cy.get('input[placeholder="Search events..."]').type('Tech');
+        it("filters events by title (case-insensitive)", () => {
+            cy.get('input[placeholder="Search events..."]').type("rock");
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .contains("Rock Concert");
+        });
 
-        // Only the matching event should remain visible.
-        cy.contains('Tech Summit').should('be.visible');
-        cy.contains('Jazz Night').should('not.exist');
-        cy.contains('Art Expo').should('not.exist');
+        it("shows all events again when search is cleared", () => {
+            const input = cy.get('input[placeholder="Search events..."]');
+            input.type("seminar");
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                1
+            );
+
+            input.clear();
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                mockEvents.length
+            );
+        });
+
+        it("shows empty state when no results match search", () => {
+            cy.get('input[placeholder="Search events..."]').type(
+                "this-does-not-exist"
+            );
+            cy.contains("ยังไม่มีอีเวนต์").should("be.visible");
+        });
     });
 
-    it('filters events by category', () => {
-        cy.visit('http://localhost:5173/organizationmnge', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
+
+    /* ---------------------------------
+       8. Events List Display (P0)
+    --------------------------------- */
+
+    describe("Events List Display", () => {
+        it("shows empty state when there is no event", () => {
+            visitOrganizationPage({ events: [] });
+
+            cy.contains("ยังไม่มีอีเวนต์").should("be.visible");
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                0
+            );
         });
-        cy.wait('@getMe');
-        cy.wait('@getEvents');
 
-        // Select the Seminar category.  This should show only the seminar event.
-        cy.contains('Seminar').click();
-        cy.contains('Tech Summit').should('be.visible');
-        cy.contains('Jazz Night').should('not.exist');
-        cy.contains('Art Expo').should('not.exist');
+        it('renders table headers "Events" and "Status / Action" and event rows', () => {
+            visitOrganizationPage();
 
-        // Switch to the Exhibition category.  Only Art Expo should remain.
-        cy.contains('Exhibition').click();
-        cy.contains('Art Expo').should('be.visible');
-        cy.contains('Jazz Night').should('not.exist');
-        cy.contains('Tech Summit').should('not.exist');
+            cy.contains("div", "Events").should("be.visible");
+            cy.contains("div", "Status / Action").should("be.visible");
+
+            cy.get(".mt-6.rounded-xl.bg-white.shadow-sm.overflow-hidden").should(
+                "exist"
+            );
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                mockEvents.length
+            );
+        });
     });
 
-    it('toggles sorting order using the order toggle', () => {
-        cy.visit('http://localhost:5173/organizationmnge', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
+    /* ---------------------------------
+       9. Status Badge (P1)
+    --------------------------------- */
+
+    describe("Status Badge Rendering", () => {
+        beforeEach(() => {
+            visitOrganizationPage();
         });
-        cy.wait('@getMe');
-        cy.wait('@getEvents');
 
-        // By default the toggle displays “Newest Event”.
-        cy.contains('Newest Event').should('be.visible');
+        it("shows Approved badge with green styling", () => {
+            cy.contains("Rock Concert")
+                .parent()
+                .parent()
+                .within(() => {
+                    cy.contains("Approved")
+                        .should("have.class", "bg-emerald-100")
+                        .and("have.class", "text-emerald-700")
+                        .and("have.class", "ring-emerald-200");
+                });
+        });
 
-        // Open the dropdown and choose “Oldest Event”.
-        cy.contains('Newest Event').click();
-        cy.contains('Oldest Event').click();
+        it("shows Pending badge with amber styling", () => {
+            cy.contains("Data Seminar")
+                .parent()
+                .parent()
+                .within(() => {
+                    cy.contains("Pending")
+                        .should("have.class", "bg-amber-100")
+                        .and("have.class", "text-amber-800")
+                        .and("have.class", "ring-amber-200");
+                });
+        });
 
-        // The toggle label should now read “Oldest Event”.
-        cy.contains('Oldest Event').should('be.visible');
-
-        // Switch back to the newest ordering.
-        cy.contains('Oldest Event').click();
-        cy.contains('Newest Event').click();
-        cy.contains('Newest Event').should('be.visible');
+        it("shows Rejected badge with rose styling", () => {
+            cy.contains("Art Exhibition")
+                .parent()
+                .parent()
+                .within(() => {
+                    cy.contains("Rejected")
+                        .should("have.class", "bg-rose-100")
+                        .and("have.class", "text-rose-700")
+                        .and("have.class", "ring-rose-200");
+                });
+        });
     });
 
-    it('navigates to the event detail page when clicking the View link', () => {
-        cy.visit('http://localhost:5173/organizationmnge', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
+    /* ---------------------------------
+       10. View Link (P0)
+    --------------------------------- */
+
+    describe("View link navigation", () => {
+        beforeEach(() => {
+            visitOrganizationPage();
         });
-        cy.wait('@getMe');
-        cy.wait('@getEvents');
 
-        // Stub the GET request for the event detail so Cypress does not
-        // attempt to reach a real backend when navigating to the detail
-        // page.  We only stub the specific ID used in this test.
-        cy.intercept('GET', '/api/events/1', {
-            statusCode: 200,
-            body: {},
-        }).as('getEventDetail');
+        it('shows "View" link for each event and navigates to /eventdetail/:id', () => {
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .first()
+                .within(() => {
+                    cy.contains("View")
+                        .should("have.attr", "href")
+                        .and("contain", "/eventdetail/1");
+                });
 
-        // Click the first “View” link.  This should navigate to
-        // `/eventdetail/1` because the first event has id=1 in our stub.
-        cy.contains('View').first().click();
+            // click and navigate
+            cy.contains("View").first().click();
+            cy.location("pathname").should("eq", "/eventdetail/1");
+        });
+    });
 
-        // Wait for the event detail call to complete and assert that the
-        // URL path matches the expected event detail route.
-        cy.wait('@getEventDetail');
-        cy.location('pathname').should('eq', '/eventdetail/1');
+    /* ---------------------------------
+       12. Combined Filters (P1)
+    --------------------------------- */
+
+    describe("Combined Filters (Category + Search + Order)", () => {
+        beforeEach(() => {
+            visitOrganizationPage({ events: mockEventsForSorting });
+        });
+
+        it("applies category + search together", () => {
+            // ทั้ง 3 events เป็น categoryId=1 → concert
+            cy.contains("button", "Concert").click();
+
+            // search เฉพาะคำว่า "Newest"
+            cy.get('input[placeholder="Search events..."]').type("Newest");
+
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .contains("Newest Event");
+        });
+    });
+
+    /* ---------------------------------
+       19. Integration Flow (P0)
+    --------------------------------- */
+
+    describe("Integration Flow (Happy Paths)", () => {
+        it("loads events, filters, searches and navigates to event detail", () => {
+            visitOrganizationPage();
+
+            // เริ่มต้นเห็นทุก event
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8").should(
+                "have.length",
+                mockEvents.length
+            );
+
+            // เลือก category Concert
+            cy.contains("button", "Concert").click();
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .contains("Rock Concert");
+
+            // พิมพ์ search ให้ตรง title
+            cy.get('input[placeholder="Search events..."]').type("Rock");
+
+            // ควรยังเหลือ 1 ผลลัพธ์
+            cy.get(".grid.grid-cols-\\[1fr_240px\\].items-center.px-6.py-8")
+                .should("have.length", 1)
+                .first()
+                .within(() => {
+                    cy.contains("Rock Concert").should("be.visible");
+                    cy.contains("View").click();
+                });
+
+            // ไปหน้า eventdetail/:id
+            cy.location("pathname").should("eq", "/eventdetail/1");
+        });
     });
 });
