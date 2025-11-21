@@ -238,11 +238,10 @@ jobs:
         run: |
           kubectl apply -f k8s/
 
-      # optional: force rollout image ใหม่ทุกรอบ ถ้าชื่อ deployment ตรงกับไฟล์ k8s
-      # - name: Restart backend & frontend deployments
-      #   run: |
-      #     kubectl rollout restart deployment/backend
-      #     kubectl rollout restart deployment/frontend
+      - name: Restart backend & frontend deployments
+        run: |
+          kubectl rollout restart deployment/backend
+          kubectl rollout restart deployment/frontend
 
       - name: Check deployed resources
         run: |

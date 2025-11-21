@@ -31,6 +31,7 @@ spec:
       containers:
         - name: postgres
           image: public.ecr.aws/docker/library/postgres:16-alpine
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5432
           env:
@@ -67,6 +68,7 @@ spec:
     app: postgres-db
   ports:
     - port: 5432
+      targetPort: 5432
 
 # =========================
 # Backend (Spring Boot)
@@ -87,8 +89,9 @@ spec:
         app: devops-backend
     spec:
       containers:
-        - name: backend
+        - name: devops-backend
           image: 1tsh4dowz/devops-backend:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:
@@ -136,17 +139,17 @@ spec:
         app: devops-frontend
     spec:
       containers:
-        - name: frontend
+        - name: devops-frontend
           image: 1tsh4dowz/devops-frontend:latest
+          imagePullPolicy: Always
           command: ["npm", "run", "dev", "--", "--host"]
           env:
             - name: CHOKIDAR_USEPOLLING
               value: "true"
             - name: WATCHPACK_POLLING
               value: "true"
-            # ปล่อย VITE_API_URL ว่างไว้ หรือจะไม่ใส่เลยก็ได้
             # ในโค้ดคุณมี: const API_BASE = import.meta.env.VITE_API_URL || ""
-            # ดังนั้นถ้า env ว่าง → base = "" → ใช้ /api/... ตรง ๆ
+            # ถ้า env ว่าง → base = "" → ใช้ /api/... ตรง ๆ
             - name: VITE_API_URL
               value: ""
           ports:
@@ -196,6 +199,7 @@ spec:
       containers:
         - name: pgadmin
           image: dpage/pgadmin4
+          imagePullPolicy: IfNotPresent
           env:
             - name: PGADMIN_DEFAULT_EMAIL
               value: "admin@admin.com"
@@ -224,7 +228,7 @@ spec:
       targetPort: 80
 
 # =========================
-# Ingress
+# Ingress (nginx)
 # =========================
 ---
 apiVersion: networking.k8s.io/v1
