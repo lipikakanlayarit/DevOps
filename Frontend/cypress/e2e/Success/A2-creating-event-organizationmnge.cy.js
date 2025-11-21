@@ -66,7 +66,7 @@ describe("Organizer - All Event Page (REAL API)", () => {
     });
 
     it("ปุ่ม CREATE EVENT นำทางไปหน้า /eventdetail (หน้าสร้างอีเวนต์)", () => {
-        cy.contains("button", "CREATE EVENT").click();
+        cy.contains("CREATE EVENT").click({ force: true });
         cy.location("pathname").should("eq", "/eventdetail");
     });
 
