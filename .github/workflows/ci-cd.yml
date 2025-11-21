@@ -2,9 +2,9 @@ name: DevOps CI/CD Pipeline
 
 on:
   push:
-    branches: [Ham-fix-pipeline]
+    branches: [All-test]
   pull_request:
-    branches: [Ham-fix-pipeline]
+    branches: [All-test]
   workflow_dispatch:
 
 jobs:
