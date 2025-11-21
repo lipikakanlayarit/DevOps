@@ -50,6 +50,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: Frontend/package-lock.json
 
+      - name: Fix permissions for Frontend folder (unit tests)
+        run: |
+          sudo chown -R $USER:$USER .
+
       - name: Install & Test Frontend (Vitest)
         run: |
           npm ci
@@ -140,22 +144,31 @@ jobs:
       - name: Wait for backend
         run: |
           for i in {1..60}; do
-            curl -fsS http://localhost:8080/actuator/health && exit 0
+            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
+              echo "Backend is healthy ✅"
+              exit 0
+            fi
+            echo "Waiting for backend..."
             sleep 2
           done
+          echo "Backend did not become healthy in time ❌" >&2
+          docker compose logs backend || true
           exit 1
 
       - name: Wait for frontend
         run: |
           for i in {1..60}; do
-            curl -fsS http://localhost:5173 && exit 0
+            if curl -fsS http://localhost:5173 > /dev/null; then
+              echo "Frontend is responding ✅"
+              exit 0
+            fi
+            echo "Waiting for frontend..."
             sleep 2
           done
+          echo "Frontend did not become ready in time ❌" >&2
+          docker compose logs frontend || true
           exit 1
 
-      # =========================
-      # ✔ FIX THE CYPRESS BINARY ISSUE
-      # =========================
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -166,6 +179,12 @@ jobs:
           path: ~/.cache/Cypress
           key: cypress-binary-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
           restore-keys: cypress-binary-
+
+      # 👇 แก้ EACCES ตรงนี้ ก่อน npm ci
+      - name: Fix permissions for Frontend folder (e2e)
+        working-directory: Frontend
+        run: |
+          sudo chown -R $USER:$USER .
 
       - name: Install Cypress
         working-directory: Frontend
