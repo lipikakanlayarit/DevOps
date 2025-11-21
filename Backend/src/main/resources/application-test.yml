@@ -3,34 +3,20 @@ spring:
     driver-class-name: org.h2.Driver
     url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     username: sa
-    password:
-
+    password: ""
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    database-platform: org.hibernate.dialect.H2Dialect
     properties:
       hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
-
-  h2:
-    console:
-      enabled: true
-
   flyway:
     enabled: false
 
-  sql:
-    init:
-      mode: never
-
-  main:
-    allow-bean-definition-overriding: true
-
 logging:
   level:
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    org.springframework: WARN
-    com.example.devops: INFO
+    root: INFO
+    org.springframework: INFO
+    com.example.devops: DEBUG
