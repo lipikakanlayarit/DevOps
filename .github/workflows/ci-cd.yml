@@ -2,9 +2,9 @@ name: DevOps CI/CD Pipeline
 
 on:
   push:
-    branches: [ k8s ]
+    branches: [main]
   pull_request:
-    branches: [ k8s ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -16,6 +16,7 @@ jobs:
     defaults:
       run:
         working-directory: Backend
+
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +41,7 @@ jobs:
         working-directory: Frontend
     env:
       CI: true
+
     steps:
       - uses: actions/checkout@v4
 
@@ -50,7 +52,7 @@ jobs:
           cache-dependency-path: Frontend/package-lock.json
 
       - name: Fix permissions for Frontend folder (unit tests)
-        run: sudo chown -R $USER:$USER .
+        run: sudo chown -R "$USER:$USER" .
 
       - name: Install & Test Frontend (Vitest)
         run: |
@@ -58,11 +60,169 @@ jobs:
           npm run test --if-present
 
   # =========================
-  # Build & Push Backend Image
+  # E2E + Cypress (รันทุกเทสต์เหมือน local)
+  # =========================
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ใช้ docker compose dev stack เหมือนที่รันบนเครื่อง
+      - name: Start full stack with docker compose
+        run: |
+          docker compose up -d
+
+      - name: Wait for backend to be healthy
+        run: |
+          echo "Waiting for backend to start..."
+          for i in {1..90}; do
+            if curl -fsS http://localhost:8080/actuator/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy!"
+              echo "Backend health check response:"
+              curl -s http://localhost:8080/actuator/health || true
+              break
+            fi
+
+            if [ $i -eq 90 ]; then
+              echo "❌ Backend failed to start after 180 seconds!"
+              echo ""
+              echo "==========================="
+              echo "Docker Containers Status"
+              echo "==========================="
+              docker compose ps || true
+              echo ""
+              echo "==========================="
+              echo "Backend Logs"
+              echo "==========================="
+              # เผื่อ service name มีทั้ง backend หรือ spring-backend
+              docker compose logs backend || docker compose logs spring-backend || true
+              exit 1
+            fi
+
+            echo "⏳ Attempt $i/90: Backend not ready yet..."
+            sleep 2
+          done
+
+      - name: Wait for frontend to be ready
+        run: |
+          echo "Waiting for frontend to start..."
+          for i in {1..60}; do
+            if curl -fsS http://localhost:5173 > /dev/null 2>&1; then
+              echo "✅ Frontend is responding!"
+              break
+            fi
+
+            if [ $i -eq 60 ]; then
+              echo "❌ Frontend failed to start!"
+              echo ""
+              echo "==========================="
+              echo "Docker Containers Status"
+              echo "==========================="
+              docker compose ps || true
+              echo ""
+              echo "==========================="
+              echo "Frontend Logs"
+              echo "==========================="
+              docker compose logs frontend || docker compose logs frontend-dev || true
+              exit 1
+            fi
+
+            echo "⏳ Attempt $i/60: Frontend not ready yet..."
+            sleep 2
+          done
+
+      - name: Debug - Services Status
+        run: |
+          echo "==========================="
+          echo "Docker Containers"
+          echo "==========================="
+          docker compose ps || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-cache-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
+          restore-keys: |
+            cypress-cache-${{ runner.os }}-
+
+      - name: Fix permissions for Frontend folder (E2E)
+        working-directory: Frontend
+        run: sudo chown -R "$USER:$USER" .
+
+      - name: Install dependencies + Cypress
+        working-directory: Frontend
+        run: |
+          npm ci
+          npx cypress install
+          npx cypress verify
+
+      - name: Wait for services to fully stabilize
+        run: |
+          echo "Waiting 10 seconds for services to fully stabilize..."
+          sleep 10
+
+          echo "Final health check..."
+          curl -fsS http://localhost:8080/actuator/health
+          curl -fsS http://localhost:5173 > /dev/null
+
+      # รัน Cypress ทุกเทสต์ (รวม A0) – ถ้าอยากกรองทีหลังค่อยมาแก้ spec เอาได้
+      - name: Run Cypress E2E Tests (all specs)
+        working-directory: Frontend
+        env:
+          CYPRESS_BASE_URL: http://localhost:5173
+          CYPRESS_API_URL: http://localhost:8080
+        run: |
+          npx cypress run --headless \
+            --browser chrome \
+            --config defaultCommandTimeout=20000,requestTimeout=20000,responseTimeout=30000,pageLoadTimeout=60000
+
+      - name: Upload Cypress Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: Frontend/cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Upload Cypress Videos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-videos
+          path: Frontend/cypress/videos
+          if-no-files-found: ignore
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "==========================="
+          echo "Backend Logs (Full)"
+          echo "==========================="
+          docker compose logs backend || docker compose logs spring-backend || true
+          echo ""
+          echo "==========================="
+          echo "Frontend Logs (Full)"
+          echo "==========================="
+          docker compose logs frontend || docker compose logs frontend-dev || true
+
+      - name: Shutdown
+        if: always()
+        run: docker compose down -v
+
+  # =========================
+  # Build & Push Backend Image (หลังผ่าน test + e2e)
   # =========================
   docker-backend:
     runs-on: ubuntu-latest
-    needs: [ backend-test ]
+    needs: [backend-test, frontend-test, e2e]
+
     steps:
       - uses: actions/checkout@v4
 
@@ -82,11 +242,12 @@ jobs:
             1tsh4dowz/devops-backend:latest
 
   # =========================
-  # Build & Push Frontend Image
+  # Build & Push Frontend Image (หลังผ่าน test + e2e)
   # =========================
   docker-frontend:
     runs-on: ubuntu-latest
-    needs: [ frontend-test ]
+    needs: [backend-test, frontend-test, e2e]
+
     steps:
       - uses: actions/checkout@v4
 
@@ -101,123 +262,11 @@ jobs:
         with:
           context: ./Frontend
           push: true
+          build-args: |
+            VITE_API_URL=http://localhost:8080
           tags: |
             1tsh4dowz/devops-frontend:${{ github.sha }}
             1tsh4dowz/devops-frontend:latest
-
-  # =========================
-  # E2E + Cypress (ไม่ทำให้ workflow fail)
-  # =========================
-  e2e:
-    runs-on: ubuntu-latest
-    needs: [ docker-backend, docker-frontend ]
-    continue-on-error: true
-    env:
-      BACKEND_IMAGE: 1tsh4dowz/devops-backend:latest
-      FRONTEND_IMAGE: 1tsh4dowz/devops-frontend:latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create docker-compose.override.yml
-        run: |
-          cat > docker-compose.override.yml << EOF
-          services:
-            backend:
-              image: ${BACKEND_IMAGE}
-              ports:
-                - "8080:8080"
-
-            frontend:
-              image: ${FRONTEND_IMAGE}
-              ports:
-                - "5173:5173"
-              environment:
-                - VITE_API_URL=http://backend:8080
-              volumes: []
-          EOF
-
-      - name: Start services
-        run: docker compose up -d
-
-      - name: Wait for backend
-        run: |
-          for i in {1..60}; do
-            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
-              echo "Backend is healthy ✅"
-              exit 0
-            fi
-            echo "Waiting for backend..."
-            sleep 2
-          done
-          echo "Backend did not become healthy in time ❌" >&2
-          docker compose logs backend || true
-          exit 1
-
-      - name: Wait for frontend
-        run: |
-          for i in {1..60}; do
-            if curl -fsS http://localhost:5173 > /dev/null; then
-              echo "Frontend is responding ✅"
-              exit 0
-            fi
-            echo "Waiting for frontend..."
-            sleep 2
-          done
-          echo "Frontend did not become ready in time ❌" >&2
-          docker compose logs frontend || true
-          exit 1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Cache Cypress binary
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/Cypress
-          key: cypress-cache-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
-          restore-keys: |
-            cypress-cache-
-
-      - name: Fix permissions for Frontend folder (e2e)
-        working-directory: Frontend
-        run: sudo chown -R $USER:$USER .
-
-      - name: Install dependencies + Cypress
-        working-directory: Frontend
-        run: |
-          npm ci
-          npx cypress install
-
-      # Run only A2–A4, C1–C6
-      - name: Run Cypress (only stable specs)
-        working-directory: Frontend
-        run: |
-          npx cypress run --headless \
-            --spec cypress/e2e/Success/A2-creating-event-organizationmnge.cy.js \
-            --spec cypress/e2e/Success/A3-creating-event-eventdetail.cy.js \
-            --spec cypress/e2e/Success/A4-creating-event-ticketdetail.cy.js \
-            --spec cypress/e2e/Success/C1-buying-ticket-landding.cy.js \
-            --spec cypress/e2e/Success/C2-buying-ticket-signin.cy.js \
-            --spec cypress/e2e/Success/C3-buying-ticket-login.cy.js \
-            --spec cypress/e2e/Success/C4-buying-ticket-eventselect.cy.js \
-            --spec cypress/e2e/Success/C5-buying-ticket-Profile.cy.js \
-            --spec cypress/e2e/Success/C6-buying-ticket-checkin.cy.js
-
-      - name: Upload E2E Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-artifacts
-          path: |
-            Frontend/cypress/videos
-            Frontend/cypress/screenshots
-          if-no-files-found: ignore
-
-      - name: Shutdown
-        if: always()
-        run: docker compose down -v
 
   # =========================
   # CD: Deploy to local Docker Desktop Kubernetes (self-hosted runner)
@@ -225,7 +274,7 @@ jobs:
   deploy-local:
     runs-on: self-hosted
     needs: [ docker-backend, docker-frontend, e2e ]
-    if: github.ref == 'refs/heads/k8s' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 

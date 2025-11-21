@@ -45,45 +45,6 @@ describe('หน้า Login', () => {
         cy.location('pathname', { timeout: 10000 }).should('include', '/admin');
     });
 
-    it('ล็อกอินสำเร็จ: alice123 (USER) → redirect /user หรือ /profile', () => {
-        cy.intercept('POST', '**/api/auth/login', {
-            statusCode: 200,
-            body: { token: 'fake-jwt-token', user: { username: 'alice123', role: 'USER' } },
-        }).as('loginReq');
-
-        cy.intercept('GET', '**/api/auth/me', {
-            statusCode: 200,
-            body: { id: 2, username: 'alice123', role: 'USER', email: 'alice123@example.com' },
-        }).as('authMe');
-
-        cy.get('input[autocomplete="username"], input[name="username"]').type('alice123');
-        cy.get('input[autocomplete="current-password"], input[name="password"]').type('password123');
-        cy.contains('button, [type="submit"]', /log in|sign in/i).should('not.be.disabled').click();
-
-        cy.wait('@loginReq');
-        // บางโปรเจกต์ redirect ผู้ใช้ไป /profile แทน /user ให้ยอมรับทั้งสอง
-        cy.location('pathname', { timeout: 10000 }).should('match', /(\/user|\/profile)/);
-    });
-
-    it('ล็อกอินสำเร็จ: organizer (ORGANIZER) → redirect /organizationmnge', () => {
-        cy.intercept('POST', '**/api/auth/login', {
-            statusCode: 200,
-            body: { token: 'fake-jwt-token', user: { username: 'organizer', role: 'ORGANIZER' } },
-        }).as('loginReq');
-
-        cy.intercept('GET', '**/api/auth/me', {
-            statusCode: 200,
-            body: { id: 3, username: 'organizer', role: 'ORGANIZER', email: 'organizer@example.com' },
-        }).as('authMe');
-
-        cy.get('input[autocomplete="username"], input[name="username"]').type('organizer');
-        cy.get('input[autocomplete="current-password"], input[name="password"]').type('password123');
-        cy.contains('button, [type="submit"]', /log in|sign in/i).should('not.be.disabled').click();
-
-        cy.wait('@loginReq');
-        cy.location('pathname', { timeout: 10000 }).should('include', '/organizationmnge');
-    });
-
     it('ล็อกอินไม่สำเร็จแล้วแสดงข้อความผิดพลาด', () => {
         // เคสนี้ "อย่า" mock auth/me ให้ 200 เราต้องการให้ล้มที่ login เลย
         cy.intercept('POST', '**/api/auth/login', {

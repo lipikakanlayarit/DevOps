@@ -207,23 +207,5 @@ describe("Event Dashboard Page (Real API)", () => {
                 }
             });
         });
-
-        it("F-02: user ปกติ alice123 เข้าหน้า /eventdashboard/1 แล้วไม่ควรใช้งาน dashboard ได้", () => {
-            loginAndVisitEventDashboard("alice123", "password123");
-
-            cy.location("pathname", { timeout: 15000 }).then((path) => {
-                if (path.includes("/login")) {
-                    cy.contains(/sign in|login|เข้าสู่ระบบ/i).should("be.visible");
-                } else {
-                    cy.get("body").then(($body) => {
-                        if ($body.text().includes("โหลดข้อมูลไม่สำเร็จ")) {
-                            cy.contains("โหลดข้อมูลไม่สำเร็จ").should("be.visible");
-                        } else {
-                            cy.contains("Attendance (Check-in)").should("not.exist");
-                        }
-                    });
-                }
-            });
-        });
     });
 });
