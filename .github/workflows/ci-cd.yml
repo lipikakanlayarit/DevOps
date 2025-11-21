@@ -60,7 +60,7 @@ jobs:
           npm run test --if-present
 
   # =========================
-  # E2E + Cypress (รันทุกเทสต์เหมือน local)
+  # E2E + Cypress (รันทุกเทสต์เหมือน local: docker compose dev stack)
   # =========================
   e2e:
     runs-on: ubuntu-latest
@@ -172,7 +172,7 @@ jobs:
           curl -fsS http://localhost:8080/actuator/health
           curl -fsS http://localhost:5173 > /dev/null
 
-      # รัน Cypress ทุกเทสต์ (รวม A0) – ถ้าอยากกรองทีหลังค่อยมาแก้ spec เอาได้
+      # รัน Cypress ทุกเทสต์ (รวม A0)
       - name: Run Cypress E2E Tests (all specs)
         working-directory: Frontend
         env:
@@ -217,7 +217,7 @@ jobs:
         run: docker compose down -v
 
   # =========================
-  # Build & Push Backend Image (หลังผ่าน test + e2e)
+  # Build & Push Backend Image (หลัง test + e2e ผ่าน)
   # =========================
   docker-backend:
     runs-on: ubuntu-latest
@@ -242,7 +242,7 @@ jobs:
             1tsh4dowz/devops-backend:latest
 
   # =========================
-  # Build & Push Frontend Image (หลังผ่าน test + e2e)
+  # Build & Push Frontend Image (หลัง test + e2e ผ่าน)
   # =========================
   docker-frontend:
     runs-on: ubuntu-latest
