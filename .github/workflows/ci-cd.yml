@@ -117,7 +117,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [docker-backend, docker-frontend]
-    continue-on-error: true   # ยังให้ Cypress fail ได้ แต่ไม่พังทั้ง workflow
+    continue-on-error: true
 
     env:
       BACKEND_IMAGE: 1tsh4dowz/devops-backend:latest
@@ -125,6 +125,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pull latest Docker images
+        run: |
+          docker pull ${{ env.BACKEND_IMAGE }}
+          docker pull ${{ env.FRONTEND_IMAGE }}
 
       - name: Create docker-compose.override.yml
         run: |
@@ -135,36 +140,67 @@ jobs:
               ports:
                 - "8080:8080"
               environment:
+                # Force test profile with H2
                 - SPRING_PROFILES_ACTIVE=test
+                - SPRING_DATASOURCE_URL=jdbc:h2:mem:testdb
+                - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+                - SPRING_DATASOURCE_USERNAME=sa
+                - SPRING_DATASOURCE_PASSWORD=
+                - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+                - SPRING_JPA_HIBERNATE_DDL_AUTO=create-drop
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+                start_period: 30s
 
             frontend:
               image: ${FRONTEND_IMAGE}
               ports:
                 - "5173:5173"
+              depends_on:
+                backend:
+                  condition: service_healthy
           EOF
 
-      - name: Start services
-        run: docker compose up -d
+      - name: Start services (only backend and frontend)
+        run: |
+          # Start only backend and frontend, not postgres or pgadmin
+          docker compose up -d backend frontend
 
       - name: Wait for backend to be healthy
         run: |
           echo "Waiting for backend to start..."
-          for i in {1..60}; do
+          for i in {1..90}; do
             if curl -fsS http://localhost:8080/actuator/health > /dev/null 2>&1; then
               echo "✅ Backend is healthy!"
+          
+              # Show backend health details
+              echo "Backend health check response:"
+              curl -s http://localhost:8080/actuator/health | jq '.' || curl -s http://localhost:8080/actuator/health
+          
               break
             fi
-            echo "⏳ Attempt $i/60: Backend not ready yet..."
+          
+            if [ $i -eq 90 ]; then
+              echo "❌ Backend failed to start after 180 seconds!"
+              echo ""
+              echo "==========================="
+              echo "Docker Containers Status"
+              echo "==========================="
+              docker compose ps
+              echo ""
+              echo "==========================="
+              echo "Backend Logs"
+              echo "==========================="
+              docker compose logs backend
+              exit 1
+            fi
+          
+            echo "⏳ Attempt $i/90: Backend not ready yet..."
             sleep 2
           done
-          
-          # Verify backend is actually ready
-          if ! curl -fsS http://localhost:8080/actuator/health > /dev/null 2>&1; then
-            echo "❌ Backend failed to start!"
-            echo "=== Backend logs ==="
-            docker compose logs backend
-            exit 1
-          fi
 
       - name: Wait for frontend to be ready
         run: |
@@ -174,48 +210,34 @@ jobs:
               echo "✅ Frontend is responding!"
               break
             fi
+          
+            if [ $i -eq 60 ]; then
+              echo "❌ Frontend failed to start!"
+              echo ""
+              echo "==========================="
+              echo "Frontend Logs"
+              echo "==========================="
+              docker compose logs frontend
+              exit 1
+            fi
+          
             echo "⏳ Attempt $i/60: Frontend not ready yet..."
             sleep 2
           done
-          
-          # Verify frontend is actually ready
-          if ! curl -fsS http://localhost:5173 > /dev/null 2>&1; then
-            echo "❌ Frontend failed to start!"
-            echo "=== Frontend logs ==="
-            docker compose logs frontend
-            exit 1
-          fi
 
-      - name: Debug - Check services status
+      - name: Debug - Services Status
         run: |
           echo "==========================="
-          echo "Docker Containers Status"
+          echo "Docker Containers"
           echo "==========================="
           docker compose ps
           
           echo ""
           echo "==========================="
-          echo "Backend Health Check"
+          echo "Network Test"
           echo "==========================="
-          curl -v http://localhost:8080/actuator/health || true
-          
-          echo ""
-          echo "==========================="
-          echo "Frontend Check"
-          echo "==========================="
-          curl -I http://localhost:5173 || true
-          
-          echo ""
-          echo "==========================="
-          echo "Backend Logs (last 50 lines)"
-          echo "==========================="
-          docker compose logs backend | tail -50
-          
-          echo ""
-          echo "==========================="
-          echo "Frontend Logs (last 50 lines)"
-          echo "==========================="
-          docker compose logs frontend | tail -50
+          curl -v http://localhost:8080/actuator/health 2>&1 | grep -E "HTTP|status" || true
+          curl -v http://localhost:5173 2>&1 | grep -E "HTTP" || true
 
       - uses: actions/setup-node@v4
         with:
@@ -229,7 +251,7 @@ jobs:
           restore-keys: |
             cypress-cache-${{ runner.os }}-
 
-      - name: Fix permissions for Frontend folder (e2e)
+      - name: Fix permissions for Frontend folder
         working-directory: Frontend
         run: sudo chown -R "$USER:$USER" .
 
@@ -240,12 +262,15 @@ jobs:
           npx cypress install
           npx cypress verify
 
-      - name: Wait a bit more for services to stabilize
-        run: sleep 5
+      - name: Wait for services to fully stabilize
+        run: |
+          echo "Waiting 10 seconds for services to fully stabilize..."
+          sleep 10
+          
+          echo "Final health check..."
+          curl -fsS http://localhost:8080/actuator/health
+          curl -fsS http://localhost:5173 > /dev/null
 
-      # =========================
-      # Run Cypress with increased timeouts
-      # =========================
       - name: Run Cypress E2E Tests
         working-directory: Frontend
         env:
@@ -257,7 +282,7 @@ jobs:
             --spec cypress/e2e/Success/A0-e2e.cy.js \
             --config defaultCommandTimeout=20000,requestTimeout=20000,responseTimeout=30000,pageLoadTimeout=60000
 
-      - name: Upload Cypress Screenshots (on failure)
+      - name: Upload Cypress Screenshots
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -273,23 +298,18 @@ jobs:
           path: Frontend/cypress/videos
           if-no-files-found: ignore
 
-      - name: Upload Cypress Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypress-logs
-          path: |
-            Frontend/cypress/results
-            Frontend/cypress/reports
-          if-no-files-found: ignore
-
       - name: Show logs on failure
         if: failure()
         run: |
           echo "==========================="
-          echo "FAILURE - Docker Logs"
+          echo "Backend Logs (Full)"
           echo "==========================="
-          docker compose logs
+          docker compose logs backend
+          echo ""
+          echo "==========================="
+          echo "Frontend Logs (Full)"
+          echo "==========================="
+          docker compose logs frontend
 
       - name: Shutdown
         if: always()
