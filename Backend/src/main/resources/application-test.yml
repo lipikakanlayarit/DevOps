@@ -13,10 +13,7 @@ spring:
     properties:
       hibernate:
         format_sql: true
-
-  h2:
-    console:
-      enabled: true
+          dialect: org.hibernate.dialect.H2Dialect
 
   flyway:
     enabled: false
