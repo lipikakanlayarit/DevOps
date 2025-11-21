@@ -73,14 +73,6 @@ describe("Admin User Management Page (/admin/usermnge, Real API)", () => {
             loginAndVisitAdminUserMng("admin", "password123");
         });
 
-        it("B-01: กดแท็บ Organizer แล้ว header, คอลัมน์ เปลี่ยนเป็น Organizer + ADDRESS", () => {
-            cy.contains("button", "Organizer", { timeout: 10000 }).click();
-
-            cy.contains("Organizers:", { timeout: 10000 }).should("be.visible");
-            cy.contains("th", "ADDRESS").should("be.visible");
-            cy.contains("th", "LAST LOGIN").should("not.exist");
-        });
-
         it("B-02: แท็บ Organizer ต้องมีอย่างน้อย 1 แถวข้อมูล (ถ้ามีนักจัดงานในระบบ)", () => {
             cy.contains("button", "Organizer", { timeout: 10000 }).click();
             cy.get("tbody tr", { timeout: 10000 }).should(

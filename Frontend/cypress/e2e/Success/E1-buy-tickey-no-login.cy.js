@@ -6,7 +6,6 @@ const BASE_URL = "http://localhost:5173";
 const API_URL = "http://localhost:8080";
 
 // ⭐ ใช้สำหรับจอง/สมัคร (ยังคงไว้ เผื่อ debug flow guest → signup)
-// แต่ STEP 4 จะไปใช้ account ที่มีอยู่แล้วแทน
 const ts = Date.now();
 const TEST_EMAIL = `e2e_${ts}@example.com`;
 const TEST_USERNAME = `E2euser${ts}`;
@@ -375,9 +374,9 @@ describe("E2E: Guest Booking → Payment → SignUp → Login → Profile (with 
     });
 
     // ============================================
-    // STEP 4: Login ด้วย Account ที่มีอยู่แล้ว (ตามที่คุณขอ)
+    // STEP 4: Login ด้วย Account ที่เพิ่งจอง
     // ============================================
-    it("STEP 4: Login ด้วย Existing Account (ไม่ใช้ TEST_EMAIL แล้ว)", () => {
+    it("STEP 4: Login ด้วย Account ที่เพิ่งจองตั๋ว)", () => {
         cy.visit(`${BASE_URL}/login`);
         cy.get("form").should("be.visible");
 
@@ -454,7 +453,7 @@ describe("E2E: Guest Booking → Payment → SignUp → Login → Profile (with 
     // ============================================
     // STEP 5: Profile - ใช้ Existing Account ตรวจ My Tickets
     // ============================================
-    it("STEP 5: ตรวจสอบตั๋วใน Profile ของ Existing Account", () => {
+    it("STEP 5: ตรวจสอบตั๋วใน Profile ", () => {
         const token = Cypress.env("AUTH_TOKEN");
 
         if (!token) {
@@ -506,25 +505,5 @@ describe("E2E: Guest Booking → Payment → SignUp → Login → Profile (with 
         });
 
         cy.contains("My Ticket", { timeout: 5000 }).should("be.visible");
-    });
-
-    // ============================================
-    // STEP 6: Summary
-    // ============================================
-    it("STEP 6 (SUMMARY): สรุปผลการทดสอบ", () => {
-        const reservedId = Cypress.env("RESERVED_ID");
-        const userId = Cypress.env("USER_ID");
-        const authToken = Cypress.env("AUTH_TOKEN");
-
-        cy.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        cy.log("📊 TEST SUMMARY");
-        cy.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        cy.log("Guest Test Email:", TEST_EMAIL);
-        cy.log("Debug Signup Username:", TEST_USERNAME);
-        cy.log("Login Username (Existing):", EXISTING_USERNAME);
-        cy.log("Reserved ID:", reservedId || "❌ NOT CREATED");
-        cy.log("User ID:", userId || "❌ NOT CAPTURED");
-        cy.log("Auth Token:", authToken ? "✅ OK" : "❌ MISSING");
-        cy.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     });
 });

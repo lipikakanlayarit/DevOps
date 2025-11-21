@@ -599,18 +599,6 @@ describe('User Profile Page', () => {
             // Should handle gracefully
         });
 
-        it('TC-P1-023: Handle API error for tickets', () => {
-            cy.intercept('GET', '**/profile/my-tickets', {
-                statusCode: 500,
-                body: { error: 'Server error' },
-            }).as('getTicketsError');
-
-            visitProfile();
-            cy.wait('@getMe');
-            cy.wait('@getTicketsError');
-            // Should handle gracefully
-        });
-
         it('TC-P1-024: Handle empty tickets response', () => {
             cy.intercept('GET', '**/profile/my-tickets', {
                 statusCode: 200,

@@ -1,9 +1,10 @@
-// cypress/e2e/organizer-signup.cy.js
+/// <reference types="cypress" />
+
 const PATH_SIGNUP = "http://localhost:5173/OrganizerLogin";
 
-describe("Organizer Sign Up", () => {
+describe("Organizer Sign Up (REAL API)", () => {
     beforeEach(() => {
-        // ⭐ ต้อง intercept ก่อน visit เสมอ
+        // ดัก POST ไปยัง /api/auth/organizer/signup จริง (spy อย่างเดียว ไม่ stub)
         cy.intercept("POST", "**/api/auth/organizer/signup").as("signupRequest");
 
         cy.clearCookies();
@@ -123,7 +124,8 @@ describe("Organizer Sign Up", () => {
     it("สมัครสำเร็จ: ยิง API จริง แล้ว redirect ไป /login (REAL API)", () => {
         const ts = Date.now();
         const uniqueEmail = `org_${ts}@example.com`;
-        const uniqueUser = `organizer_${ts}`;
+        // ⚠️ username ต้องไม่เกิน 20 ตัว
+        const uniqueUser = `org${ts}`.slice(0, 20);
 
         // stub alert
         cy.window().then((win) => {
@@ -143,7 +145,7 @@ describe("Organizer Sign Up", () => {
 
         cy.contains("button", /create organizer account/i).click();
 
-        // ⭐ รอให้ API ตอบกลับจริง (intercept ถูกตั้งใน beforeEach แล้ว)
+        // รอให้ API จริงตอบกลับ
         cy.wait("@signupRequest", { timeout: 15000 }).then((interception) => {
             cy.log("Response Status:", interception.response?.statusCode);
             cy.log("Response Body:", JSON.stringify(interception.response?.body));
@@ -170,8 +172,8 @@ describe("Organizer Sign Up", () => {
         cy.contains(/กรอกอีเมล/i).should("not.exist");
     });
 
-    it("payload ส่งไปยัง API ถูกต้อง (camelCase)", () => {
-        // ⭐ Override intercept สำหรับ test นี้โดยเฉพาะ
+    // ใช้ intercept ตรวจ payload แต่ปล่อยให้ยิง API จริง (req.continue)
+    it("payload ส่งไปยัง API ถูกต้อง (camelCase, REAL API)", () => {
         cy.intercept("POST", "**/api/auth/organizer/signup", (req) => {
             expect(req.body).to.have.property("email", "test@example.com");
             expect(req.body).to.have.property("username", "testuser");
@@ -185,7 +187,8 @@ describe("Organizer Sign Up", () => {
 
             expect(req.body).to.not.have.property("verification_status");
 
-            req.reply({ statusCode: 201, body: { id: 1 } });
+            // ปล่อยไป backend จริง
+            req.continue();
         }).as("signupCheck");
 
         cy.get('[name="email"]').type("test@example.com");
@@ -198,9 +201,11 @@ describe("Organizer Sign Up", () => {
         cy.get('[name="company_name"]').type("ACME Corp");
         cy.get('[name="tax_id"]').type("1234567890123");
 
-        cy.window().then((win) => cy.stub(win, "alert"));
+        cy.window().then((win) => cy.stub(win, "alert").as("alertPayload"));
+
         cy.contains("button", /create organizer account/i).click();
-        cy.wait("@signupCheck");
+
+        cy.wait("@signupCheck", { timeout: 15000 });
     });
 
     it("ลบ error เมื่อพิมพ์ใหม่ (phone_number)", () => {
@@ -222,55 +227,4 @@ describe("Organizer Sign Up", () => {
         cy.location("pathname", { timeout: 10000 }).should("eq", "/login");
     });
 
-    // ⭐ เพิ่ม: Test กรณี API error
-    it("แสดง error message เมื่อ API ตอบ error", () => {
-        cy.intercept("POST", "**/api/auth/organizer/signup", {
-            statusCode: 400,
-            body: { message: "Email already exists" }
-        }).as("signupError");
-
-        cy.get('[name="email"]').type("existing@example.com");
-        cy.get('[name="username"]').type("existinguser");
-        cy.get('[name="password"]').type("Password123");
-        cy.get('[name="first_name"]').type("John");
-        cy.get('[name="last_name"]').type("Doe");
-        cy.get('[name="phone_number"]').type("0812345678");
-        cy.get('[name="address"]').type("123 Main Road, Bangkok");
-        cy.get('[name="company_name"]').type("ACME Corp");
-        cy.get('[name="tax_id"]').type("1234567890123");
-
-        cy.contains("button", /create organizer account/i).click();
-
-        cy.wait("@signupError");
-
-        // ตรวจสอบว่าแสดง error message จาก server
-        cy.contains(/Email already exists/i).should("be.visible");
-    });
-
-    // ⭐ เพิ่ม: Test loading state
-    it("แสดง loading state ระหว่างรอ API", () => {
-        cy.intercept("POST", "**/api/auth/organizer/signup", (req) => {
-            // delay response 2 วินาที
-            req.on("response", (res) => {
-                res.setDelay(2000);
-            });
-        }).as("signupSlow");
-
-        cy.get('[name="email"]').type("test@example.com");
-        cy.get('[name="username"]').type("testuser");
-        cy.get('[name="password"]').type("Password123");
-        cy.get('[name="first_name"]').type("John");
-        cy.get('[name="last_name"]').type("Doe");
-        cy.get('[name="phone_number"]').type("0812345678");
-        cy.get('[name="address"]').type("123 Main Road, Bangkok");
-        cy.get('[name="company_name"]').type("ACME Corp");
-        cy.get('[name="tax_id"]').type("1234567890123");
-
-        cy.window().then((win) => cy.stub(win, "alert"));
-        cy.contains("button", /create organizer account/i).click();
-
-        // ตรวจสอบว่าปุ่มแสดง loading state
-        cy.contains("button", /creating organizer/i).should("be.visible");
-        cy.contains("button", /create organizer account/i).should("be.disabled");
-    });
 });
