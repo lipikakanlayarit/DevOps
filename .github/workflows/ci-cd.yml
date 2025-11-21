@@ -8,9 +8,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # =========================
-  # Backend Unit Tests
-  # =========================
   backend-test:
     runs-on: ubuntu-latest
     defaults:
@@ -30,9 +27,6 @@ jobs:
           chmod +x mvnw || true
           ./mvnw -q -U clean test
 
-  # =========================
-  # Frontend Unit / Vitest
-  # =========================
   frontend-test:
     runs-on: ubuntu-latest
     defaults:
@@ -40,7 +34,6 @@ jobs:
         working-directory: Frontend
     env:
       CI: true
-      CYPRESS_INSTALL_BINARY: 0
     steps:
       - uses: actions/checkout@v4
 
@@ -51,17 +44,13 @@ jobs:
           cache-dependency-path: Frontend/package-lock.json
 
       - name: Fix permissions for Frontend folder (unit tests)
-        run: |
-          sudo chown -R $USER:$USER .
+        run: sudo chown -R $USER:$USER .
 
       - name: Install & Test Frontend (Vitest)
         run: |
           npm ci
           npm run test --if-present
 
-  # =========================
-  # Build & Push Backend Image
-  # =========================
   docker-backend:
     runs-on: ubuntu-latest
     needs: [ backend-test ]
@@ -83,9 +72,6 @@ jobs:
             1tsh4dowz/devops-backend:${{ github.sha }}
             1tsh4dowz/devops-backend:latest
 
-  # =========================
-  # Build & Push Frontend Image
-  # =========================
   docker-frontend:
     runs-on: ubuntu-latest
     needs: [ frontend-test ]
@@ -107,9 +93,6 @@ jobs:
             1tsh4dowz/devops-frontend:${{ github.sha }}
             1tsh4dowz/devops-frontend:latest
 
-  # =========================
-  # E2E + Cypress
-  # =========================
   e2e:
     runs-on: ubuntu-latest
     needs: [ docker-backend, docker-frontend ]
@@ -145,28 +128,20 @@ jobs:
         run: |
           for i in {1..60}; do
             if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
-              echo "Backend is healthy ✅"
               exit 0
             fi
-            echo "Waiting for backend..."
             sleep 2
           done
-          echo "Backend did not become healthy in time ❌" >&2
-          docker compose logs backend || true
           exit 1
 
       - name: Wait for frontend
         run: |
           for i in {1..60}; do
             if curl -fsS http://localhost:5173 > /dev/null; then
-              echo "Frontend is responding ✅"
               exit 0
             fi
-            echo "Waiting for frontend..."
             sleep 2
           done
-          echo "Frontend did not become ready in time ❌" >&2
-          docker compose logs frontend || true
           exit 1
 
       - uses: actions/setup-node@v4
@@ -177,19 +152,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/Cypress
-          key: cypress-binary-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
-          restore-keys: cypress-binary-
+          key: cypress-cache-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
+          restore-keys: |
+            cypress-cache-
 
-      # 👇 แก้ EACCES ตรงนี้ ก่อน npm ci
       - name: Fix permissions for Frontend folder (e2e)
         working-directory: Frontend
-        run: |
-          sudo chown -R $USER:$USER .
+        run: sudo chown -R $USER:$USER .
 
-      - name: Install Cypress
+      - name: Install dependencies + Cypress
         working-directory: Frontend
-        env:
-          CYPRESS_INSTALL_BINARY: 1
         run: |
           npm ci
           npx cypress install
