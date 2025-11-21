@@ -2,9 +2,9 @@ name: DevOps CI/CD Pipeline
 
 on:
   push:
-    branches: [ k8s ]
+    branches: [ Ham-fix-pipeline ]
   pull_request:
-    branches: [ k8s ]
+    branches: [ Ham-fix-pipeline ]
   workflow_dispatch:
 
 jobs:
