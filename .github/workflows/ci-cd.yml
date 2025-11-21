@@ -2,9 +2,9 @@ name: DevOps CI/CD Pipeline
 
 on:
   push:
-    branches: [pass-all]
+    branches: [main]
   pull_request:
-    branches: [pass-all]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
