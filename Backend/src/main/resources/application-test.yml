@@ -13,7 +13,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
-          dialect: org.hibernate.dialect.H2Dialect
+
+  h2:
+    console:
+      enabled: true
 
   flyway:
     enabled: false
@@ -22,18 +25,12 @@ spring:
     init:
       mode: never
 
-# ✅ เปิด log ขณะรัน test ให้เห็น SQL ชัดเจน
+  main:
+    allow-bean-definition-overriding: true
+
 logging:
   level:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
     org.springframework: WARN
     com.example.devops: INFO
-
-  # ✅ ตั้งค่า timezone ให้ตรงกับ production
-  time:
-    zone: Asia/Bangkok
-
-# ✅ ปิด security filter (กรณี MockMvc ใช้ addFilters=false)
-spring.main:
-  allow-bean-definition-overriding: true
