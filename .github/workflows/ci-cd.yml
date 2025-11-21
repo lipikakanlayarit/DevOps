@@ -143,26 +143,39 @@ jobs:
       - name: Wait for backend (8080)
         run: |
           for i in {1..60}; do
-            curl -fsS http://localhost:8080/actuator/health && exit 0
+            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
+              echo "Backend OK"
+              exit 0
+            fi
+            echo "Waiting for backend..."
             sleep 2
           done
-          echo "Backend did not become healthy in time" >&2
+          echo "Backend did not become healthy ❌" >&2
           docker compose logs backend || true
           exit 1
 
       - name: Wait for frontend (5173)
         run: |
           for i in {1..60}; do
-            curl -fsS http://localhost:5173 && exit 0
+            if curl -fsS http://localhost:5173 > /dev/null; then
+              echo "Frontend OK"
+              exit 0
+            fi
+            echo "Waiting for frontend..."
             sleep 2
           done
-          echo "Frontend did not become ready in time" >&2
+          echo "Frontend did not become ready ❌" >&2
           docker compose logs frontend || true
           exit 1
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # 👇 FIX PERMISSION ERROR (EACCES)
+      - name: Fix permissions for Frontend folder
+        working-directory: Frontend
+        run: sudo chown -R $USER:$USER .
 
       - name: Install Cypress
         working-directory: Frontend
@@ -174,6 +187,7 @@ jobs:
         working-directory: Frontend
         run: npx cypress run --headless
 
+      # 👇 ไม่ให้ error ถ้าไม่มีไฟล์ screenshots/videos
       - name: Upload E2E Artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -182,6 +196,7 @@ jobs:
           path: |
             Frontend/cypress/videos
             Frontend/cypress/screenshots
+          if-no-files-found: ignore
 
       - name: Shutdown
         if: always()
