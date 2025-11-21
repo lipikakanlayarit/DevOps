@@ -240,8 +240,8 @@ jobs:
 
       - name: Restart backend & frontend deployments
         run: |
-          kubectl rollout restart deployment/backend
-          kubectl rollout restart deployment/frontend
+          kubectl rollout restart deployment/devops-backend
+          kubectl rollout restart deployment/devops-frontend
 
       - name: Check deployed resources
         run: |
