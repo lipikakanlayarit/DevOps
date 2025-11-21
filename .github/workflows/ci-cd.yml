@@ -267,3 +267,34 @@ jobs:
           tags: |
             1tsh4dowz/devops-frontend:${{ github.sha }}
             1tsh4dowz/devops-frontend:latest
+
+  # =========================
+  # CD: Deploy to local Docker Desktop Kubernetes (self-hosted runner)
+  # =========================
+  deploy-local:
+    runs-on: self-hosted
+    needs: [ docker-backend, docker-frontend, e2e ]
+    if: github.ref == 'refs/heads/pass-all' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check current kube context
+        run: |
+          kubectl config current-context
+          kubectl get nodes
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f pass-all/
+
+      - name: Restart backend & frontend deployments
+        run: |
+          kubectl rollout restart deployment/devops-backend
+          kubectl rollout restart deployment/devops-frontend
+
+      - name: Check deployed resources
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -o wide
+          echo "=== Services ==="
+          kubectl get svc
