@@ -285,7 +285,7 @@ jobs:
 
       - name: Apply Kubernetes manifests
         run: |
-          kubectl apply -f pass-all/
+          kubectl apply -f k8s/
 
       - name: Restart backend & frontend deployments
         run: |
