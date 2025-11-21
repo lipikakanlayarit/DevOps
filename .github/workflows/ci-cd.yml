@@ -105,6 +105,8 @@ jobs:
         with:
           context: ./Frontend
           push: true
+          build-args: |
+            VITE_API_URL=http://localhost:8080
           tags: |
             1tsh4dowz/devops-frontend:${{ github.sha }}
             1tsh4dowz/devops-frontend:latest
@@ -132,45 +134,88 @@ jobs:
               image: ${BACKEND_IMAGE}
               ports:
                 - "8080:8080"
+              environment:
+                - SPRING_PROFILES_ACTIVE=test
 
             frontend:
               image: ${FRONTEND_IMAGE}
               ports:
                 - "5173:5173"
-              environment:
-                VITE_API_URL: http://backend:8080
           EOF
 
       - name: Start services
         run: docker compose up -d
 
-      - name: Wait for backend
+      - name: Wait for backend to be healthy
         run: |
+          echo "Waiting for backend to start..."
           for i in {1..60}; do
-            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
-              echo "Backend is healthy ✅"
-              exit 0
+            if curl -fsS http://localhost:8080/actuator/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy!"
+              break
             fi
-            echo "Waiting for backend..."
+            echo "⏳ Attempt $i/60: Backend not ready yet..."
             sleep 2
           done
-          echo "Backend did not become healthy in time ❌" >&2
-          docker compose logs backend || true
-          exit 1
+          
+          # Verify backend is actually ready
+          if ! curl -fsS http://localhost:8080/actuator/health > /dev/null 2>&1; then
+            echo "❌ Backend failed to start!"
+            echo "=== Backend logs ==="
+            docker compose logs backend
+            exit 1
+          fi
 
-      - name: Wait for frontend
+      - name: Wait for frontend to be ready
         run: |
+          echo "Waiting for frontend to start..."
           for i in {1..60}; do
-            if curl -fsS http://localhost:5173 > /dev/null; then
-              echo "Frontend is responding ✅"
-              exit 0
+            if curl -fsS http://localhost:5173 > /dev/null 2>&1; then
+              echo "✅ Frontend is responding!"
+              break
             fi
-            echo "Waiting for frontend..."
+            echo "⏳ Attempt $i/60: Frontend not ready yet..."
             sleep 2
           done
-          echo "Frontend did not become ready in time ❌" >&2
-          docker compose logs frontend || true
-          exit 1
+          
+          # Verify frontend is actually ready
+          if ! curl -fsS http://localhost:5173 > /dev/null 2>&1; then
+            echo "❌ Frontend failed to start!"
+            echo "=== Frontend logs ==="
+            docker compose logs frontend
+            exit 1
+          fi
+
+      - name: Debug - Check services status
+        run: |
+          echo "==========================="
+          echo "Docker Containers Status"
+          echo "==========================="
+          docker compose ps
+          
+          echo ""
+          echo "==========================="
+          echo "Backend Health Check"
+          echo "==========================="
+          curl -v http://localhost:8080/actuator/health || true
+          
+          echo ""
+          echo "==========================="
+          echo "Frontend Check"
+          echo "==========================="
+          curl -I http://localhost:5173 || true
+          
+          echo ""
+          echo "==========================="
+          echo "Backend Logs (last 50 lines)"
+          echo "==========================="
+          docker compose logs backend | tail -50
+          
+          echo ""
+          echo "==========================="
+          echo "Frontend Logs (last 50 lines)"
+          echo "==========================="
+          docker compose logs frontend | tail -50
 
       - uses: actions/setup-node@v4
         with:
@@ -182,7 +227,7 @@ jobs:
           path: ~/.cache/Cypress
           key: cypress-cache-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
           restore-keys: |
-            cypress-cache-
+            cypress-cache-${{ runner.os }}-
 
       - name: Fix permissions for Frontend folder (e2e)
         working-directory: Frontend
@@ -193,25 +238,58 @@ jobs:
         run: |
           npm ci
           npx cypress install
+          npx cypress verify
+
+      - name: Wait a bit more for services to stabilize
+        run: sleep 5
 
       # =========================
-      # Run only A2–A4, C1–C6
+      # Run Cypress with increased timeouts
       # =========================
-      - name: Run Cypress (only stable specs)
+      - name: Run Cypress E2E Tests
         working-directory: Frontend
+        env:
+          CYPRESS_BASE_URL: http://localhost:5173
+          CYPRESS_API_URL: http://localhost:8080
         run: |
           npx cypress run --headless \
-            --spec cypress/e2e/Success/A0-e2e.cy.js
+            --browser chrome \
+            --spec cypress/e2e/Success/A0-e2e.cy.js \
+            --config defaultCommandTimeout=20000,requestTimeout=20000,responseTimeout=30000,pageLoadTimeout=60000
 
-      - name: Upload E2E Artifacts
+      - name: Upload Cypress Screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: Frontend/cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Upload Cypress Videos
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cypress-artifacts
-          path: |
-            Frontend/cypress/videos
-            Frontend/cypress/screenshots
+          name: cypress-videos
+          path: Frontend/cypress/videos
           if-no-files-found: ignore
+
+      - name: Upload Cypress Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-logs
+          path: |
+            Frontend/cypress/results
+            Frontend/cypress/reports
+          if-no-files-found: ignore
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "==========================="
+          echo "FAILURE - Docker Logs"
+          echo "==========================="
+          docker compose logs
 
       - name: Shutdown
         if: always()
