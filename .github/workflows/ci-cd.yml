@@ -104,8 +104,7 @@ jobs:
             1tsh4dowz/devops-frontend:latest
 
   # =========================
-  # E2E via Cypress + docker compose
-  # ใช้ docker-compose.yml เดิม + Flyway seed + R__butcon_seed_data.sql
+  # E2E + Cypress
   # =========================
   e2e:
     runs-on: ubuntu-latest
@@ -117,7 +116,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ใช้ docker-compose.yml เดิม แล้ว override แค่ image / env / volumes
       - name: Create docker-compose.override.yml
         run: |
           cat > docker-compose.override.yml << EOF
@@ -126,7 +124,6 @@ jobs:
               image: ${BACKEND_IMAGE}
               ports:
                 - "8080:8080"
-              # ใช้ environment เดิมจาก docker-compose.yml (SPRING_PROFILES_ACTIVE=dev, DB_*)
 
             frontend:
               image: ${FRONTEND_IMAGE}
@@ -134,59 +131,51 @@ jobs:
                 - "5173:5173"
               environment:
                 - VITE_API_URL=http://backend:8080
-              # ล้าง volumes ทิ้งกันปัญหา root เขียน node_modules ใน workspace
               volumes: []
           EOF
 
-      - name: Start services (db + backend + frontend + pgadmin)
+      - name: Start services
         run: docker compose up -d
 
-      - name: Wait for backend (8080 /actuator/health)
+      - name: Wait for backend
         run: |
           for i in {1..60}; do
-            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
-              echo "Backend is healthy ✅"
-              exit 0
-            fi
-            echo "Waiting for backend..."
+            curl -fsS http://localhost:8080/actuator/health && exit 0
             sleep 2
           done
-          echo "Backend did not become healthy in time ❌" >&2
-          docker compose logs backend || true
           exit 1
 
-      - name: Wait for frontend (5173)
+      - name: Wait for frontend
         run: |
           for i in {1..60}; do
-            if curl -fsS http://localhost:5173 > /dev/null; then
-              echo "Frontend is responding ✅"
-              exit 0
-            fi
-            echo "Waiting for frontend..."
+            curl -fsS http://localhost:5173 && exit 0
             sleep 2
           done
-          echo "Frontend did not become ready in time ❌" >&2
-          docker compose logs frontend || true
           exit 1
 
+      # =========================
+      # ✔ FIX THE CYPRESS BINARY ISSUE
+      # =========================
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # กันปัญหา EACCES ตอน npm ci (เผื่อมีไฟล์จาก container มาเขียนทับ)
-      - name: Fix permissions for Frontend folder
-        working-directory: Frontend
-        run: sudo chown -R $USER:$USER .
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-binary-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
+          restore-keys: cypress-binary-
 
-      - name: Install Cypress (CI)
+      - name: Install Cypress
         working-directory: Frontend
         env:
-          CYPRESS_INSTALL_BINARY: 0
+          CYPRESS_INSTALL_BINARY: 1
         run: |
           npm ci
           npx cypress install
 
-      - name: Run Cypress (run all specs)
+      - name: Run Cypress (all specs)
         working-directory: Frontend
         run: npx cypress run --headless
 
