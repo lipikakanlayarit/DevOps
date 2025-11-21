@@ -274,7 +274,7 @@ jobs:
   deploy-local:
     runs-on: self-hosted
     needs: [ docker-backend, docker-frontend, e2e ]
-    if: github.ref == 'refs/heads/pass-all' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
