@@ -15,7 +15,7 @@ type OrganizerSignUpValues = {
 
 type Errors = Partial<Record<keyof OrganizerSignUpValues, string>>;
 
-const API_BASE = import.meta.env?.VITE_API_URL || "http://localhost:8080";
+const API_BASE = import.meta.env?.VITE_API_URL || "";
 
 export default function OrganizerLogin() {
     const [form, setForm] = useState<OrganizerSignUpValues>({
