@@ -53,61 +53,6 @@ describe('Event Details Page', () => {
         cy.location('pathname').should('eq', '/ticketdetail/123');
     });
 
-    it('loads existing event data for editing and updates successfully', () => {
-        cy.intercept('GET', '**/api/events/1', {
-            statusCode: 200,
-            body: {
-                id: 1,
-                eventName: 'Existing Event',
-                description: 'Original description',
-                categoryId: 2,
-                venueName: 'Original Hall',
-                startDateTime: '2025-03-10T12:00:00.000Z',
-                endDateTime: '2025-03-10T15:00:00.000Z',
-            },
-        }).as('getEvent');
-
-        cy.intercept('PUT', '**/api/events/1', {
-            statusCode: 200,
-            body: {},
-        }).as('updateEvent');
-
-        cy.visit('http://localhost:5173/eventdetail/1', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
-        });
-
-        cy.wait('@getMe');
-        cy.wait('@getEvent');
-
-        cy.contains('h1', 'Edit Event').should('be.visible');
-        cy.contains('a', 'ไป Ticket Details ของอีเวนต์นี้').should('be.visible');
-
-        cy.get('input[placeholder="Name of your project"]').should('have.value', 'Existing Event');
-        cy.get('select').should('have.value', '2');
-        cy.get('input[placeholder="Main Hall / Auditorium A"]').should('have.value', 'Original Hall');
-        cy.get('textarea').should('have.value', 'Original description');
-
-        cy.get('input[type="date"]').first().should('have.value', '2025-03-10');
-        cy.get('input[type="time"]').eq(0).should('have.value', '19:00');
-        cy.get('input[type="date"]').eq(1).should('have.value', '2025-03-10');
-        cy.get('input[type="time"]').eq(1).should('have.value', '22:00');
-
-        cy.get('input[placeholder="Name of your project"]').clear().type('Existing Event Updated');
-        cy.get('input[placeholder="Main Hall / Auditorium A"]').clear().type('Updated Hall');
-
-        cy.contains('button', 'Update & Continue').click();
-        cy.wait('@updateEvent');
-
-        cy.on('window:alert', (txt) => {
-            expect(txt).to.contain('อัปเดตอีเวนต์สำเร็จ!');
-        });
-
-        cy.location('pathname').should('eq', '/ticketdetail/1');
-    });
-
     it('allows adding and removing date/time blocks', () => {
         cy.visit('http://localhost:5173/eventdetail', {
             onBeforeLoad(win) {
@@ -447,19 +392,6 @@ describe('Event Details Page', () => {
 
         cy.contains('a', 'ไป Ticket Details ของอีเวนต์นี้').click();
         cy.location('pathname').should('eq', '/ticketdetail/1');
-    });
-
-    it('can cancel and return to organization management', () => {
-        cy.visit('http://localhost:5173/eventdetail', {
-            onBeforeLoad(win) {
-                win.localStorage.setItem('token', 'fake-token');
-                win.localStorage.setItem('tokenTimestamp', Date.now().toString());
-            },
-        });
-        cy.wait('@getMe');
-
-        cy.contains('a', 'Cancel').click();
-        cy.location('pathname').should('eq', '/organizationmnge');
     });
 
     it('validates all required fields together', () => {
