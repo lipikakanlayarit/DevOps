@@ -2,9 +2,9 @@ name: DevOps CI/CD Pipeline
 
 on:
   push:
-    branches: [k8s]
+    branches: [Ham-fix-pipeline]
   pull_request:
-    branches: [k8s]
+    branches: [Ham-fix-pipeline]
   workflow_dispatch:
 
 jobs:
@@ -105,91 +105,86 @@ jobs:
         with:
           context: ./Frontend
           push: true
+          build-args: |
+            VITE_API_URL=http://localhost:8080
           tags: |
             1tsh4dowz/devops-frontend:${{ github.sha }}
             1tsh4dowz/devops-frontend:latest
 
   # =========================
-  # E2E + Cypress (ไม่ให้พังทั้ง workflow)
+  # E2E + Cypress (รัน A0 บน CI ด้วย env เหมือน local)
   # =========================
   e2e:
     runs-on: ubuntu-latest
     needs: [docker-backend, docker-frontend]
-    continue-on-error: true   # job นี้ fail ได้ แต่ workflow ไม่แดง
-
-    env:
-      BACKEND_IMAGE: 1tsh4dowz/devops-backend:latest
-      FRONTEND_IMAGE: 1tsh4dowz/devops-frontend:latest
+    continue-on-error: true   # ถ้า A0 ล้ม ยังไม่ให้ workflow แดงทั้งอัน (จะเอาออกก็ได้ถ้าอยากให้แดง)
 
     steps:
       - uses: actions/checkout@v4
 
-      # ใช้ H2 + test profile ใน backend
-      - name: Create docker-compose.override.yml
+      # ใช้ docker compose dev ปกติ (postgres + backend + frontend + อื่นๆ) เหมือนเวลานายรันบนเครื่อง
+      - name: Start full stack with docker compose
         run: |
-          cat > docker-compose.override.yml << 'EOF'
-          services:
-            backend:
-              image: ${BACKEND_IMAGE}
-              container_name: spring-backend
-              ports:
-                - "8080:8080"
-              environment:
-                SPRING_PROFILES_ACTIVE: test
-                SPRING_DATASOURCE_URL: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-                SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.h2.Driver
-                SPRING_DATASOURCE_USERNAME: sa
-                SPRING_DATASOURCE_PASSWORD: ""
-                SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.H2Dialect
-                SPRING_JPA_HIBERNATE_DDL_AUTO: create-drop
-                SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.H2Dialect
+          docker compose up -d
 
-            frontend:
-              image: ${FRONTEND_IMAGE}
-              container_name: frontend-dev
-              ports:
-                - "5173:5173"
-              environment:
-                VITE_API_URL: http://backend:8080
-          EOF
-
-      - name: Start services
-        run: docker compose up -d
-
-      - name: Wait for backend
+      - name: Wait for backend to be healthy
         run: |
-          for i in {1..60}; do
-            if curl -fsS http://localhost:8080/actuator/health > /dev/null; then
-              echo "Backend is healthy ✅"
-              exit 0
+          echo "Waiting for backend to start..."
+          for i in {1..90}; do
+            if curl -fsS http://localhost:8080/actuator/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy!"
+              curl -s http://localhost:8080/actuator/health || true
+              break
             fi
-            echo "Waiting for backend..."
+
+            if [ $i -eq 90 ]; then
+              echo "❌ Backend failed to start after 180 seconds!"
+              echo ""
+              echo "==========================="
+              echo "Docker Containers Status"
+              echo "==========================="
+              docker compose ps
+              echo ""
+              echo "==========================="
+              echo "Backend Logs"
+              echo "==========================="
+              docker compose logs backend || docker compose logs spring-backend || true
+              exit 1
+            fi
+
+            echo "⏳ Attempt $i/90: Backend not ready yet..."
             sleep 2
           done
-          echo "Backend did not become healthy in time ❌" >&2
-          docker compose logs backend || true
-          exit 1
 
-      - name: Wait for frontend
+      - name: Wait for frontend to be ready
         run: |
+          echo "Waiting for frontend to start..."
           for i in {1..60}; do
-            if curl -fsS http://localhost:5173 > /dev/null; then
-              echo "Frontend is responding ✅"
-              exit 0
+            if curl -fsS http://localhost:5173 > /dev/null 2>&1; then
+              echo "✅ Frontend is responding!"
+              break
             fi
-            echo "Waiting for frontend..."
+
+            if [ $i -eq 60 ]; then
+              echo "❌ Frontend failed to start!"
+              echo ""
+              echo "==========================="
+              echo "Frontend Logs"
+              echo "==========================="
+              docker compose logs frontend || docker compose logs frontend-dev || true
+              exit 1
+            fi
+
+            echo "⏳ Attempt $i/60: Frontend not ready yet..."
             sleep 2
           done
-          echo "Frontend did not become ready in time ❌" >&2
-          docker compose logs frontend || true
-          exit 1
 
-      - name: Extra wait & final health check
+      - name: Debug - Services Status
         run: |
-          echo "Waiting 10 seconds for services to fully stabilize..."
-          sleep 10
-          echo "Final health check..."
-          curl -fsS http://localhost:8080/actuator/health || exit 1
+          echo "==========================="
+          echo "Docker Containers"
+          echo "==========================="
+          docker compose ps
 
       - uses: actions/setup-node@v4
         with:
@@ -201,9 +196,9 @@ jobs:
           path: ~/.cache/Cypress
           key: cypress-cache-${{ runner.os }}-${{ hashFiles('Frontend/package-lock.json') }}
           restore-keys: |
-            cypress-cache-
+            cypress-cache-${{ runner.os }}-
 
-      - name: Fix permissions for Frontend folder (e2e)
+      - name: Fix permissions for Frontend folder
         working-directory: Frontend
         run: sudo chown -R "$USER:$USER" .
 
@@ -212,20 +207,30 @@ jobs:
         run: |
           npm ci
           npx cypress install
+          npx cypress verify
 
-      # =========================
-      # Run only A2–A4, C1–C6 (ไม่รัน A0)
-      # =========================
-      - name: Run Cypress (only stable specs, skip A0)
+      - name: Wait for services to fully stabilize
+        run: |
+          echo "Waiting 10 seconds for services to fully stabilize..."
+          sleep 10
+
+          echo "Final health check..."
+          curl -fsS http://localhost:8080/actuator/health
+          curl -fsS http://localhost:5173 > /dev/null
+
+      - name: Run Cypress E2E Tests (A0)
         working-directory: Frontend
-        continue-on-error: true   # กันไม่ให้ step นี้ฆ่า job
+        env:
+          CYPRESS_BASE_URL: http://localhost:5173
+          CYPRESS_API_URL: http://localhost:8080
         run: |
           npx cypress run --headless \
-            --spec "cypress/e2e/Success/{A2*,A3*,A4*,C1*,C2*,C3*,C4*,C5*,C6*}.cy.js" \
-          || echo "Cypress failed but ignored in CI"
+            --browser chrome \
+            --spec cypress/e2e/Success/A0-e2e.cy.js \
+            --config defaultCommandTimeout=20000,requestTimeout=20000,responseTimeout=30000,pageLoadTimeout=60000
 
       - name: Upload Cypress Screenshots
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: cypress-screenshots
@@ -240,21 +245,18 @@ jobs:
           path: Frontend/cypress/videos
           if-no-files-found: ignore
 
-      - name: Dump Backend Logs
-        if: always()
+      - name: Show logs on failure
+        if: failure()
         run: |
           echo "==========================="
           echo "Backend Logs (Full)"
           echo "==========================="
-          docker compose logs backend || true
-
-      - name: Dump Frontend Logs
-        if: always()
-        run: |
+          docker compose logs backend || docker compose logs spring-backend || true
+          echo ""
           echo "==========================="
           echo "Frontend Logs (Full)"
           echo "==========================="
-          docker compose logs frontend || true
+          docker compose logs frontend || docker compose logs frontend-dev || true
 
       - name: Shutdown
         if: always()
