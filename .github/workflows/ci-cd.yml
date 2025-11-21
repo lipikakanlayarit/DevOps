@@ -103,7 +103,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build & Push Frontend
-      uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v5
         with:
           context: ./Frontend
           push: true
