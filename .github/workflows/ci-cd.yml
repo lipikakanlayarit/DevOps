@@ -190,19 +190,19 @@ jobs:
           npm ci
           npx cypress install
 
-      # รันเฉพาะ A2–A4, C1–C6
+      # Run only A2–A4, C1–C6
       - name: Run Cypress (only stable specs)
         working-directory: Frontend
         run: |
-          npx cypress run --headless ^
-            --spec cypress/e2e/Success/A2-creating-event-organizationmnge.cy.js ^
-            --spec cypress/e2e/Success/A3-creating-event-eventdetail.cy.js ^
-            --spec cypress/e2e/Success/A4-creating-event-ticketdetail.cy.js ^
-            --spec cypress/e2e/Success/C1-buying-ticket-landding.cy.js ^
-            --spec cypress/e2e/Success/C2-buying-ticket-signin.cy.js ^
-            --spec cypress/e2e/Success/C3-buying-ticket-login.cy.js ^
-            --spec cypress/e2e/Success/C4-buying-ticket-eventselect.cy.js ^
-            --spec cypress/e2e/Success/C5-buying-ticket-Profile.cy.js ^
+          npx cypress run --headless \
+            --spec cypress/e2e/Success/A2-creating-event-organizationmnge.cy.js \
+            --spec cypress/e2e/Success/A3-creating-event-eventdetail.cy.js \
+            --spec cypress/e2e/Success/A4-creating-event-ticketdetail.cy.js \
+            --spec cypress/e2e/Success/C1-buying-ticket-landding.cy.js \
+            --spec cypress/e2e/Success/C2-buying-ticket-signin.cy.js \
+            --spec cypress/e2e/Success/C3-buying-ticket-login.cy.js \
+            --spec cypress/e2e/Success/C4-buying-ticket-eventselect.cy.js \
+            --spec cypress/e2e/Success/C5-buying-ticket-Profile.cy.js \
             --spec cypress/e2e/Success/C6-buying-ticket-checkin.cy.js
 
       - name: Upload E2E Artifacts
@@ -224,7 +224,8 @@ jobs:
   # =========================
   deploy-local:
     runs-on: self-hosted
-    needs: [ docker-backend, docker-frontend ]
+    needs: [ docker-backend, docker-frontend, e2e ]
+    if: github.ref == 'refs/heads/k8s' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
@@ -236,3 +237,16 @@ jobs:
       - name: Apply Kubernetes manifests
         run: |
           kubectl apply -f k8s/
+
+      # optional: force rollout image ใหม่ทุกรอบ ถ้าชื่อ deployment ตรงกับไฟล์ k8s
+      # - name: Restart backend & frontend deployments
+      #   run: |
+      #     kubectl rollout restart deployment/backend
+      #     kubectl rollout restart deployment/frontend
+
+      - name: Check deployed resources
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -o wide
+          echo "=== Services ==="
+          kubectl get svc
