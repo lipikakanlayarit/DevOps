@@ -2,9 +2,9 @@ name: DevOps CI/CD Pipeline
 
 on:
   push:
-    branches: [pass-all]
+    branches: [test]
   pull_request:
-    branches: [pass-all]
+    branches: [test]
   workflow_dispatch:
 
 jobs:
@@ -274,7 +274,7 @@ jobs:
   deploy-local:
     runs-on: self-hosted
     needs: [ docker-backend, docker-frontend, e2e ]
-    if: github.ref == 'refs/heads/pass-all' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/test' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
